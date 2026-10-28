@@ -409,7 +409,7 @@ fn register_windows_registry_native_host(
         if let Ok((ext_key, _)) = hkcu.create_subkey(&ext_subkey) {
             let _ = ext_key.set_value(
                 "update_url",
-                &"https://clients2.google.com/service/update2/crx",
+                &"https://clients2.google.com/service/update2/crx".to_string(),
             );
         }
     }
