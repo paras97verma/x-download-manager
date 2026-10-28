@@ -41,6 +41,7 @@ hex = "0.4"
 url = "2.5"
 regex = "1.10"
 base64 = "0.22"
+async-std = { version = "1.12", default-features = false }
 suppaftp = { version = "6.0", features = ["async", "async-rustls"] }
 parking_lot = "0.12"
 thiserror = "1.0"

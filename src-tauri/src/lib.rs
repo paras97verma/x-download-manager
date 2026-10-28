@@ -19,12 +19,12 @@ use crate::engine::{
 };
 
 #[tauri::command]
-pub fn get_downloads(engine: State<'_, Arc<DownloadEngine>>) -> Vec<DownloadItem> {
+fn get_downloads(engine: State<'_, Arc<DownloadEngine>>) -> Vec<DownloadItem> {
     engine.downloads.read().clone()
 }
 
 #[tauri::command]
-pub async fn add_download_task(
+async fn add_download_task(
     req: NewDownloadRequest,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<DownloadItem, String> {
@@ -89,7 +89,7 @@ pub async fn add_download_task(
 }
 
 #[tauri::command]
-pub fn pause_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
+fn pause_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
     if let Some(tx) = engine.active_cancellations.write().remove(&id) {
         let _ = tx.send(true);
     }
@@ -109,7 +109,7 @@ pub fn pause_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Res
 }
 
 #[tauri::command]
-pub fn resume_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
+fn resume_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
     let (tx, rx) = tokio::sync::watch::channel(false);
     engine.active_cancellations.write().insert(id.clone(), tx);
 
@@ -131,7 +131,7 @@ pub fn resume_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Re
 }
 
 #[tauri::command]
-pub fn delete_download(
+fn delete_download(
     id: String,
     delete_file: bool,
     engine: State<'_, Arc<DownloadEngine>>,
@@ -150,12 +150,12 @@ pub fn delete_download(
 }
 
 #[tauri::command]
-pub fn get_settings(engine: State<'_, Arc<DownloadEngine>>) -> AppSettings {
+fn get_settings(engine: State<'_, Arc<DownloadEngine>>) -> AppSettings {
     engine.settings.read().clone()
 }
 
 #[tauri::command]
-pub fn update_settings(
+fn update_settings(
     new_settings: AppSettings,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<AppSettings, String> {
@@ -165,13 +165,13 @@ pub fn update_settings(
 }
 
 #[tauri::command]
-pub fn get_browser_statuses(engine: State<'_, Arc<DownloadEngine>>) -> Vec<BrowserStatus> {
+fn get_browser_statuses(engine: State<'_, Arc<DownloadEngine>>) -> Vec<BrowserStatus> {
     let st = engine.settings.read();
     detect_browsers(&st)
 }
 
 #[tauri::command]
-pub fn toggle_browser_extension(
+fn toggle_browser_extension(
     browser_id: String,
     enable: bool,
     engine: State<'_, Arc<DownloadEngine>>,
@@ -183,7 +183,7 @@ pub fn toggle_browser_extension(
 }
 
 #[tauri::command]
-pub async fn resolve_authenticated_link(
+async fn resolve_authenticated_link(
     url: String,
     cookies: Option<String>,
     engine: State<'_, Arc<DownloadEngine>>,

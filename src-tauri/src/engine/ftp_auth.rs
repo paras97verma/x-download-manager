@@ -5,11 +5,11 @@
 //! - Usersdrive (`https://usersdrive.com/<id>.html`) 2-step form/cookie resolution and direct CDN extraction
 //! - Cookie, Bearer Token, and Basic Auth injection
 
+use async_std::io::ReadExt;
 use regex::Regex;
 use reqwest::header::{COOKIE, REFERER, USER_AGENT};
 use serde::{Deserialize, Serialize};
 use suppaftp::AsyncRustlsFtpStream;
-use tokio::io::AsyncReadExt;
 
 use crate::config::{AppSettings, SiteCredential};
 

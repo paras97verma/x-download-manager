@@ -196,7 +196,7 @@ pub async fn execute_segmented_http_download(
     item_id: String,
     downloads: Arc<RwLock<Vec<DownloadItem>>>,
     settings: Arc<RwLock<AppSettings>>,
-    mut cancel_rx: watch::Receiver<bool>,
+    cancel_rx: watch::Receiver<bool>,
 ) -> Result<(), String> {
     let (item_snapshot, current_settings) = {
         let dls = downloads.read();
@@ -316,17 +316,19 @@ pub async fn execute_segmented_http_download(
                                     window_start = Instant::now();
                                     window_bytes = 0;
 
-                                    let mut dls = dls_clone.write();
-                                    if let Some(d) = dls.iter_mut().find(|d| d.id == item_id_clone) {
-                                        if let Some(s) = d.segments.iter_mut().find(|s| s.id == seg.id) {
-                                            s.downloaded_bytes = seg_downloaded;
-                                            s.speed_bps = speed;
-                                            s.status = "receiving".to_string();
-                                        }
-                                        d.downloaded_bytes = d.segments.iter().map(|s| s.downloaded_bytes).sum();
-                                        d.speed_bps = d.segments.iter().map(|s| s.speed_bps).sum();
-                                        if d.speed_bps > 0 && d.total_bytes > d.downloaded_bytes {
-                                            d.eta_seconds = Some((d.total_bytes - d.downloaded_bytes) / d.speed_bps);
+                                    {
+                                        let mut dls = dls_clone.write();
+                                        if let Some(d) = dls.iter_mut().find(|d| d.id == item_id_clone) {
+                                            if let Some(s) = d.segments.iter_mut().find(|s| s.id == seg.id) {
+                                                s.downloaded_bytes = seg_downloaded;
+                                                s.speed_bps = speed;
+                                                s.status = "receiving".to_string();
+                                            }
+                                            d.downloaded_bytes = d.segments.iter().map(|s| s.downloaded_bytes).sum();
+                                            d.speed_bps = d.segments.iter().map(|s| s.speed_bps).sum();
+                                            if d.speed_bps > 0 && d.total_bytes > d.downloaded_bytes {
+                                                d.eta_seconds = Some((d.total_bytes - d.downloaded_bytes) / d.speed_bps);
+                                            }
                                         }
                                     }
 
