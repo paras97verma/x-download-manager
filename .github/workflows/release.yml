@@ -83,11 +83,16 @@ jobs:
           CHANNEL="${{ github.event.inputs.release_channel || 'stable' }}"
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
+            RELEASE_TITLE="X Download Manager ${TAG_NAME}"
+          elif [[ "${CHANNEL}" == "stable" ]]; then
+            TAG_NAME="v${BASE_VER}"
+            RELEASE_TITLE="X Download Manager v${BASE_VER}"
           else
             TAG_NAME="v${BASE_VER}-${CHANNEL}.${GITHUB_RUN_NUMBER}"
+            RELEASE_TITLE="X Download Manager ${TAG_NAME} (${CHANNEL^^})"
           fi
           echo "version_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "release_title=X Download Manager ${TAG_NAME} (${CHANNEL^^})" >> "$GITHUB_OUTPUT"
+          echo "release_title=${RELEASE_TITLE}" >> "$GITHUB_OUTPUT"
 
   # ============================================================================
   # STAGE 2: CREATE VERSION-TYPED GITHUB RELEASE DRAFT
@@ -117,6 +122,7 @@ jobs:
           name: ${{ needs.verify.outputs.release_title }}
           draft: false
           prerelease: ${{ contains(needs.verify.outputs.version_tag, 'beta') || contains(needs.verify.outputs.version_tag, 'nightly') }}
+          make_latest: true
           files: |
             dist-extensions/xdm-extension-chromium.zip
             dist-extensions/xdm-extension-firefox.xpi
