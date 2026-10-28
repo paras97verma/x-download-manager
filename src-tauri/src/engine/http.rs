@@ -7,15 +7,18 @@
 //! - Cookie, Referer, User-Agent, Basic/Bearer Auth header passthrough
 //! - SHA-256 integrity calculation upon segment merge
 
+use futures_util::StreamExt;
+use parking_lot::RwLock;
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, COOKIE, RANGE, REFERER,
+    USER_AGENT,
+};
+use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use futures_util::StreamExt;
-use parking_lot::RwLock;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_RANGES, CONTENT_LENGTH, COOKIE, RANGE, REFERER, USER_AGENT};
-use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
 use crate::config::AppSettings;
@@ -28,7 +31,10 @@ pub struct HttpProbeResult {
     pub suggested_filename: Option<String>,
 }
 
-pub fn build_http_client(settings: &AppSettings, item: &DownloadItem) -> Result<reqwest::Client, String> {
+pub fn build_http_client(
+    settings: &AppSettings,
+    item: &DownloadItem,
+) -> Result<reqwest::Client, String> {
     let mut headers = HeaderMap::new();
     let ua = item
         .custom_headers
@@ -50,7 +56,10 @@ pub fn build_http_client(settings: &AppSettings, item: &DownloadItem) -> Result<
         }
     }
     for (k, v) in &item.custom_headers {
-        if let (Ok(name), Ok(val)) = (HeaderName::from_bytes(k.as_bytes()), HeaderValue::from_str(v)) {
+        if let (Ok(name), Ok(val)) = (
+            HeaderName::from_bytes(k.as_bytes()),
+            HeaderValue::from_str(v),
+        ) {
             headers.insert(name, val);
         }
     }
@@ -66,7 +75,10 @@ pub fn build_http_client(settings: &AppSettings, item: &DownloadItem) -> Result<
             "https" => "https",
             _ => "http",
         };
-        let proxy_url = format!("{}://{}:{}", scheme, settings.proxy.host, settings.proxy.port);
+        let proxy_url = format!(
+            "{}://{}:{}",
+            scheme, settings.proxy.host, settings.proxy.port
+        );
         if let Ok(mut proxy) = reqwest::Proxy::all(&proxy_url) {
             if let (Some(u), Some(p)) = (&settings.proxy.username, &settings.proxy.password) {
                 proxy = proxy.basic_auth(u, p);
@@ -75,10 +87,15 @@ pub fn build_http_client(settings: &AppSettings, item: &DownloadItem) -> Result<
         }
     }
 
-    builder.build().map_err(|e| format!("Failed to build HTTP client: {}", e))
+    builder
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))
 }
 
-pub async fn probe_remote_resource(client: &reqwest::Client, target_url: &str) -> Result<HttpProbeResult, String> {
+pub async fn probe_remote_resource(
+    client: &reqwest::Client,
+    target_url: &str,
+) -> Result<HttpProbeResult, String> {
     // Perform HEAD request first, fallback to Range GET bytes=0-0 if server rejects HEAD
     let head_resp = client.head(target_url).send().await;
     if let Ok(resp) = head_resp {
@@ -134,7 +151,11 @@ pub async fn probe_remote_resource(client: &reqwest::Client, target_url: &str) -
 }
 
 /// Partition `total_bytes` into `num_threads` byte-aligned segments
-pub fn compute_initial_segments(total_bytes: u64, num_threads: usize, min_segment_bytes: u64) -> Vec<ThreadSegment> {
+pub fn compute_initial_segments(
+    total_bytes: u64,
+    num_threads: usize,
+    min_segment_bytes: u64,
+) -> Vec<ThreadSegment> {
     if total_bytes == 0 || num_threads <= 1 {
         return vec![ThreadSegment {
             id: 1,
@@ -146,7 +167,8 @@ pub fn compute_initial_segments(total_bytes: u64, num_threads: usize, min_segmen
         }];
     }
 
-    let effective_threads = ((total_bytes / min_segment_bytes.max(1)).max(1) as usize).min(num_threads);
+    let effective_threads =
+        ((total_bytes / min_segment_bytes.max(1)).max(1) as usize).min(num_threads);
     let chunk_size = total_bytes / (effective_threads as u64);
     let mut segments = Vec::with_capacity(effective_threads);
 
@@ -178,12 +200,19 @@ pub async fn execute_segmented_http_download(
 ) -> Result<(), String> {
     let (item_snapshot, current_settings) = {
         let dls = downloads.read();
-        let found = dls.iter().find(|d| d.id == item_id).cloned().ok_or("Download item not found")?;
+        let found = dls
+            .iter()
+            .find(|d| d.id == item_id)
+            .cloned()
+            .ok_or("Download item not found")?;
         (found, settings.read().clone())
     };
 
     let client = build_http_client(&current_settings, &item_snapshot)?;
-    let target_url = item_snapshot.resolved_url.clone().unwrap_or_else(|| item_snapshot.url.clone());
+    let target_url = item_snapshot
+        .resolved_url
+        .clone()
+        .unwrap_or_else(|| item_snapshot.url.clone());
 
     // Probe file size and range support
     let probe = probe_remote_resource(&client, &target_url).await?;
@@ -201,8 +230,12 @@ pub async fn execute_segmented_http_download(
         let _ = std::fs::create_dir_all(parent);
     }
     {
-        let file = File::create(&item_snapshot.save_path)
-            .map_err(|e| format!("Failed to create target file {}: {}", item_snapshot.save_path, e))?;
+        let file = File::create(&item_snapshot.save_path).map_err(|e| {
+            format!(
+                "Failed to create target file {}: {}",
+                item_snapshot.save_path, e
+            )
+        })?;
         if probe.total_bytes > 0 {
             let _ = file.set_len(probe.total_bytes);
         }
@@ -238,7 +271,11 @@ pub async fn execute_segmented_http_download(
         let mut worker_cancel = cancel_rx.clone();
 
         let handle = tokio::spawn(async move {
-            let range_header = format!("bytes={}-{}", seg.start_byte + seg.downloaded_bytes, seg.end_byte);
+            let range_header = format!(
+                "bytes={}-{}",
+                seg.start_byte + seg.downloaded_bytes,
+                seg.end_byte
+            );
             let mut req = client_clone.get(&url_clone);
             if probe.accepts_ranges && probe.total_bytes > 0 {
                 req = req.header(RANGE, range_header);
@@ -361,7 +398,8 @@ pub async fn execute_segmented_http_download(
         d.eta_seconds = Some(0);
         d.checksum_sha256 = computed_hash;
         d.completed_at = Some(chrono::Utc::now().to_rfc3339());
-        d.transfer_log.push("All segments merged and verified successfully.".to_string());
+        d.transfer_log
+            .push("All segments merged and verified successfully.".to_string());
     }
 
     Ok(())

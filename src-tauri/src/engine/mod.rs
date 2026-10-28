@@ -1,13 +1,13 @@
+pub mod ftp_auth;
 pub mod http;
 pub mod torrent;
-pub mod ftp_auth;
 
+use chrono::Utc;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 use uuid::Uuid;
-use chrono::Utc;
 
 use crate::config::{AppSettings, ConfigManager};
 
@@ -168,7 +168,10 @@ impl DownloadEngine {
             DownloadProtocol::Sftp
         } else if lower.contains("usersdrive.com") {
             DownloadProtocol::Usersdrive
-        } else if lower.contains("1fichier.com") || lower.contains("mediafire.com") || lower.contains("pixeldrain.com") {
+        } else if lower.contains("1fichier.com")
+            || lower.contains("mediafire.com")
+            || lower.contains("pixeldrain.com")
+        {
             DownloadProtocol::FileHostAuth
         } else if lower.starts_with("https://") {
             DownloadProtocol::Https
@@ -177,14 +180,22 @@ impl DownloadEngine {
         }
     }
 
-    pub fn infer_category(filename: &str, protocol: &DownloadProtocol, settings: &AppSettings) -> String {
+    pub fn infer_category(
+        filename: &str,
+        protocol: &DownloadProtocol,
+        settings: &AppSettings,
+    ) -> String {
         if *protocol == DownloadProtocol::BitTorrent || *protocol == DownloadProtocol::Magnet {
             return "Torrents".to_string();
         }
         if let Some(ext) = filename.rsplit('.').next() {
             let ext_lower = ext.to_lowercase();
             for cat in &settings.categories {
-                if cat.extensions.iter().any(|e| e.eq_ignore_ascii_case(&ext_lower)) {
+                if cat
+                    .extensions
+                    .iter()
+                    .any(|e| e.eq_ignore_ascii_case(&ext_lower))
+                {
                     return cat.name.clone();
                 }
             }
@@ -217,10 +228,18 @@ impl DownloadEngine {
                 .to_string()
         });
 
-        let category = req.category.unwrap_or_else(|| Self::infer_category(&filename, &protocol, &settings));
-        let threads_count = req.threads_count.unwrap_or(settings.default_threads_per_download).clamp(1, settings.max_threads_per_download);
+        let category = req
+            .category
+            .unwrap_or_else(|| Self::infer_category(&filename, &protocol, &settings));
+        let threads_count = req
+            .threads_count
+            .unwrap_or(settings.default_threads_per_download)
+            .clamp(1, settings.max_threads_per_download);
         let save_path = req.save_path.unwrap_or_else(|| {
-            format!("{}/{}/{}", settings.default_download_dir, category, filename)
+            format!(
+                "{}/{}/{}",
+                settings.default_download_dir, category, filename
+            )
         });
 
         let mut headers = req.custom_headers.unwrap_or_default();
@@ -242,7 +261,11 @@ impl DownloadEngine {
             speed_bps: 0,
             upload_speed_bps: 0,
             eta_seconds: None,
-            status: if req.start_immediately { DownloadStatus::Connecting } else { DownloadStatus::Queued },
+            status: if req.start_immediately {
+                DownloadStatus::Connecting
+            } else {
+                DownloadStatus::Queued
+            },
             resumable: true,
             threads_count,
             segments: Vec::new(),
@@ -256,9 +279,11 @@ impl DownloadEngine {
             created_at: Utc::now().to_rfc3339(),
             completed_at: None,
             error_message: None,
-            transfer_log: vec![
-                format!("[{}] Added download task ({:?})", Utc::now().format("%H:%M:%S"), protocol),
-            ],
+            transfer_log: vec![format!(
+                "[{}] Added download task ({:?})",
+                Utc::now().format("%H:%M:%S"),
+                protocol
+            )],
         };
 
         self.downloads.write().insert(0, item.clone());

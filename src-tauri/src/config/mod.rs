@@ -1,8 +1,8 @@
+use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use directories::ProjectDirs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteCredential {
@@ -309,7 +309,8 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     pub fn new() -> Self {
-        let config_path = if let Some(proj) = ProjectDirs::from("com", "peivee", "XDownloadManager") {
+        let config_path = if let Some(proj) = ProjectDirs::from("com", "peivee", "XDownloadManager")
+        {
             let dir = proj.config_dir().to_path_buf();
             let _ = fs::create_dir_all(&dir);
             dir.join("settings.json")

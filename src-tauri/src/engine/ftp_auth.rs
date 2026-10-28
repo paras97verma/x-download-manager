@@ -24,7 +24,10 @@ pub struct ResolvedAuthDownload {
 }
 
 /// Finds a matching credential from the user's Site Logins Vault based on host wildcard pattern
-pub fn match_site_credential<'a>(url: &str, credentials: &'a [SiteCredential]) -> Option<&'a SiteCredential> {
+pub fn match_site_credential<'a>(
+    url: &str,
+    credentials: &'a [SiteCredential],
+) -> Option<&'a SiteCredential> {
     let parsed = url::Url::parse(url).ok()?;
     let host = parsed.host_str()?.to_lowercase();
 
@@ -50,7 +53,8 @@ pub async fn resolve_usersdrive_or_filehost(
     forwarded_cookies: Option<String>,
 ) -> Result<ResolvedAuthDownload, String> {
     let matched_cred = match_site_credential(page_url, &settings.site_credentials);
-    let effective_cookies = forwarded_cookies.or_else(|| matched_cred.and_then(|c| c.cookies.clone()));
+    let effective_cookies =
+        forwarded_cookies.or_else(|| matched_cred.and_then(|c| c.cookies.clone()));
 
     let client = reqwest::Client::builder()
         .user_agent(&settings.custom_user_agent)
@@ -63,10 +67,17 @@ pub async fn resolve_usersdrive_or_filehost(
         get_req = get_req.header(COOKIE, c);
     }
 
-    let resp = get_req.send().await.map_err(|e| format!("Failed to fetch file host page: {}", e))?;
+    let resp = get_req
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch file host page: {}", e))?;
 
     // If the URL is already a direct binary stream (e.g., redirected directly because of premium cookie)
-    if let Some(ct) = resp.headers().get("content-type").and_then(|v| v.to_str().ok()) {
+    if let Some(ct) = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+    {
         if !ct.contains("text/html") {
             return Ok(ResolvedAuthDownload {
                 direct_url: resp.url().to_string(),
@@ -82,8 +93,9 @@ pub async fn resolve_usersdrive_or_filehost(
     let html = resp.text().await.map_err(|e| e.to_string())?;
 
     // Check for direct download link in HTML (`https://*.usersdrive.com/d/...` or `<a href=".../d/..."`)
-    let direct_re = Regex::new(r#"https?://[a-zA-Z0-9.\-]*usersdrive\.com/d/[a-zA-Z0-9]+/[^\s"'<>]+"#)
-        .map_err(|e| e.to_string())?;
+    let direct_re =
+        Regex::new(r#"https?://[a-zA-Z0-9.\-]*usersdrive\.com/d/[a-zA-Z0-9]+/[^\s"'<>]+"#)
+            .map_err(|e| e.to_string())?;
 
     if let Some(mat) = direct_re.find(&html) {
         let direct_url = mat.as_str().to_string();
@@ -139,7 +151,8 @@ pub async fn resolve_usersdrive_or_filehost(
                         cookies: effective_cookies,
                         auth_header: None,
                         referer: page_url.to_string(),
-                        resolver_note: "Resolved Usersdrive stage-2 POST form to CDN link".to_string(),
+                        resolver_note: "Resolved Usersdrive stage-2 POST form to CDN link"
+                            .to_string(),
                     });
                 }
             }
@@ -219,13 +232,17 @@ pub async fn download_via_ftp(
 
     use std::io::{Seek, SeekFrom, Write};
     if resume_offset > 0 {
-        file.seek(SeekFrom::Start(resume_offset)).map_err(|e| e.to_string())?;
+        file.seek(SeekFrom::Start(resume_offset))
+            .map_err(|e| e.to_string())?;
     }
 
     let mut buf = [0u8; 65536];
     let mut total_written = resume_offset;
     loop {
-        let n = data_stream.read(&mut buf).await.map_err(|e| e.to_string())?;
+        let n = data_stream
+            .read(&mut buf)
+            .await
+            .map_err(|e| e.to_string())?;
         if n == 0 {
             break;
         }

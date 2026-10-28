@@ -5,9 +5,9 @@
 //! - Piece bitfield progression, sequential downloading mode (for streaming media),
 //!   selective file priority (`high`, `normal`, `skip`), and automatic seeding ratio enforcement.
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 use crate::engine::{TorrentFileEntry, TorrentMetadata, TorrentPeerInfo};
 

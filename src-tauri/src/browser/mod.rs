@@ -17,9 +17,9 @@ pub const NATIVE_HOST_NAME: &str = "com.peivee.xdm";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserStatus {
-    pub id: String,              // "chrome" | "edge" | "brave" | "opera" | "vivaldi" | "firefox" | "safari"
+    pub id: String, // "chrome" | "edge" | "brave" | "opera" | "vivaldi" | "firefox" | "safari"
     pub display_name: String,
-    pub family: String,          // "chromium" | "firefox" | "safari"
+    pub family: String, // "chromium" | "firefox" | "safari"
     pub detected_installed: bool,
     pub executable_path: Option<String>,
     pub extension_enabled: bool,
@@ -135,7 +135,11 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
 
     #[cfg(target_os = "linux")]
     let candidates: Vec<&str> = match browser_id {
-        "chrome" => vec!["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium"],
+        "chrome" => vec![
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+        ],
         "brave" => vec!["/usr/bin/brave-browser", "/usr/bin/brave"],
         "edge" => vec!["/usr/bin/microsoft-edge", "/usr/bin/microsoft-edge-stable"],
         "opera" => vec!["/usr/bin/opera"],
@@ -189,7 +193,8 @@ pub fn get_native_messaging_dir(browser_id: &str) -> PathBuf {
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        home.join("AppData/Local/XDownloadManager/NativeMessagingHosts").join(browser_id)
+        home.join("AppData/Local/XDownloadManager/NativeMessagingHosts")
+            .join(browser_id)
     }
 }
 
@@ -199,10 +204,14 @@ pub fn configure_browser_integration(
     enable: bool,
     settings: &mut AppSettings,
 ) -> Result<BrowserStatus, String> {
-    settings.browser.enabled_browsers.insert(browser_id.to_string(), enable);
+    settings
+        .browser
+        .enabled_browsers
+        .insert(browser_id.to_string(), enable);
 
     let manifest_dir = get_native_messaging_dir(browser_id);
-    fs::create_dir_all(&manifest_dir).map_err(|e| format!("Failed to create manifest dir: {}", e))?;
+    fs::create_dir_all(&manifest_dir)
+        .map_err(|e| format!("Failed to create manifest dir: {}", e))?;
     let manifest_file = manifest_dir.join(format!("{}.json", NATIVE_HOST_NAME));
 
     let current_exe = std::env::current_exe()
@@ -254,7 +263,11 @@ pub fn configure_browser_integration(
 pub fn auto_register_all_detected_browsers(settings: &mut AppSettings) -> Vec<BrowserStatus> {
     let current = detect_browsers(settings);
     for b in &current {
-        let is_enabled = *settings.browser.enabled_browsers.get(&b.id).unwrap_or(&true);
+        let is_enabled = *settings
+            .browser
+            .enabled_browsers
+            .get(&b.id)
+            .unwrap_or(&true);
         if is_enabled {
             let _ = configure_browser_integration(&b.id, true, settings);
         }
@@ -276,7 +289,9 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
             "chrome" => Some(app_support.join("Google/Chrome/External Extensions")),
             "brave" => Some(app_support.join("BraveSoftware/Brave-Browser/External Extensions")),
             "edge" => Some(app_support.join("Microsoft Edge/External Extensions")),
-            "firefox" => Some(app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")),
+            "firefox" => {
+                Some(app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"))
+            }
             _ => None,
         }
     };
@@ -288,7 +303,9 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
             "chrome" => Some(config.join("google-chrome/External Extensions")),
             "brave" => Some(config.join("BraveSoftware/Brave-Browser/External Extensions")),
             "edge" => Some(config.join("microsoft-edge/External Extensions")),
-            "firefox" => Some(home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")),
+            "firefox" => {
+                Some(home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"))
+            }
             _ => None,
         }
     };
@@ -309,7 +326,10 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
                 let payload = serde_json::json!({
                     "external_update_url": "https://clients2.google.com/service/update2/crx"
                 });
-                let _ = fs::write(descriptor_file, serde_json::to_string_pretty(&payload).unwrap_or_default());
+                let _ = fs::write(
+                    descriptor_file,
+                    serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                );
             } else if descriptor_file.exists() {
                 let _ = fs::remove_file(descriptor_file);
             }
@@ -319,17 +339,35 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
 }
 
 #[cfg(target_os = "windows")]
-fn register_windows_registry_native_host(browser_id: &str, manifest_path: &Path) -> Result<(), String> {
+fn register_windows_registry_native_host(
+    browser_id: &str,
+    manifest_path: &Path,
+) -> Result<(), String> {
     use winreg::enums::*;
     use winreg::RegKey;
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let subkey = match browser_id {
-        "chrome" => format!(r"Software\Google\Chrome\NativeMessagingHosts\{}", NATIVE_HOST_NAME),
-        "edge" => format!(r"Software\Microsoft\Edge\NativeMessagingHosts\{}", NATIVE_HOST_NAME),
-        "brave" => format!(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\{}", NATIVE_HOST_NAME),
-        "firefox" => format!(r"Software\Mozilla\NativeMessagingHosts\{}", NATIVE_HOST_NAME),
-        _ => format!(r"Software\Google\Chrome\NativeMessagingHosts\{}", NATIVE_HOST_NAME),
+        "chrome" => format!(
+            r"Software\Google\Chrome\NativeMessagingHosts\{}",
+            NATIVE_HOST_NAME
+        ),
+        "edge" => format!(
+            r"Software\Microsoft\Edge\NativeMessagingHosts\{}",
+            NATIVE_HOST_NAME
+        ),
+        "brave" => format!(
+            r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\{}",
+            NATIVE_HOST_NAME
+        ),
+        "firefox" => format!(
+            r"Software\Mozilla\NativeMessagingHosts\{}",
+            NATIVE_HOST_NAME
+        ),
+        _ => format!(
+            r"Software\Google\Chrome\NativeMessagingHosts\{}",
+            NATIVE_HOST_NAME
+        ),
     };
     let (key, _) = hkcu.create_subkey(&subkey).map_err(|e| e.to_string())?;
     key.set_value("", &manifest_path.to_string_lossy().to_string())
@@ -337,22 +375,42 @@ fn register_windows_registry_native_host(browser_id: &str, manifest_path: &Path)
 
     // Also register External Extension auto-install key (IDM / FDM method)
     if browser_id == "firefox" {
-        let (ff_ext, _) = hkcu.create_subkey(r"Software\Mozilla\Firefox\Extensions").map_err(|e| e.to_string())?;
+        let (ff_ext, _) = hkcu
+            .create_subkey(r"Software\Mozilla\Firefox\Extensions")
+            .map_err(|e| e.to_string())?;
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
                 let xpi_path = parent.join(r"extensions\firefox\xdm-extension-firefox.xpi");
-                let _ = ff_ext.set_value(FIREFOX_EXTENSION_ID, &xpi_path.to_string_lossy().to_string());
+                let _ = ff_ext.set_value(
+                    FIREFOX_EXTENSION_ID,
+                    &xpi_path.to_string_lossy().to_string(),
+                );
             }
         }
     } else {
         let ext_subkey = match browser_id {
-            "chrome" => format!(r"Software\Google\Chrome\Extensions\{}", CHROMIUM_EXTENSION_ID),
-            "edge" => format!(r"Software\Microsoft\Edge\Extensions\{}", CHROMIUM_EXTENSION_ID),
-            "brave" => format!(r"Software\BraveSoftware\Brave-Browser\Extensions\{}", CHROMIUM_EXTENSION_ID),
-            _ => format!(r"Software\Google\Chrome\Extensions\{}", CHROMIUM_EXTENSION_ID),
+            "chrome" => format!(
+                r"Software\Google\Chrome\Extensions\{}",
+                CHROMIUM_EXTENSION_ID
+            ),
+            "edge" => format!(
+                r"Software\Microsoft\Edge\Extensions\{}",
+                CHROMIUM_EXTENSION_ID
+            ),
+            "brave" => format!(
+                r"Software\BraveSoftware\Brave-Browser\Extensions\{}",
+                CHROMIUM_EXTENSION_ID
+            ),
+            _ => format!(
+                r"Software\Google\Chrome\Extensions\{}",
+                CHROMIUM_EXTENSION_ID
+            ),
         };
         if let Ok((ext_key, _)) = hkcu.create_subkey(&ext_subkey) {
-            let _ = ext_key.set_value("update_url", &"https://clients2.google.com/service/update2/crx");
+            let _ = ext_key.set_value(
+                "update_url",
+                &"https://clients2.google.com/service/update2/crx",
+            );
         }
     }
     Ok(())

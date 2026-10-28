@@ -2,15 +2,15 @@
 //! Receives intercepted downloads, streaming video/audio URLs, cookies, referers, and auth headers
 //! from X Download Manager's Chrome, Firefox, and Safari browser extensions.
 
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
 use axum::{
-    extract::{State, Json},
+    extract::{Json, State},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
 use crate::engine::{DownloadEngine, NewDownloadRequest};
