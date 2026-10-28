@@ -3,6 +3,41 @@
 > **Blazingly fast, native cross-platform Download Accelerator & Manager for macOS, Windows, and Linux — built in Rust.**
 > Inspired by **Internet Download Manager (IDM)** and **Free Download Manager (FDM)**.
 
+[![GitHub Release](https://img.shields.io/github/v/release/paras97verma/x-download-manager?style=flat-square&color=blue)](https://github.com/paras97verma/x-download-manager/releases/latest)
+[![CI/CD Build](https://img.shields.io/github/actions/workflow/status/paras97verma/x-download-manager/release.yml?branch=main&style=flat-square&label=build)](https://github.com/paras97verma/x-download-manager/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+
+---
+
+## 📥 Downloads
+
+Get the latest verified build for your operating system and browser:
+
+### Desktop Installers
+
+| Operating System | Architecture | Package Format | Download Link |
+| :--- | :--- | :--- | :--- |
+| **macOS** | Universal (Apple Silicon & Intel) | `.dmg` Installer | [⬇️ **Download for macOS (.dmg)**](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Windows** | 64-bit (x64) | `.exe` (NSIS Installer) | [⬇️ **Download for Windows (.exe)**](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Windows** | 64-bit (x64) | `.msi` (WiX Installer) | [⬇️ **Download for Windows (.msi)**](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Linux** | 64-bit (x86_64) | `.AppImage` (Universal) | [⬇️ **Download for Linux (.AppImage)**](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Linux (Debian/Ubuntu)** | 64-bit (x86_64) | `.deb` Package | [⬇️ **Download for Ubuntu/Debian (.deb)**](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Linux (Fedora/RHEL)** | 64-bit (x86_64) | `.rpm` Package | [⬇️ **Download for Fedora/RHEL (.rpm)**](https://github.com/paras97verma/x-download-manager/releases/latest) |
+
+> 📦 **All Releases & Checksums**: View all versions, release notes, and build artifacts on the **[GitHub Releases Page](https://github.com/paras97verma/x-download-manager/releases)**.
+
+---
+
+### Browser Extensions
+
+X Download Manager seamlessly intercepts download links, streaming video/audio, and authentication cookies from all major browsers:
+
+| Browser | Supported Browsers | Download Package | Manual Installation |
+| :--- | :--- | :--- | :--- |
+| **Chromium** | Chrome, Brave, Edge, Opera, Vivaldi | [⬇️ **`xdm-extension-chromium.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest) | `chrome://extensions` → Enable *Developer mode* → *Load unpacked* |
+| **Firefox** | Mozilla Firefox, LibreWolf, Waterfox | [⬇️ **`xdm-extension-firefox.xpi`**](https://github.com/paras97verma/x-download-manager/releases/latest) | Click to install in Firefox, or load via `about:debugging` |
+| **Safari** | Apple Safari (macOS) | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest) | Built-in Xcode wrapper project (`extensions/safari`) |
+
 ---
 
 ## Key Highlights
@@ -69,4 +104,4 @@ While X Download Manager automatically registers the Native Messaging Host for d
 
 ---
 
-Made with ❤️ by ~peivee
+Made with ❤️ by [Paras Verma](https://github.com/paras97verma)
