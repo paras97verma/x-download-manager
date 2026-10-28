@@ -340,7 +340,7 @@ fn register_windows_registry_native_host(browser_id: &str, manifest_path: &Path)
         let (ff_ext, _) = hkcu.create_subkey(r"Software\Mozilla\Firefox\Extensions").map_err(|e| e.to_string())?;
         if let Ok(exe) = std::env::current_exe() {
             if let Some(parent) = exe.parent() {
-                let xpi_path = parent.join("extensions\firefox\xdm-extension-firefox.xpi");
+                let xpi_path = parent.join(r"extensions\firefox\xdm-extension-firefox.xpi");
                 let _ = ff_ext.set_value(FIREFOX_EXTENSION_ID, &xpi_path.to_string_lossy().to_string());
             }
         }

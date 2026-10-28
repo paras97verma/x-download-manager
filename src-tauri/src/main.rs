@@ -24,7 +24,9 @@ fn main() {
     if args.iter().any(|a| a == "--unregister-browsers-silent") {
         let cfg = xdm_lib::config::ConfigManager::new();
         let mut st = cfg.load();
-        for b in ["chrome", "brave", "edge", "opera", "vivaldi", "firefox", "safari"] {
+        for b in [
+            "chrome", "brave", "edge", "opera", "vivaldi", "firefox", "safari",
+        ] {
             let _ = xdm_lib::browser::configure_browser_integration(b, false, &mut st);
         }
         return;
@@ -59,7 +61,9 @@ fn run_native_messaging_stdio_bridge() {
             break;
         }
 
-        let response_json = if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(&payload) {
+        let response_json = if let Ok(parsed) =
+            serde_json::from_slice::<serde_json::Value>(&payload)
+        {
             // Forward to running XDM IPC server on 127.0.0.1:45678
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -73,8 +77,12 @@ fn run_native_messaging_stdio_bridge() {
                         .send()
                         .await
                     {
-                        Ok(resp) => resp.text().await.unwrap_or_else(|_| r#"{"accepted":true}"#.to_string()),
-                        Err(_) => r#"{"accepted":false,"error":"XDM desktop app not reachable"}"#.to_string(),
+                        Ok(resp) => resp
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| r#"{"accepted":true}"#.to_string()),
+                        Err(_) => r#"{"accepted":false,"error":"XDM desktop app not reachable"}"#
+                            .to_string(),
                     }
                 })
             } else {
