@@ -241,6 +241,14 @@ async function handleDownloadInterception(downloadItem) {
     }
   }
 
+  // Stage 2 (Headers received): Immediately pause the browser download to freeze
+  // socket transmission before Stage 3 (Body streaming) can consume network bandwidth!
+  if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.pause) {
+    try {
+      await runtimeAPI.downloads.pause(downloadItem.id);
+    } catch (_) {}
+  }
+
   const url = downloadItem.finalUrl || downloadItem.url;
   const accepted = await dispatchToXdm({
     url,
@@ -258,6 +266,13 @@ async function handleDownloadInterception(downloadItem) {
       }
     } catch (_) {}
     return true;
+  } else {
+    // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
+    if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
+      try {
+        await runtimeAPI.downloads.resume(downloadItem.id);
+      } catch (_) {}
+    }
   }
   return false;
 }
