@@ -89,11 +89,8 @@ function shouldInterceptDownload(downloadItem) {
     if (state.ignoredDomains.some((d) => parsed.hostname.endsWith(d))) {
       return false;
     }
-    const pathname = parsed.pathname.toUpperCase();
-    const extMatch = state.interceptedExtensions.some((ext) => pathname.endsWith(`.${ext}`));
-    const sizeMatch =
-      downloadItem.totalBytes && downloadItem.totalBytes >= state.minFileSizeKb * 1024;
-    return extMatch || Boolean(sizeMatch);
+    // Intercept all file downloads (documents, archives, software, media, data, code, etc.)
+    return true;
   } catch (_) {
     return false;
   }

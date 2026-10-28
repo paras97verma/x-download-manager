@@ -6,6 +6,7 @@ import {
   KeyRound,
   Play,
   Pause,
+  RotateCcw,
   CheckCircle2,
   AlertCircle,
   Clock,
@@ -14,6 +15,10 @@ import {
   Copy,
   Trash2,
   ExternalLink,
+  ShieldCheck,
+  CalendarClock,
+  Info,
+  ChevronRight,
 } from "lucide-react";
 import { DownloadItem } from "../types/xdm";
 import { formatBytes, formatEta, formatSpeed } from "../services/tauriBridge";
@@ -24,6 +29,10 @@ interface DownloadTableProps {
   onSelect: (id: string, isMulti?: boolean, isRange?: boolean) => void;
   onSelectAll: (all: boolean) => void;
   onTogglePauseResume: (item: DownloadItem) => void;
+  onRestartDownload: (id: string) => void;
+  onMoveToQueue: (id: string, queueId: string) => void;
+  onOpenProperties: (item: DownloadItem) => void;
+  onOpenScheduler: () => void;
   onOpenFile: (path: string) => void;
   onShowInFolder: (path: string) => void;
   onDeleteDownload: (id: string, deleteFile: boolean) => void;
@@ -41,11 +50,16 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   onSelect,
   onSelectAll,
   onTogglePauseResume,
+  onRestartDownload,
+  onMoveToQueue,
+  onOpenProperties,
+  onOpenScheduler,
   onOpenFile,
   onShowInFolder,
   onDeleteDownload,
 }) => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [showQueueSubmenu, setShowQueueSubmenu] = useState(false);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Close context menu on outside click or escape
@@ -53,10 +67,14 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
     const handleOutside = (e: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu(null);
+        setShowQueueSubmenu(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setContextMenu(null);
+      if (e.key === "Escape") {
+        setContextMenu(null);
+        setShowQueueSubmenu(false);
+      }
     };
     window.addEventListener("mousedown", handleOutside);
     window.addEventListener("keydown", handleKeyDown);
@@ -71,9 +89,10 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
     if (!selectedIds.has(item.id)) {
       onSelect(item.id, false);
     }
-    const x = Math.min(e.clientX, window.innerWidth - 220);
-    const y = Math.min(e.clientY, window.innerHeight - 260);
+    const x = Math.min(e.clientX, window.innerWidth - 250);
+    const y = Math.min(e.clientY, window.innerHeight - 380);
     setContextMenu({ x, y, item });
+    setShowQueueSubmenu(false);
   };
 
   const handleDoubleClick = (item: DownloadItem) => {
@@ -157,7 +176,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                   </div>
                   <div className="text-sm font-medium text-slate-300">No downloads in list</div>
                   <div className="text-xs text-slate-500 max-w-sm leading-relaxed">
-                    Click <strong className="text-blue-400">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or trigger a download in Dia, Arc, Chrome, Firefox, Safari, Brave, Edge, or Zen to intercept automatically.
+                    Click <strong className="text-blue-400">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or trigger any file download in Dia, Safari, Arc, Chrome, or Firefox to intercept automatically.
                   </div>
                 </div>
               </td>
@@ -320,14 +339,15 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
         </tbody>
       </table>
 
-      {/* macOS / Desktop Right-Click Context Menu */}
+      {/* IDM / FDM Full Right-Click Context Menu */}
       {contextMenu && (
         <div
           ref={contextMenuRef}
           style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed z-50 w-56 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200 overflow-hidden"
+          className="fixed z-50 w-60 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200 overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Pause / Resume */}
           {contextMenu.item.status === "downloading" ? (
             <button
               onClick={() => {
@@ -352,6 +372,19 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             </button>
           )}
 
+          {/* Restart from 0 bytes */}
+          <button
+            onClick={() => {
+              onRestartDownload(contextMenu.item.id);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
+            Restart from 0%
+          </button>
+
+          {/* Open File if completed */}
           {contextMenu.item.status === "completed" && (
             <button
               onClick={() => {
@@ -365,6 +398,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             </button>
           )}
 
+          {/* Show in Finder */}
           <button
             onClick={() => {
               onShowInFolder(contextMenu.item.save_path);
@@ -372,12 +406,84 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             }}
             className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
           >
-            <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
+            <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
             Show in Finder / Folder
           </button>
 
           <div className="h-px bg-slate-700/60 my-1" />
 
+          {/* Move to Queue submenu trigger */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowQueueSubmenu(true)}
+            onMouseLeave={() => setShowQueueSubmenu(false)}
+          >
+            <button
+              type="button"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+            >
+              <span className="flex items-center gap-2">
+                <Server className="w-3.5 h-3.5 text-purple-400" />
+                Move to Queue
+              </span>
+              <ChevronRight className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {showQueueSubmenu && (
+              <div className="absolute left-full top-0 ml-1 w-48 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs">
+                <button
+                  onClick={() => {
+                    onMoveToQueue(contextMenu.item.id, "main-queue");
+                    setContextMenu(null);
+                  }}
+                  className={`w-full px-3 py-1.5 text-left hover:bg-blue-600 hover:text-white ${
+                    contextMenu.item.queue_id === "main-queue" ? "text-indigo-400 font-semibold" : ""
+                  }`}
+                >
+                  Main Download Queue
+                </button>
+                <button
+                  onClick={() => {
+                    onMoveToQueue(contextMenu.item.id, "night-queue");
+                    setContextMenu(null);
+                  }}
+                  className={`w-full px-3 py-1.5 text-left hover:bg-blue-600 hover:text-white ${
+                    contextMenu.item.queue_id === "night-queue" ? "text-indigo-400 font-semibold" : ""
+                  }`}
+                >
+                  Night Off-Peak Queue
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Schedule Download */}
+          <button
+            onClick={() => {
+              onOpenScheduler();
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+          >
+            <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
+            Schedule Queue & Timer...
+          </button>
+
+          {/* Verify Checksum / File Properties */}
+          <button
+            onClick={() => {
+              onOpenProperties(contextMenu.item);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+          >
+            <Info className="w-3.5 h-3.5 text-emerald-400" />
+            File Properties & Checksum...
+          </button>
+
+          <div className="h-px bg-slate-700/60 my-1" />
+
+          {/* Copy URL & Path */}
           <button
             onClick={() => {
               navigator.clipboard?.writeText(contextMenu.item.url);
@@ -402,6 +508,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
 
           <div className="h-px bg-slate-700/60 my-1" />
 
+          {/* Remove / Delete */}
           <button
             onClick={() => {
               onDeleteDownload(contextMenu.item.id, false);

@@ -7,6 +7,7 @@ import { AddDownloadModal } from "./components/AddDownloadModal";
 import { BrowserExtensionsModal } from "./components/BrowserExtensionsModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { SchedulerModal } from "./components/SchedulerModal";
+import { FilePropertiesModal } from "./components/FilePropertiesModal";
 import {
   DEFAULT_SETTINGS,
   INITIAL_BROWSERS,
@@ -15,8 +16,10 @@ import {
   apiGetBrowserStatuses,
   apiGetDownloads,
   apiGetSettings,
+  apiMoveToQueue,
   apiOpenFile,
   apiPauseDownload,
+  apiRestartDownload,
   apiResumeDownload,
   apiShowInFolder,
   apiToggleBrowserExtension,
@@ -49,6 +52,7 @@ export const App: React.FC = () => {
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
+  const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
 
   // Sync real state from Tauri backend on mount and via periodic polling
   const syncFromBackend = useCallback(async () => {
@@ -348,6 +352,33 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleRestartDownload = (id: string) => {
+    if (isTauriRuntime()) {
+      apiRestartDownload(id);
+    }
+    setDownloads((prev) =>
+      prev.map((d) => {
+        if (d.id !== id) return d;
+        return {
+          ...d,
+          downloaded_bytes: 0,
+          speed_bps: 14_500_000,
+          status: "downloading",
+          segments: buildSegments(d.total_bytes, d.threads_count, 0, true),
+        };
+      })
+    );
+  };
+
+  const handleMoveToQueue = (id: string, queueId: string) => {
+    if (isTauriRuntime()) {
+      apiMoveToQueue(id, queueId);
+    }
+    setDownloads((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, queue_id: queueId } : d))
+    );
+  };
+
   // Standard macOS Keyboard Shortcuts (Cmd + , for Settings, Cmd + N for New URL, etc.)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -408,6 +439,7 @@ export const App: React.FC = () => {
         else if (showExtensionsModal) setShowExtensionsModal(false);
         else if (settingsTab) setSettingsTab(null);
         else if (showSchedulerModal) setShowSchedulerModal(false);
+        else if (propertiesItem) setPropertiesItem(null);
         else if (selectedIds.size > 0) setSelectedIds(new Set());
       }
     };
@@ -421,6 +453,7 @@ export const App: React.FC = () => {
     showExtensionsModal,
     settingsTab,
     showSchedulerModal,
+    propertiesItem,
   ]);
 
   return (
@@ -480,6 +513,10 @@ export const App: React.FC = () => {
             onSelect={handleSelect}
             onSelectAll={handleSelectAll}
             onTogglePauseResume={handleTogglePauseResume}
+            onRestartDownload={handleRestartDownload}
+            onMoveToQueue={handleMoveToQueue}
+            onOpenProperties={(item) => setPropertiesItem(item)}
+            onOpenScheduler={() => setShowSchedulerModal(true)}
             onOpenFile={(path) => apiOpenFile(path)}
             onShowInFolder={(path) => apiShowInFolder(path)}
             onDeleteDownload={(id, deleteFile) => handleDeleteOne(id, deleteFile)}
@@ -489,8 +526,8 @@ export const App: React.FC = () => {
       </div>
 
       {/* Footer with required signature: Made with ❤️ by ~peivee */}
-      <footer className="h-8 bg-[#090d14] border-t border-slate-800 px-4 flex items-center justify-between text-[11px] text-slate-400 select-none shrink-0">
-        <div className="flex items-center gap-4">
+      <footer className="h-8 bg-[#090d14] border-t border-slate-800 px-4 flex items-center justify-between text-[11px] text-slate-400 select-none shrink-0 overflow-x-auto gap-4">
+        <div className="flex items-center gap-4 shrink-0">
           <span>
             Active Transfers:{" "}
             <strong className="text-slate-200">
@@ -505,13 +542,30 @@ export const App: React.FC = () => {
           </span>
           <span>
             Extensions Connected:{" "}
-            <strong className="text-blue-400">
-              {browsers.filter((b) => b.extension_enabled && b.detected_installed).length} Browsers
-            </strong>
+            {(() => {
+              const connected = browsers.filter(
+                (b) => b.detected_installed && b.extension_enabled && b.native_host_registered
+              );
+              if (connected.length === 0) {
+                return (
+                  <button
+                    onClick={() => setShowExtensionsModal(true)}
+                    className="text-amber-400 hover:text-amber-300 font-medium underline underline-offset-2 ml-1"
+                  >
+                    0 Connected (Click to Integrate)
+                  </button>
+                );
+              }
+              return (
+                <strong className="text-emerald-400 ml-1">
+                  {connected.length} {connected.length === 1 ? "Browser" : "Browsers"} ({connected.map((b) => b.display_name).join(", ")})
+                </strong>
+              );
+            })()}
           </span>
         </div>
 
-        <div className="font-medium text-slate-200 tracking-wide">
+        <div className="font-medium text-slate-200 tracking-wide shrink-0">
           Made with ❤️ by ~peivee
         </div>
       </footer>
@@ -596,6 +650,13 @@ export const App: React.FC = () => {
       {showSchedulerModal && (
         <SchedulerModal
           settings={settings}
+          downloads={downloads}
+          onSaveSettings={(newSettings) => {
+            setSettings(newSettings);
+            if (isTauriRuntime()) {
+              apiUpdateSettings(newSettings);
+            }
+          }}
           onStartQueueNow={(qId) => {
             setDownloads((prev) =>
               prev.map((d) =>
@@ -606,6 +667,13 @@ export const App: React.FC = () => {
             );
           }}
           onClose={() => setShowSchedulerModal(false)}
+        />
+      )}
+
+      {propertiesItem && (
+        <FilePropertiesModal
+          item={propertiesItem}
+          onClose={() => setPropertiesItem(null)}
         />
       )}
     </div>

@@ -255,6 +255,89 @@ fn open_extension_folder(family: String) -> Result<String, String> {
     Ok(dir.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn restart_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
+    if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+        let _ = tx.send(true);
+    }
+    let save_path = {
+        let mut dls = engine.downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
+            d.downloaded_bytes = 0;
+            d.speed_bps = 0;
+            d.eta_seconds = None;
+            d.status = DownloadStatus::Downloading;
+            for seg in &mut d.segments {
+                seg.downloaded_bytes = 0;
+                seg.speed_bps = 0;
+                seg.status = "waiting".to_string();
+            }
+            d.transfer_log
+                .push("Restarting download from 0 bytes...".to_string());
+            Some(d.save_path.clone())
+        } else {
+            None
+        }
+    };
+
+    if let Some(path) = save_path {
+        let resolved = crate::config::resolve_path(&path);
+        let _ = std::fs::remove_file(&resolved);
+        let part_file = resolved.with_extension(format!(
+            "{}.part",
+            resolved.extension().and_then(|s| s.to_str()).unwrap_or("")
+        ));
+        let _ = std::fs::remove_file(&part_file);
+    }
+
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    engine.active_cancellations.write().insert(id.clone(), tx);
+    let dls_arc = Arc::clone(&engine.downloads);
+    let st_arc = Arc::clone(&engine.settings);
+    tauri::async_runtime::spawn(async move {
+        let _ = execute_segmented_http_download(id, dls_arc, st_arc, rx).await;
+    });
+    Ok(())
+}
+
+#[tauri::command]
+async fn verify_file_checksum(path: String) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let resolved = crate::config::resolve_path(&path);
+    if !resolved.exists() {
+        return Err(format!("File does not exist: {}", resolved.display()));
+    }
+
+    let mut file = std::fs::File::open(&resolved).map_err(|e| e.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    let hash = format!("{:x}", hasher.finalize());
+    Ok(hash)
+}
+
+#[tauri::command]
+fn move_to_queue(
+    id: String,
+    queue_id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    let mut dls = engine.downloads.write();
+    if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
+        d.queue_id = queue_id.clone();
+        d.transfer_log.push(format!("Moved to queue: {}", queue_id));
+    }
+    Ok(())
+}
+
 pub fn run_app() {
     let engine = Arc::new(DownloadEngine::new());
 
@@ -300,6 +383,9 @@ pub fn run_app() {
             show_in_folder,
             open_browser_url,
             open_extension_folder,
+            restart_download,
+            verify_file_checksum,
+            move_to_queue,
         ])
         .run(tauri::generate_context!())
         .expect("error while running X Download Manager");

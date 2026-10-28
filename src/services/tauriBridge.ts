@@ -153,6 +153,37 @@ export async function apiOpenExtensionFolder(family: string): Promise<string | n
   }
 }
 
+export async function apiRestartDownload(id: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("restart_download", { id });
+  } catch (err) {
+    console.error("Failed to restart_download via Tauri:", err);
+  }
+}
+
+export async function apiVerifyFileChecksum(path: string): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    // Generate mock SHA-256 for browser preview
+    return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+  }
+  try {
+    return await invoke<string>("verify_file_checksum", { path });
+  } catch (err) {
+    console.error("Failed to verify_file_checksum via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiMoveToQueue(id: string, queueId: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("move_to_queue", { id, queueId });
+  } catch (err) {
+    console.error("Failed to move_to_queue via Tauri:", err);
+  }
+}
+
 export function buildSegments(
   totalBytes: number,
   count: number,
@@ -329,78 +360,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 export const INITIAL_BROWSERS: BrowserStatus[] = [
   {
-    id: "chrome",
-    display_name: "Google Chrome",
-    family: "chromium",
-    detected_installed: true,
-    executable_path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    extension_enabled: true,
-    native_host_registered: true,
-    manifest_path: "~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.peivee.xdm.json",
-    extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Connected & Intercepting Downloads",
-  },
-  {
-    id: "brave",
-    display_name: "Brave Browser",
-    family: "chromium",
-    detected_installed: true,
-    executable_path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-    extension_enabled: true,
-    native_host_registered: true,
-    manifest_path: "~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.peivee.xdm.json",
-    extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Connected & Intercepting Downloads",
-  },
-  {
-    id: "edge",
-    display_name: "Microsoft Edge",
-    family: "chromium",
-    detected_installed: true,
-    executable_path: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    extension_enabled: true,
-    native_host_registered: true,
-    manifest_path: "~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/com.peivee.xdm.json",
-    extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Connected & Intercepting Downloads",
-  },
-  {
-    id: "firefox",
-    display_name: "Mozilla Firefox",
-    family: "firefox",
-    detected_installed: true,
-    executable_path: "/Applications/Firefox.app/Contents/MacOS/firefox",
-    extension_enabled: true,
-    native_host_registered: true,
-    manifest_path: "~/Library/Application Support/Mozilla/NativeMessagingHosts/com.peivee.xdm.json",
-    extension_bundle_path: "extensions/firefox (WebExtension XPI)",
-    status_message: "Connected & Intercepting Downloads",
-  },
-  {
-    id: "safari",
-    display_name: "Apple Safari",
-    family: "safari",
-    detected_installed: true,
-    executable_path: "/Applications/Safari.app/Contents/MacOS/Safari",
-    extension_enabled: true,
-    native_host_registered: true,
-    manifest_path: "~/Library/Application Support/XDownloadManager/SafariExtension/com.peivee.xdm.json",
-    extension_bundle_path: "extensions/safari (Safari App Extension)",
-    status_message: "Connected & Intercepting Downloads",
-  },
-  {
-    id: "arc",
-    display_name: "Arc Browser",
-    family: "chromium",
-    detected_installed: true,
-    executable_path: "/Applications/Arc.app/Contents/MacOS/Arc",
-    extension_enabled: true,
-    native_host_registered: true,
-    manifest_path: "~/Library/Application Support/Arc/User Data/NativeMessagingHosts/com.peivee.xdm.json",
-    extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Connected & Intercepting Downloads",
-  },
-  {
     id: "dia",
     display_name: "Dia Browser",
     family: "chromium",
@@ -410,19 +369,91 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/Dia/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Ready — Click Install/Repair to register Native Host",
+    status_message: "Detecting...",
+  },
+  {
+    id: "safari",
+    display_name: "Apple Safari",
+    family: "safari",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: true,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/XDownloadManager/SafariExtension/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/safari (Safari Web Extension)",
+    status_message: "Detecting...",
+  },
+  {
+    id: "chrome",
+    display_name: "Google Chrome",
+    family: "chromium",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: true,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Detecting...",
+  },
+  {
+    id: "brave",
+    display_name: "Brave Browser",
+    family: "chromium",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: true,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Detecting...",
+  },
+  {
+    id: "edge",
+    display_name: "Microsoft Edge",
+    family: "chromium",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: true,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Detecting...",
+  },
+  {
+    id: "arc",
+    display_name: "Arc Browser",
+    family: "chromium",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: true,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/Arc/User Data/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Detecting...",
+  },
+  {
+    id: "firefox",
+    display_name: "Mozilla Firefox",
+    family: "firefox",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: true,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/Mozilla/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/firefox (WebExtension XPI)",
+    status_message: "Detecting...",
   },
   {
     id: "zen",
     display_name: "Zen Browser",
     family: "firefox",
-    detected_installed: true,
-    executable_path: "/Applications/Zen Browser.app/Contents/MacOS/zen",
+    detected_installed: false,
+    executable_path: null,
     extension_enabled: true,
-    native_host_registered: true,
+    native_host_registered: false,
     manifest_path: "~/Library/Application Support/zen/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
-    status_message: "Connected & Intercepting Downloads",
+    status_message: "Detecting...",
   },
   {
     id: "orion",
@@ -434,7 +465,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/Orion/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Ready — Click Install/Repair to register Native Host",
+    status_message: "Detecting...",
   },
   {
     id: "librewolf",
@@ -446,7 +477,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/LibreWolf/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
   {
     id: "waterfox",
@@ -458,7 +489,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/Waterfox/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
   {
     id: "floorp",
@@ -470,7 +501,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/Floorp/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
   {
     id: "chromium",
@@ -482,7 +513,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/Chromium/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
   {
     id: "operagx",
@@ -494,7 +525,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/com.operasoftware.OperaGX/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
   {
     id: "opera",
@@ -506,7 +537,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
   {
     id: "vivaldi",
@@ -518,7 +549,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     native_host_registered: false,
     manifest_path: "~/Library/Application Support/Vivaldi/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Browser not detected on this system",
+    status_message: "Detecting...",
   },
 ];
 
