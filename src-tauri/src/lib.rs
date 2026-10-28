@@ -12,10 +12,9 @@ use crate::browser::{
 };
 use crate::config::AppSettings;
 use crate::engine::{
-    ftp_auth::{download_via_ftp, resolve_usersdrive_or_filehost, ResolvedAuthDownload},
+    ftp_auth::{resolve_usersdrive_or_filehost, ResolvedAuthDownload},
     http::execute_segmented_http_download,
-    torrent::create_initial_torrent_metadata,
-    DownloadEngine, DownloadItem, DownloadProtocol, DownloadStatus, NewDownloadRequest,
+    DownloadEngine, DownloadItem, DownloadStatus, NewDownloadRequest,
 };
 
 #[tauri::command]
@@ -28,64 +27,9 @@ async fn add_download_task(
     req: NewDownloadRequest,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<DownloadItem, String> {
-    let mut item = engine.add_download(req.clone());
-
-    if item.protocol == DownloadProtocol::BitTorrent || item.protocol == DownloadProtocol::Magnet {
-        let default_trackers = engine.settings.read().torrent.default_trackers.clone();
-        let seq = req
-            .sequential_torrent
-            .unwrap_or_else(|| engine.settings.read().torrent.sequential_download_default);
-        let meta = create_initial_torrent_metadata(&item.url, &default_trackers, seq);
-        let mut dls = engine.downloads.write();
-        if let Some(d) = dls.iter_mut().find(|d| d.id == item.id) {
-            d.torrent_meta = Some(meta.clone());
-            d.total_bytes = meta.files.iter().map(|f| f.size_bytes).sum();
-            item = d.clone();
-        }
-    } else if item.protocol == DownloadProtocol::Usersdrive
-        || item.protocol == DownloadProtocol::FileHostAuth
-    {
-        let st = engine.settings.read().clone();
-        if let Ok(resolved) =
-            resolve_usersdrive_or_filehost(&item.url, &st, item.cookies.clone()).await
-        {
-            let mut dls = engine.downloads.write();
-            if let Some(d) = dls.iter_mut().find(|d| d.id == item.id) {
-                d.resolved_url = Some(resolved.direct_url);
-                if let Some(fname) = resolved.filename {
-                    d.filename = fname;
-                }
-                d.transfer_log.push(resolved.resolver_note);
-                item = d.clone();
-            }
-        }
-    }
-
-    if req.start_immediately {
-        let (tx, rx) = tokio::sync::watch::channel(false);
-        engine
-            .active_cancellations
-            .write()
-            .insert(item.id.clone(), tx);
-
-        let dls_arc = Arc::clone(&engine.downloads);
-        let st_arc = Arc::clone(&engine.settings);
-        let id_clone = item.id.clone();
-        let proto = item.protocol.clone();
-        let url_clone = item.url.clone();
-        let save_clone = item.save_path.clone();
-
-        tauri::async_runtime::spawn(async move {
-            if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
-                let st = st_arc.read().clone();
-                let _ = download_via_ftp(&url_clone, &save_clone, 0, &st).await;
-            } else if proto != DownloadProtocol::BitTorrent && proto != DownloadProtocol::Magnet {
-                let _ = execute_segmented_http_download(id_clone, dls_arc, st_arc, rx).await;
-            }
-        });
-    }
-
-    Ok(item)
+    let item = engine.add_download(req.clone());
+    let started = engine.inner().start_download_execution(item, &req).await;
+    Ok(started)
 }
 
 #[tauri::command]
@@ -159,6 +103,7 @@ fn update_settings(
     new_settings: AppSettings,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<AppSettings, String> {
+    crate::config::ensure_directories_exist(&new_settings);
     engine.config_manager.save(&new_settings)?;
     *engine.settings.write() = new_settings.clone();
     Ok(new_settings)

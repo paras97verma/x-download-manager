@@ -91,11 +91,12 @@ async fn handle_intercept(
         sequential_torrent: None,
     };
 
-    let created = engine.add_download(req);
+    let created = engine.add_download(req.clone());
+    let started = engine.start_download_execution(created, &req).await;
     Json(serde_json::json!({
         "accepted": true,
-        "download_id": created.id,
-        "filename": created.filename
+        "download_id": started.id,
+        "filename": started.filename
     }))
 }
 

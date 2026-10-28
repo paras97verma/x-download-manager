@@ -235,12 +235,20 @@ impl DownloadEngine {
             .threads_count
             .unwrap_or(settings.default_threads_per_download)
             .clamp(1, settings.max_threads_per_download);
-        let save_path = req.save_path.unwrap_or_else(|| {
-            format!(
-                "{}/{}/{}",
-                settings.default_download_dir, category, filename
-            )
-        });
+        let save_path = req
+            .save_path
+            .map(|p| {
+                crate::config::resolve_path(&p)
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .unwrap_or_else(|| {
+                let base = crate::config::resolve_path(&settings.default_download_dir);
+                base.join(&category)
+                    .join(&filename)
+                    .to_string_lossy()
+                    .to_string()
+            });
 
         let mut headers = req.custom_headers.unwrap_or_default();
         if let Some(ua) = req.user_agent {
@@ -287,6 +295,72 @@ impl DownloadEngine {
         };
 
         self.downloads.write().insert(0, item.clone());
+        item
+    }
+
+    pub async fn start_download_execution(
+        self: &Arc<Self>,
+        mut item: DownloadItem,
+        req: &NewDownloadRequest,
+    ) -> DownloadItem {
+        if item.protocol == DownloadProtocol::BitTorrent
+            || item.protocol == DownloadProtocol::Magnet
+        {
+            let default_trackers = self.settings.read().torrent.default_trackers.clone();
+            let seq = req
+                .sequential_torrent
+                .unwrap_or_else(|| self.settings.read().torrent.sequential_download_default);
+            let meta = torrent::create_initial_torrent_metadata(&item.url, &default_trackers, seq);
+            let mut dls = self.downloads.write();
+            if let Some(d) = dls.iter_mut().find(|d| d.id == item.id) {
+                d.torrent_meta = Some(meta.clone());
+                d.total_bytes = meta.files.iter().map(|f| f.size_bytes).sum();
+                item = d.clone();
+            }
+        } else if item.protocol == DownloadProtocol::Usersdrive
+            || item.protocol == DownloadProtocol::FileHostAuth
+        {
+            let st = self.settings.read().clone();
+            if let Ok(resolved) =
+                ftp_auth::resolve_usersdrive_or_filehost(&item.url, &st, item.cookies.clone()).await
+            {
+                let mut dls = self.downloads.write();
+                if let Some(d) = dls.iter_mut().find(|d| d.id == item.id) {
+                    d.resolved_url = Some(resolved.direct_url);
+                    if let Some(fname) = resolved.filename {
+                        d.filename = fname;
+                    }
+                    d.transfer_log.push(resolved.resolver_note);
+                    item = d.clone();
+                }
+            }
+        }
+
+        if req.start_immediately {
+            let (tx, rx) = tokio::sync::watch::channel(false);
+            self.active_cancellations
+                .write()
+                .insert(item.id.clone(), tx);
+
+            let dls_arc = Arc::clone(&self.downloads);
+            let st_arc = Arc::clone(&self.settings);
+            let id_clone = item.id.clone();
+            let proto = item.protocol.clone();
+            let url_clone = item.url.clone();
+            let save_clone = item.save_path.clone();
+
+            tauri::async_runtime::spawn(async move {
+                if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
+                    let st = st_arc.read().clone();
+                    let _ = ftp_auth::download_via_ftp(&url_clone, &save_clone, 0, &st).await;
+                } else if proto != DownloadProtocol::BitTorrent && proto != DownloadProtocol::Magnet
+                {
+                    let _ =
+                        http::execute_segmented_http_download(id_clone, dls_arc, st_arc, rx).await;
+                }
+            });
+        }
+
         item
     }
 }

@@ -75,6 +75,21 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-800/60 text-xs">
+          {downloads.length === 0 && (
+            <tr>
+              <td colSpan={8} className="py-24 text-center text-slate-500">
+                <div className="flex flex-col items-center justify-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
+                    <Globe className="w-6 h-6 text-slate-400" />
+                  </div>
+                  <div className="text-sm font-medium text-slate-300">No downloads in list</div>
+                  <div className="text-xs text-slate-500 max-w-sm leading-relaxed">
+                    Click <strong className="text-blue-400">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or download any file in Chrome, Firefox, Safari, Arc, Brave, Edge, or Zen to intercept automatically.
+                  </div>
+                </div>
+              </td>
+            </tr>
+          )}
           {downloads.map((item) => {
             const pct =
               item.total_bytes > 0

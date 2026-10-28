@@ -294,13 +294,59 @@ impl Default for AppSettings {
     }
 }
 
-fn dirs_default_download_path() -> String {
-    if let Some(user_dirs) = directories::UserDirs::new() {
-        if let Some(dl) = user_dirs.download_dir() {
-            return dl.to_string_lossy().to_string();
+pub fn resolve_path(p: &str) -> PathBuf {
+    if let Some(stripped) = p.strip_prefix("~/") {
+        if let Some(base) = directories::BaseDirs::new() {
+            return base.home_dir().join(stripped);
+        }
+    } else if p == "~" {
+        if let Some(base) = directories::BaseDirs::new() {
+            return base.home_dir().to_path_buf();
         }
     }
+    PathBuf::from(p)
+}
+
+pub fn dirs_default_download_path() -> String {
+    if let Some(user_dirs) = directories::UserDirs::new() {
+        if let Some(dl) = user_dirs.download_dir() {
+            return dl.join("XDM").to_string_lossy().to_string();
+        }
+    }
+    if let Some(base_dirs) = directories::BaseDirs::new() {
+        return base_dirs
+            .home_dir()
+            .join("Downloads")
+            .join("XDM")
+            .to_string_lossy()
+            .to_string();
+    }
     "~/Downloads/XDM".to_string()
+}
+
+pub fn ensure_directories_exist(settings: &AppSettings) {
+    let dl_dir = resolve_path(&settings.default_download_dir);
+    if let Err(e) = fs::create_dir_all(&dl_dir) {
+        tracing::warn!(
+            "Failed to create default download directory {}: {}",
+            dl_dir.display(),
+            e
+        );
+    }
+
+    let temp_dir = resolve_path(&settings.temp_segment_dir);
+    if let Err(e) = fs::create_dir_all(&temp_dir) {
+        tracing::warn!(
+            "Failed to create temp directory {}: {}",
+            temp_dir.display(),
+            e
+        );
+    }
+
+    for cat in &settings.categories {
+        let cat_dir = dl_dir.join(&cat.default_subfolder);
+        let _ = fs::create_dir_all(&cat_dir);
+    }
 }
 
 pub struct ConfigManager {
@@ -321,14 +367,39 @@ impl ConfigManager {
     }
 
     pub fn load(&self) -> AppSettings {
-        if let Ok(raw) = fs::read_to_string(&self.config_path) {
+        let mut settings = if let Ok(raw) = fs::read_to_string(&self.config_path) {
             if let Ok(parsed) = serde_json::from_str::<AppSettings>(&raw) {
-                return parsed;
+                parsed
+            } else {
+                let default = AppSettings::default();
+                let _ = self.save(&default);
+                default
             }
+        } else {
+            let default = AppSettings::default();
+            let _ = self.save(&default);
+            default
+        };
+
+        // If settings had a default_download_dir ending with pure "Downloads"
+        // (like on initial runs where dirs_default_download_path returned ~/Downloads without /XDM),
+        // or literal "~/Downloads/XDM", migrate to canonical ~/Downloads/XDM path.
+        let resolved = resolve_path(&settings.default_download_dir);
+        let path_str = resolved.to_string_lossy();
+        if path_str.ends_with("/Downloads") || path_str.ends_with("\\Downloads") {
+            settings.default_download_dir = resolved.join("XDM").to_string_lossy().to_string();
+            settings.temp_segment_dir = format!("{}/.xdm_temp", settings.default_download_dir);
+            let _ = self.save(&settings);
+        } else if settings.default_download_dir.starts_with("~/") {
+            settings.default_download_dir = resolved.to_string_lossy().to_string();
+            settings.temp_segment_dir = format!("{}/.xdm_temp", settings.default_download_dir);
+            let _ = self.save(&settings);
         }
-        let default = AppSettings::default();
-        let _ = self.save(&default);
-        default
+
+        // Guarantee that the download folder and all subfolders exist immediately
+        ensure_directories_exist(&settings);
+
+        settings
     }
 
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
@@ -340,5 +411,40 @@ impl ConfigManager {
 impl Default for ConfigManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_tilde_path() {
+        let p = resolve_path("~/Downloads/XDM");
+        assert!(!p.to_string_lossy().starts_with('~'));
+        assert!(p.to_string_lossy().contains("Downloads"));
+        assert!(p.to_string_lossy().ends_with("XDM"));
+    }
+
+    #[test]
+    fn test_dirs_default_download_path_has_xdm() {
+        let p = dirs_default_download_path();
+        assert!(p.ends_with("XDM"));
+    }
+
+    #[test]
+    fn test_ensure_directories_exist() {
+        let temp_dir = std::env::temp_dir().join("xdm_test_config");
+        let mut settings = AppSettings::default();
+        settings.default_download_dir = temp_dir.to_string_lossy().to_string();
+        settings.temp_segment_dir = temp_dir.join(".xdm_temp").to_string_lossy().to_string();
+
+        ensure_directories_exist(&settings);
+        assert!(temp_dir.exists());
+        assert!(temp_dir.join(".xdm_temp").exists());
+        for cat in &settings.categories {
+            assert!(temp_dir.join(&cat.default_subfolder).exists());
+        }
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

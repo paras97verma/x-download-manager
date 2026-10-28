@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar } from "./components/Sidebar";
 import { DownloadTable } from "./components/DownloadTable";
@@ -10,9 +10,18 @@ import { SchedulerModal } from "./components/SchedulerModal";
 import {
   DEFAULT_SETTINGS,
   INITIAL_BROWSERS,
-  INITIAL_DOWNLOADS,
+  apiAddDownload,
+  apiDeleteDownload,
+  apiGetBrowserStatuses,
+  apiGetDownloads,
+  apiGetSettings,
+  apiPauseDownload,
+  apiResumeDownload,
+  apiToggleBrowserExtension,
+  apiUpdateSettings,
   buildSegments,
   formatSpeed,
+  isTauriRuntime,
 } from "./services/tauriBridge";
 import {
   AppSettings,
@@ -22,11 +31,11 @@ import {
 } from "./types/xdm";
 
 export const App: React.FC = () => {
-  const [downloads, setDownloads] = useState<DownloadItem[]>(INITIAL_DOWNLOADS);
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [browsers, setBrowsers] = useState<BrowserStatus[]>(INITIAL_BROWSERS);
 
-  const [selectedId, setSelectedId] = useState<string | null>(INITIAL_DOWNLOADS[0].id);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedQueue, setSelectedQueue] = useState<string>("all");
@@ -37,8 +46,41 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
 
-  // Live telemetry tick for active downloads
+  // Sync real state from Tauri backend on mount and via periodic polling
+  const syncFromBackend = useCallback(async () => {
+    if (!isTauriRuntime()) return;
+    try {
+      const list = await apiGetDownloads();
+      setDownloads(list);
+      setSelectedId((prev) => {
+        if (prev && list.some((d) => d.id === prev)) return prev;
+        return list.length > 0 ? list[0].id : null;
+      });
+    } catch (e) {
+      console.warn("Telemetry polling failed:", e);
+    }
+  }, []);
+
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    apiGetSettings().then((s) => {
+      if (s) setSettings(s);
+    });
+
+    apiGetBrowserStatuses().then((b) => {
+      if (b && b.length > 0) setBrowsers(b);
+    });
+
+    syncFromBackend();
+    const interval = setInterval(syncFromBackend, 1000);
+    return () => clearInterval(interval);
+  }, [syncFromBackend]);
+
+  // Live telemetry simulation tick only when running in web preview mode (outside Tauri)
+  useEffect(() => {
+    if (isTauriRuntime()) return;
+
     const timer = setInterval(() => {
       setDownloads((prev) =>
         prev.map((d) => {
@@ -102,7 +144,20 @@ export const App: React.FC = () => {
     [downloads]
   );
 
-  const handleAddDownload = (req: NewDownloadRequest) => {
+  const handleAddDownload = async (req: NewDownloadRequest) => {
+    if (isTauriRuntime()) {
+      try {
+        const item = await apiAddDownload(req);
+        if (item) {
+          setDownloads((prev) => [item, ...prev.filter((d) => d.id !== item.id)]);
+          setSelectedId(item.id);
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to add download via Tauri:", err);
+      }
+    }
+
     const isMagnet = req.url.toLowerCase().startsWith("magnet:?");
     const isUsersdrive = req.url.toLowerCase().includes("usersdrive.com");
     const isFtp = req.url.toLowerCase().startsWith("ftp://") || req.url.toLowerCase().startsWith("sftp://");
@@ -157,10 +212,18 @@ export const App: React.FC = () => {
   };
 
   const handleTogglePauseResume = (item: DownloadItem) => {
+    const resuming = item.status !== "downloading";
+    if (isTauriRuntime()) {
+      if (resuming) {
+        apiResumeDownload(item.id);
+      } else {
+        apiPauseDownload(item.id);
+      }
+    }
+
     setDownloads((prev) =>
       prev.map((d) => {
         if (d.id !== item.id) return d;
-        const resuming = d.status !== "downloading";
         return {
           ...d,
           status: resuming ? "downloading" : "paused",
@@ -180,15 +243,23 @@ export const App: React.FC = () => {
         onPauseSelected={() => {
           if (selectedItem) handleTogglePauseResume({ ...selectedItem, status: "downloading" });
         }}
-        onStopAll={() =>
+        onStopAll={() => {
+          if (isTauriRuntime()) {
+            downloads
+              .filter((d) => d.status === "downloading")
+              .forEach((d) => apiPauseDownload(d.id));
+          }
           setDownloads((prev) =>
             prev.map((d) =>
               d.status === "downloading" ? { ...d, status: "paused", speed_bps: 0 } : d
             )
-          )
-        }
+          );
+        }}
         onDeleteSelected={() => {
           if (!selectedId) return;
+          if (isTauriRuntime()) {
+            apiDeleteDownload(selectedId, false);
+          }
           setDownloads((prev) => prev.filter((d) => d.id !== selectedId));
           setSelectedId(null);
         }}
@@ -196,9 +267,13 @@ export const App: React.FC = () => {
         onOpenExtensions={() => setShowExtensionsModal(true)}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         settings={settings}
-        onToggleSpeedLimiter={() =>
-          setSettings((s) => ({ ...s, speed_limiter_enabled: !s.speed_limiter_enabled }))
-        }
+        onToggleSpeedLimiter={() => {
+          const next = { ...settings, speed_limiter_enabled: !settings.speed_limiter_enabled };
+          setSettings(next);
+          if (isTauriRuntime()) {
+            apiUpdateSettings(next);
+          }
+        }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
       />
@@ -268,6 +343,13 @@ export const App: React.FC = () => {
           browsers={browsers}
           settings={settings}
           onToggleBrowser={(browserId, enable) => {
+            if (isTauriRuntime()) {
+              apiToggleBrowserExtension(browserId, enable).then((updated) => {
+                if (updated) {
+                  setBrowsers((prev) => prev.map((b) => (b.id === browserId ? updated : b)));
+                }
+              });
+            }
             setBrowsers((prev) =>
               prev.map((b) =>
                 b.id === browserId
@@ -284,6 +366,13 @@ export const App: React.FC = () => {
             );
           }}
           onReinstallAll={() => {
+            if (isTauriRuntime()) {
+              browsers.forEach((b) => {
+                if (b.detected_installed) {
+                  apiToggleBrowserExtension(b.id, true);
+                }
+              });
+            }
             setBrowsers((prev) =>
               prev.map((b) =>
                 b.detected_installed
@@ -305,10 +394,34 @@ export const App: React.FC = () => {
         <SettingsModal
           initialTab={settingsTab}
           settings={settings}
-          onSave={setSettings}
+          onSave={(newSettings) => {
+            setSettings(newSettings);
+            if (isTauriRuntime()) {
+              apiUpdateSettings(newSettings);
+            }
+          }}
           onClose={() => setSettingsTab(null)}
         />
       )}
+
+      {showSchedulerModal && (
+        <SchedulerModal
+          settings={settings}
+          onStartQueueNow={(qId) => {
+            setDownloads((prev) =>
+              prev.map((d) =>
+                d.queue_id === qId && d.status !== "completed"
+                  ? { ...d, status: "downloading", speed_bps: 14_500_000 }
+                  : d
+              )
+            );
+          }}
+          onClose={() => setShowSchedulerModal(false)}
+        />
+      )}
+    </div>
+  );
+};
 
       {showSchedulerModal && (
         <SchedulerModal

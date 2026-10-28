@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
   AppSettings,
   BrowserStatus,
@@ -16,7 +17,102 @@ export const isTauriRuntime = (): boolean => {
   return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
 };
 
-export function buildSegments(totalBytes: number, count: number, downloadedRatio: number, active: boolean): ThreadSegment[] {
+export async function apiGetDownloads(): Promise<DownloadItem[]> {
+  if (!isTauriRuntime()) return [];
+  try {
+    return await invoke<DownloadItem[]>("get_downloads");
+  } catch (err) {
+    console.warn("Failed to get_downloads from Tauri backend:", err);
+    return [];
+  }
+}
+
+export async function apiAddDownload(req: NewDownloadRequest): Promise<DownloadItem | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<DownloadItem>("add_download_task", { req });
+  } catch (err) {
+    console.error("Failed to add_download_task via Tauri:", err);
+    throw err;
+  }
+}
+
+export async function apiPauseDownload(id: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("pause_download", { id });
+  } catch (err) {
+    console.error("Failed to pause_download via Tauri:", err);
+  }
+}
+
+export async function apiResumeDownload(id: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("resume_download", { id });
+  } catch (err) {
+    console.error("Failed to resume_download via Tauri:", err);
+  }
+}
+
+export async function apiDeleteDownload(id: string, deleteFile = false): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("delete_download", { id, deleteFile });
+  } catch (err) {
+    console.error("Failed to delete_download via Tauri:", err);
+  }
+}
+
+export async function apiGetSettings(): Promise<AppSettings | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<AppSettings>("get_settings");
+  } catch (err) {
+    console.warn("Failed to get_settings from Tauri backend:", err);
+    return null;
+  }
+}
+
+export async function apiUpdateSettings(settings: AppSettings): Promise<AppSettings | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<AppSettings>("update_settings", { newSettings: settings });
+  } catch (err) {
+    console.error("Failed to update_settings via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiGetBrowserStatuses(): Promise<BrowserStatus[]> {
+  if (!isTauriRuntime()) return [];
+  try {
+    return await invoke<BrowserStatus[]>("get_browser_statuses");
+  } catch (err) {
+    console.warn("Failed to get_browser_statuses from Tauri backend:", err);
+    return [];
+  }
+}
+
+export async function apiToggleBrowserExtension(
+  browserId: string,
+  enable: boolean
+): Promise<BrowserStatus | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<BrowserStatus>("toggle_browser_extension", { browserId, enable });
+  } catch (err) {
+    console.error("Failed to toggle_browser_extension via Tauri:", err);
+    return null;
+  }
+}
+
+export function buildSegments(
+  totalBytes: number,
+  count: number,
+  downloadedRatio: number,
+  active: boolean
+): ThreadSegment[] {
   const segSize = Math.floor(totalBytes / count);
   return Array.from({ length: count }, (_, idx) => {
     const start = idx * segSize;
@@ -35,172 +131,8 @@ export function buildSegments(totalBytes: number, count: number, downloadedRatio
   });
 }
 
-export const INITIAL_DOWNLOADS: DownloadItem[] = [
-  {
-    id: "dl-1",
-    filename: "macOS_Sequoia_15.1_Universal_SDK.dmg",
-    url: "https://swcdn.apple.com/content/downloads/macos/macOS_Sequoia_15.1_Universal_SDK.dmg",
-    resolved_url: "https://swcdn.apple.com/content/downloads/macos/macOS_Sequoia_15.1_Universal_SDK.dmg",
-    protocol: "https",
-    category: "Programs",
-    queue_id: "main-queue",
-    save_path: "~/Downloads/Programs/macOS_Sequoia_15.1_Universal_SDK.dmg",
-    total_bytes: 4_294_967_296,
-    downloaded_bytes: 2_877_628_088,
-    speed_bps: 28_450_000,
-    upload_speed_bps: 0,
-    eta_seconds: 49,
-    status: "downloading",
-    resumable: true,
-    threads_count: 16,
-    segments: buildSegments(4_294_967_296, 16, 0.67, true),
-    source_browser: "Chrome",
-    referer: "https://developer.apple.com/download/all/",
-    custom_headers: { "Accept-Ranges": "bytes" },
-    created_at: "2026-10-28T06:55:12Z",
-    transfer_log: [
-      "[06:55:12] Intercepted download from Google Chrome (Extension v1.0.0)",
-      "[06:55:12] GET Range: bytes=0-0 -> HTTP/2 206 Partial Content (Accept-Ranges: bytes)",
-      "[06:55:13] Dynamic Segment Allocator: Created 16 concurrent byte-range threads",
-      "[06:56:01] Thread #4 finished chunk early -> Dynamic work-stealing split Thread #11",
-    ],
-  },
-  {
-    id: "dl-2",
-    filename: "Ubuntu-24.04.1-Desktop-amd64.iso",
-    url: "magnet:?xt=urn:btih:3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0&dn=Ubuntu-24.04.1-Desktop-amd64.iso",
-    protocol: "magnet",
-    category: "Torrents",
-    queue_id: "main-queue",
-    save_path: "~/Downloads/Torrents/Ubuntu-24.04.1-Desktop-amd64.iso",
-    total_bytes: 5_153_960_755,
-    downloaded_bytes: 3_813_930_958,
-    speed_bps: 16_820_000,
-    upload_speed_bps: 2_450_000,
-    eta_seconds: 79,
-    status: "downloading",
-    resumable: true,
-    threads_count: 12,
-    segments: buildSegments(5_153_960_755, 12, 0.74, true),
-    torrent_meta: {
-      info_hash: "3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0",
-      piece_length: 262_144,
-      total_pieces: 19660,
-      completed_pieces: 14548,
-      peers_connected: 46,
-      seeds_connected: 128,
-      share_ratio: 0.42,
-      uploaded_bytes: 1_601_851_000,
-      sequential: true,
-      trackers: [
-        "https://torrent.ubuntu.com/announce",
-        "udp://tracker.opentrackr.org:1337/announce",
-        "udp://open.stealth.si:80/announce",
-      ],
-      peers: [
-        { ip_port: "185.125.190.29:51413", client: "qBittorrent 4.6.7", flags: "D E uTP", progress_pct: 100, down_speed_bps: 6_420_000, up_speed_bps: 410_000 },
-        { ip_port: "91.189.91.48:6881", client: "Transmission 4.0.6", flags: "D H PEX", progress_pct: 100, down_speed_bps: 5_190_000, up_speed_bps: 380_000 },
-        { ip_port: "140.82.121.34:51413", client: "libtorrent 2.0.10", flags: "D E", progress_pct: 92.4, down_speed_bps: 3_110_000, up_speed_bps: 920_000 },
-        { ip_port: "198.51.100.77:58210", client: "XDM BitTorrent 1.0", flags: "D U PEX", progress_pct: 64.1, down_speed_bps: 2_100_000, up_speed_bps: 740_000 },
-      ],
-      files: [
-        { index: 0, path: "Ubuntu-24.04.1-Desktop-amd64.iso", size_bytes: 5_153_956_659, downloaded_bytes: 3_813_926_862, priority: "high" },
-        { index: 1, path: "SHA256SUMS", size_bytes: 4_096, downloaded_bytes: 4_096, priority: "normal" },
-      ],
-    },
-    source_browser: "Firefox",
-    custom_headers: {},
-    created_at: "2026-10-28T06:48:00Z",
-    transfer_log: [
-      "[06:48:00] Parsed Magnet URI (InfoHash: 3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0)",
-      "[06:48:02] DHT + Tracker announce succeeded: 128 seeds, 46 leechers discovered",
-      "[06:48:03] Sequential piece mode enabled for fast verification",
-    ],
-  },
-  {
-    id: "dl-3",
-    filename: "Unreal_Engine_5.5_Assets_Bundle.7z",
-    url: "https://usersdrive.com/k9x82m4p10qa.html",
-    resolved_url: "https://cdn7.usersdrive.com/d/74a9f0c2e1b84/Unreal_Engine_5.5_Assets_Bundle.7z",
-    protocol: "usersdrive",
-    category: "Compressed",
-    queue_id: "main-queue",
-    save_path: "~/Downloads/Compressed/Unreal_Engine_5.5_Assets_Bundle.7z",
-    total_bytes: 1_932_735_283,
-    downloaded_bytes: 1_120_986_464,
-    speed_bps: 14_200_000,
-    upload_speed_bps: 0,
-    eta_seconds: 57,
-    status: "downloading",
-    resumable: true,
-    threads_count: 8,
-    segments: buildSegments(1_932_735_283, 8, 0.58, true),
-    source_browser: "Safari",
-    referer: "https://usersdrive.com/k9x82m4p10qa.html",
-    cookies: "xfss=9b81e2c7a4f019d3e; lang=english",
-    site_credential_id: "cred-usersdrive-default",
-    custom_headers: { Authorization: "Session-Cookie-Passthrough" },
-    created_at: "2026-10-28T06:58:40Z",
-    transfer_log: [
-      "[06:58:40] Matched Site Login Vault entry '*.usersdrive.com' + Safari session cookies",
-      "[06:58:41] Resolved Usersdrive stage-2 form (op=download2, id=k9x82m4p10qa) -> Direct CDN URL",
-      "[06:58:42] Spawning 8 authenticated HTTPS byte-range worker threads",
-    ],
-  },
-  {
-    id: "dl-4",
-    filename: "Blender_4.3.0_Linux_x64.tar.xz",
-    url: "ftp://ftp.nluug.nl/pub/graphics/blender/release/Blender4.3/blender-4.3.0-linux-x64.tar.xz",
-    protocol: "ftp",
-    category: "Compressed",
-    queue_id: "night-queue",
-    save_path: "~/Downloads/Compressed/Blender_4.3.0_Linux_x64.tar.xz",
-    total_bytes: 348_127_232,
-    downloaded_bytes: 156_657_254,
-    speed_bps: 0,
-    upload_speed_bps: 0,
-    eta_seconds: null,
-    status: "paused",
-    resumable: true,
-    threads_count: 4,
-    segments: buildSegments(348_127_232, 4, 0.45, false),
-    custom_headers: {},
-    created_at: "2026-10-28T06:30:00Z",
-    transfer_log: [
-      "[06:30:00] Connected to ftp.nluug.nl:21 (220 FTP Server ready)",
-      "[06:30:01] USER anonymous -> 230 Login successful | TYPE I (Binary) | REST supported",
-      "[06:34:15] Paused at byte offset 156,657,254 (ready for REST resume)",
-    ],
-  },
-  {
-    id: "dl-5",
-    filename: "DaVinci_Resolve_Studio_19.1_Installer.zip",
-    url: "https://downloads.blackmagicdesign.com/DaVinci_Resolve_Studio_19.1_Installer.zip",
-    protocol: "https",
-    category: "Compressed",
-    queue_id: "main-queue",
-    save_path: "~/Downloads/Compressed/DaVinci_Resolve_Studio_19.1_Installer.zip",
-    total_bytes: 2_684_354_560,
-    downloaded_bytes: 2_684_354_560,
-    speed_bps: 0,
-    upload_speed_bps: 0,
-    eta_seconds: 0,
-    status: "completed",
-    resumable: true,
-    threads_count: 16,
-    segments: buildSegments(2_684_354_560, 16, 1.0, false),
-    source_browser: "Brave",
-    checksum_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    created_at: "2026-10-28T06:10:00Z",
-    completed_at: "2026-10-28T06:12:44Z",
-    custom_headers: {},
-    transfer_log: [
-      "[06:10:00] Intercepted from Brave Browser (16 threads)",
-      "[06:12:43] All 16 segments completed and merged cleanly",
-      "[06:12:44] SHA-256 checksum verified: e3b0c44298fc1c14...7852b855",
-    ],
-  },
-];
+// Clean initial empty state for production releases
+export const INITIAL_DOWNLOADS: DownloadItem[] = [];
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
