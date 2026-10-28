@@ -218,13 +218,9 @@ jobs:
             $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $pfxPass
             $thumbprint = $cert.Thumbprint
             Write-Host "Applying certificate thumbprint to Tauri config: $thumbprint"
-            node -e @"
-              const fs = require('fs');
-              const p = 'src-tauri/tauri.conf.json';
-              const conf = JSON.parse(fs.readFileSync(p, 'utf8'));
-              conf.bundle.windows.certificateThumbprint = '$thumbprint';
-              fs.writeFileSync(p, JSON.stringify(conf, null, 2));
-"@
+            $conf = Get-Content "src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+            $conf.bundle.windows.certificateThumbprint = $thumbprint
+            $conf | ConvertTo-Json -Depth 10 | Set-Content "src-tauri/tauri.conf.json"
           } else {
             Write-Host "No Windows Code Signing PFX secret detected. Standard Authenticode metadata enabled."
           }
