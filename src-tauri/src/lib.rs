@@ -75,7 +75,7 @@ async fn add_download_task(
         let url_clone = item.url.clone();
         let save_clone = item.save_path.clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
                 let st = st_arc.read().clone();
                 let _ = download_via_ftp(&url_clone, &save_clone, 0, &st).await;
@@ -124,7 +124,7 @@ fn resume_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result
 
     let dls_arc = Arc::clone(&engine.downloads);
     let st_arc = Arc::clone(&engine.settings);
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let _ = execute_segmented_http_download(id, dls_arc, st_arc, rx).await;
     });
     Ok(())
@@ -211,10 +211,10 @@ pub fn run_app() {
     tauri::Builder::default()
         .manage(engine)
         .setup(move |_app| {
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 browser::ipc_server::start_browser_ipc_server(ipc_engine, ipc_port).await;
             });
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 scheduler::run_scheduler_loop(sched_engine).await;
             });
             Ok(())

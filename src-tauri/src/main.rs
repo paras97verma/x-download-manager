@@ -37,6 +37,12 @@ fn main() {
         return;
     }
 
+    let _rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to initialize Tokio runtime");
+    let _guard = _rt.enter();
+
     xdm_lib::run_app();
 }
 
