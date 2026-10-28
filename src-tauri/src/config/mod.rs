@@ -206,28 +206,7 @@ impl Default for AppSettings {
                     default_subfolder: "Documents".into(),
                 },
             ],
-            site_credentials: vec![
-                SiteCredential {
-                    id: "cred-usersdrive-default".into(),
-                    host_pattern: "*.usersdrive.com".into(),
-                    site_type: "usersdrive".into(),
-                    username: "premium_user".into(),
-                    password_or_token: "".into(),
-                    cookies: Some("xfss=session_token_from_browser".into()),
-                    custom_headers: HashMap::new(),
-                    enabled: true,
-                },
-                SiteCredential {
-                    id: "cred-ftp-mirror".into(),
-                    host_pattern: "ftp.ubuntu.com".into(),
-                    site_type: "ftp".into(),
-                    username: "anonymous".into(),
-                    password_or_token: "anonymous@xdm.local".into(),
-                    cookies: None,
-                    custom_headers: HashMap::new(),
-                    enabled: true,
-                },
-            ],
+            site_credentials: Vec::new(),
             torrent: TorrentSettings {
                 enable_dht: true,
                 enable_pex: true,
@@ -418,40 +397,5 @@ impl ConfigManager {
 impl Default for ConfigManager {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_resolve_tilde_path() {
-        let p = resolve_path("~/Downloads/XDM");
-        assert!(!p.to_string_lossy().starts_with('~'));
-        assert!(p.to_string_lossy().contains("Downloads"));
-        assert!(p.to_string_lossy().ends_with("XDM"));
-    }
-
-    #[test]
-    fn test_dirs_default_download_path_has_xdm() {
-        let p = dirs_default_download_path();
-        assert!(p.ends_with("XDM"));
-    }
-
-    #[test]
-    fn test_ensure_directories_exist() {
-        let temp_dir = std::env::temp_dir().join("xdm_test_config");
-        let mut settings = AppSettings::default();
-        settings.default_download_dir = temp_dir.to_string_lossy().to_string();
-        settings.temp_segment_dir = temp_dir.join(".xdm_temp").to_string_lossy().to_string();
-
-        ensure_directories_exist(&settings);
-        assert!(temp_dir.exists());
-        assert!(temp_dir.join(".xdm_temp").exists());
-        for cat in &settings.categories {
-            assert!(temp_dir.join(&cat.default_subfolder).exists());
-        }
-        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

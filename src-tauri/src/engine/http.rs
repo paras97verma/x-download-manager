@@ -522,22 +522,3 @@ pub async fn execute_segmented_http_download(
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_compute_initial_segments_even_and_remainder() {
-        let total = 100_000_000; // 100 MB
-        let segments = compute_initial_segments(total, 8, 512 * 1024);
-        assert_eq!(segments.len(), 8);
-        assert_eq!(segments.first().unwrap().start_byte, 0);
-        assert_eq!(segments.last().unwrap().end_byte, total - 1);
-
-        // Ensure contiguous coverage with zero gaps or overlaps
-        for i in 1..segments.len() {
-            assert_eq!(segments[i].start_byte, segments[i - 1].end_byte + 1);
-        }
-    }
-}

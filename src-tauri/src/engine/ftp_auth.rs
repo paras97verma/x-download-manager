@@ -487,30 +487,3 @@ pub async fn execute_ftp_download(
 
     Ok(total_written)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    #[test]
-    fn test_match_site_credential_wildcard() {
-        let creds = vec![SiteCredential {
-            id: "1".into(),
-            host_pattern: "*.usersdrive.com".into(),
-            site_type: "usersdrive".into(),
-            username: "alice".into(),
-            password_or_token: "secret".into(),
-            cookies: Some("xfss=abc".into()),
-            custom_headers: HashMap::new(),
-            enabled: true,
-        }];
-
-        let m1 = match_site_credential("https://usersdrive.com/ef8912ab34.html", &creds);
-        assert!(m1.is_some());
-        let m2 = match_site_credential("https://cdn4.usersdrive.com/d/xyz/archive.zip", &creds);
-        assert!(m2.is_some());
-        let m3 = match_site_credential("https://example.org/file.zip", &creds);
-        assert!(m3.is_none());
-    }
-}

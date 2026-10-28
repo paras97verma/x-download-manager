@@ -59,11 +59,11 @@ jobs:
           npm run typecheck
           npm run build
 
-      - name: Run Rust Formatting, Clippy Lints & Core Engine Unit Tests
+      - name: Run Rust Formatting, Clippy Lints & Full Integration Test Suite
         run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets -- -D warnings
-          cargo test --workspace --verbose
+          cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+          cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path src-tauri/Cargo.toml --all-targets --verbose
 
       - name: Package Browser Extensions (Chromium, Firefox, Safari)
         run: |

@@ -42,7 +42,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [draft, setDraft] = useState<AppSettings>(JSON.parse(JSON.stringify(settings)));
 
-  const [newHostPattern, setNewHostPattern] = useState("*.usersdrive.com");
+  const [newHostPattern, setNewHostPattern] = useState("");
   const [newSiteType, setNewSiteType] = useState<SiteCredential["site_type"]>("usersdrive");
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -497,7 +497,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="text"
                       value={newHostPattern}
                       onChange={(e) => setNewHostPattern(e.target.value)}
-                      placeholder="*.usersdrive.com or ftp.example.com"
+                      placeholder="e.g. *.example.com or ftp.server.org"
                       className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200"
                     />
                     <select

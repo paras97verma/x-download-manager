@@ -462,7 +462,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://... or ftp://username:password@host/file.zip or https://usersdrive.com/..."
+                  placeholder="https://... or ftp://username:password@host/file.zip or magnet:?xt=..."
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-xs focus:border-blue-500 focus:outline-none"
                 />
               </div>

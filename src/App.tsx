@@ -235,14 +235,11 @@ export const App: React.FC = () => {
     }
 
     const isMagnet = req.url.toLowerCase().startsWith("magnet:?");
-    const isUsersdrive = req.url.toLowerCase().includes("usersdrive.com");
     const isFtp =
       req.url.toLowerCase().startsWith("ftp://") ||
       req.url.toLowerCase().startsWith("sftp://");
     const protocol = isMagnet
       ? "magnet"
-      : isUsersdrive
-      ? "usersdrive"
       : isFtp
       ? "ftp"
       : "https";
@@ -250,32 +247,29 @@ export const App: React.FC = () => {
     const fname =
       req.filename ||
       (isMagnet
-        ? "Linux_Mint_22_Cinnamon_64bit.iso"
-        : req.url.split("?")[0].split("/").pop() || "downloaded_archive.zip");
+        ? (new URLSearchParams(req.url.replace(/^magnet:\?/i, "")).get("dn") || "torrent_download")
+        : req.url.split("?")[0].split("/").filter(Boolean).pop() || "download");
 
-    const total = 1_572_864_000;
     const threads = req.threads_count || settings.default_threads_per_download;
     const newItem: DownloadItem = {
       id: `dl-${Date.now()}`,
       filename: fname,
       url: req.url,
-      resolved_url: isUsersdrive
-        ? `https://cdn4.usersdrive.com/d/auto_resolved/${fname}`
-        : req.url,
+      resolved_url: req.url,
       protocol,
       category: req.category || (isMagnet ? "Torrents" : "Compressed"),
       queue_id: req.queue_id || "main-queue",
       save_path: `${settings.default_download_dir}/${fname}`,
-      total_bytes: total,
+      total_bytes: 0,
       downloaded_bytes: 0,
-      speed_bps: req.start_immediately ? 18_400_000 : 0,
-      upload_speed_bps: isMagnet && req.start_immediately ? 1_200_000 : 0,
-      eta_seconds: 85,
-      status: req.start_immediately ? "downloading" : "queued",
+      speed_bps: 0,
+      upload_speed_bps: 0,
+      eta_seconds: null,
+      status: req.start_immediately ? "connecting" : "queued",
       resumable: true,
       threads_count: threads,
-      segments: buildSegments(total, threads, 0.02, req.start_immediately),
-      source_browser: "Manual / Clipboard",
+      segments: [],
+      source_browser: "Manual Entry",
       cookies: req.cookies || null,
       custom_headers: {},
       created_at: new Date().toISOString(),
@@ -721,7 +715,7 @@ export const App: React.FC = () => {
             setDownloads((prev) =>
               prev.map((d) =>
                 d.queue_id === qId && d.status !== "completed"
-                  ? { ...d, status: "downloading", speed_bps: 14_500_000 }
+                  ? { ...d, status: "downloading", speed_bps: 0 }
                   : d
               )
             );

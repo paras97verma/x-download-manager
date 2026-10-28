@@ -45,9 +45,9 @@ base64 = "0.22"
 async-std = { version = "1.12", default-features = false }
 suppaftp = { version = "6.0", features = ["async", "async-rustls"] }
 parking_lot = "0.12"
-thiserror = "1.0"
+thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winreg = "0.52"
+winreg = "0.56"

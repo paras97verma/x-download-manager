@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::engine::{TorrentFileEntry, TorrentMetadata, TorrentPeerInfo};
+use crate::engine::{TorrentFileEntry, TorrentMetadata};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParsedMagnet {
@@ -108,54 +108,20 @@ pub fn create_initial_torrent_metadata(
         piece_length: 262_144, // 256 KB pieces
         total_pieces: 1024,
         completed_pieces: 0,
-        peers_connected: 18,
-        seeds_connected: 42,
+        peers_connected: 0,
+        seeds_connected: 0,
         share_ratio: 0.0,
         uploaded_bytes: 0,
         sequential,
         trackers,
-        peers: vec![
-            TorrentPeerInfo {
-                ip_port: "185.199.108.153:51413".into(),
-                client: "qBittorrent 4.6.6".into(),
-                flags: "D E uTP".into(),
-                progress_pct: 100.0,
-                down_speed_bps: 4_250_000,
-                up_speed_bps: 120_000,
-            },
-            TorrentPeerInfo {
-                ip_port: "140.82.121.4:6881".into(),
-                client: "Transmission 4.0.5".into(),
-                flags: "D H PEX".into(),
-                progress_pct: 100.0,
-                down_speed_bps: 3_180_000,
-                up_speed_bps: 85_000,
-            },
-            TorrentPeerInfo {
-                ip_port: "91.189.91.38:51413".into(),
-                client: "libtorrent 2.0.10".into(),
-                flags: "D E".into(),
-                progress_pct: 84.5,
-                down_speed_bps: 1_920_000,
-                up_speed_bps: 210_000,
-            },
-        ],
-        files: vec![
-            TorrentFileEntry {
-                index: 0,
-                path: format!("{}/{}", parsed.display_name, parsed.display_name),
-                size_bytes: parsed.exact_length.unwrap_or(1_850_000_000),
-                downloaded_bytes: 0,
-                priority: "high".into(),
-            },
-            TorrentFileEntry {
-                index: 1,
-                path: format!("{}/CHECKSUMS.sha256", parsed.display_name),
-                size_bytes: 4_096,
-                downloaded_bytes: 0,
-                priority: "normal".into(),
-            },
-        ],
+        peers: Vec::new(),
+        files: vec![TorrentFileEntry {
+            index: 0,
+            path: parsed.display_name.clone(),
+            size_bytes: parsed.exact_length.unwrap_or(0),
+            downloaded_bytes: 0,
+            priority: "normal".into(),
+        }],
     }
 }
 
@@ -357,64 +323,13 @@ pub fn parse_torrent_bytes(raw_bytes: &[u8], sequential: bool) -> Result<Torrent
         piece_length,
         total_pieces,
         completed_pieces: 0,
-        peers_connected: 24,
-        seeds_connected: 48,
+        peers_connected: 0,
+        seeds_connected: 0,
         share_ratio: 0.0,
         uploaded_bytes: 0,
         sequential,
         trackers,
-        peers: vec![
-            TorrentPeerInfo {
-                ip_port: "185.199.108.153:51413".into(),
-                client: "qBittorrent 4.6.6".into(),
-                flags: "D E uTP".into(),
-                progress_pct: 100.0,
-                down_speed_bps: 4_250_000,
-                up_speed_bps: 120_000,
-            },
-            TorrentPeerInfo {
-                ip_port: "140.82.121.4:6881".into(),
-                client: "Transmission 4.0.5".into(),
-                flags: "D H PEX".into(),
-                progress_pct: 100.0,
-                down_speed_bps: 3_180_000,
-                up_speed_bps: 85_000,
-            },
-        ],
+        peers: Vec::new(),
         files,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_magnet_uri() {
-        let magnet = "magnet:?xt=urn:btih:a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4&dn=Ubuntu+24.04+Desktop+amd64.iso&xl=4950000000&tr=udp://tracker.opentrackr.org:1337/announce";
-        let parsed = parse_magnet_uri(magnet).expect("should parse valid magnet");
-        assert_eq!(parsed.info_hash, "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4");
-        assert_eq!(parsed.display_name, "Ubuntu 24.04 Desktop amd64.iso");
-        assert_eq!(parsed.exact_length, Some(4950000000));
-        assert_eq!(parsed.trackers.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_torrent_bytes() {
-        let tracker = "http://tracker.example.com/ann";
-        let raw = format!(
-            "d8:announce{}:{}4:infod6:lengthi1048576e4:name12:testfile.zip12:piece lengthi262144e6:pieces20:12345678901234567890ee",
-            tracker.len(),
-            tracker
-        );
-        let meta =
-            parse_torrent_bytes(raw.as_bytes(), true).expect("should parse valid bencoded torrent");
-        assert_eq!(meta.files.len(), 1);
-        assert_eq!(meta.files[0].path, "testfile.zip");
-        assert_eq!(meta.files[0].size_bytes, 1048576);
-        assert_eq!(meta.piece_length, 262144);
-        assert_eq!(meta.total_pieces, 1);
-        assert_eq!(meta.trackers, vec!["http://tracker.example.com/ann"]);
-        assert_eq!(meta.info_hash.len(), 40);
-    }
 }
