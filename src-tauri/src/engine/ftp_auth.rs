@@ -36,8 +36,7 @@ pub fn match_site_credential<'a>(
             return false;
         }
         let pat = cred.host_pattern.trim().to_lowercase();
-        if pat.starts_with("*.") {
-            let suffix = &pat[2..];
+        if let Some(suffix) = pat.strip_prefix("*.") {
             host == suffix || host.ends_with(&format!(".{}", suffix))
         } else {
             host == pat
@@ -122,13 +121,14 @@ pub async fn resolve_usersdrive_or_filehost(
             .map(|m| m.as_str())
             .unwrap_or("");
 
-        let mut form = Vec::new();
-        form.push(("op", "download2"));
-        form.push(("id", file_id));
-        form.push(("rand", rand_val));
-        form.push(("referer", page_url));
-        form.push(("method_free", "Free Download"));
-        form.push(("down_script", "1"));
+        let form = vec![
+            ("op", "download2"),
+            ("id", file_id),
+            ("rand", rand_val),
+            ("referer", page_url),
+            ("method_free", "Free Download"),
+            ("down_script", "1"),
+        ];
 
         let mut post_req = client
             .post(page_url)
@@ -227,6 +227,7 @@ pub async fn download_via_ftp(
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
+        .truncate(resume_offset == 0)
         .open(save_path)
         .map_err(|e| e.to_string())?;
 

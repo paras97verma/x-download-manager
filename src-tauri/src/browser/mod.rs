@@ -165,7 +165,7 @@ pub fn get_native_messaging_dir(browser_id: &str) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         let app_support = home.join("Library").join("Application Support");
-        return match browser_id {
+        match browser_id {
             "chrome" => app_support.join("Google/Chrome/NativeMessagingHosts"),
             "brave" => app_support.join("BraveSoftware/Brave-Browser/NativeMessagingHosts"),
             "edge" => app_support.join("Microsoft Edge/NativeMessagingHosts"),
@@ -174,7 +174,7 @@ pub fn get_native_messaging_dir(browser_id: &str) -> PathBuf {
             "firefox" => app_support.join("Mozilla/NativeMessagingHosts"),
             "safari" => app_support.join("XDownloadManager/SafariExtension"),
             _ => app_support.join("XDownloadManager/NativeMessagingHosts"),
-        };
+        }
     }
 
     #[cfg(target_os = "linux")]

@@ -290,3 +290,9 @@ impl DownloadEngine {
         item
     }
 }
+
+impl Default for DownloadEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}

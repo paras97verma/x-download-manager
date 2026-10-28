@@ -336,3 +336,9 @@ impl ConfigManager {
         fs::write(&self.config_path, json).map_err(|e| e.to_string())
     }
 }
+
+impl Default for ConfigManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
