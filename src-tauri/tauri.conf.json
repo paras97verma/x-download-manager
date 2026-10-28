@@ -44,9 +44,14 @@
       "minimumSystemVersion": "11.0"
     },
     "windows": {
-      "wix": null,
+      "allowDowngrades": true,
+      "wix": {
+        "language": "en-US"
+      },
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "both",
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
       }
     },
     "linux": {

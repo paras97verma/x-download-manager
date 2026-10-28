@@ -13,6 +13,23 @@ fn main() {
             || a == "--native-messaging-host"
     });
 
+    if args.iter().any(|a| a == "--register-browsers-silent") {
+        let cfg = xdm_lib::config::ConfigManager::new();
+        let mut st = cfg.load();
+        let _ = xdm_lib::browser::auto_register_all_detected_browsers(&mut st);
+        let _ = cfg.save(&st);
+        return;
+    }
+
+    if args.iter().any(|a| a == "--unregister-browsers-silent") {
+        let cfg = xdm_lib::config::ConfigManager::new();
+        let mut st = cfg.load();
+        for b in ["chrome", "brave", "edge", "opera", "vivaldi", "firefox", "safari"] {
+            let _ = xdm_lib::browser::configure_browser_integration(b, false, &mut st);
+        }
+        return;
+    }
+
     if is_native_messaging {
         run_native_messaging_stdio_bridge();
         return;

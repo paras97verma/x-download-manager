@@ -233,10 +233,14 @@ pub fn configure_browser_integration(
             fs::write(&manifest_file, json).map_err(|e| e.to_string())?;
         }
 
+        let _ = write_external_extension_descriptor(browser_id, true);
         #[cfg(target_os = "windows")]
         let _ = register_windows_registry_native_host(browser_id, &manifest_file);
-    } else if manifest_file.exists() {
-        let _ = fs::remove_file(&manifest_file);
+    } else {
+        let _ = write_external_extension_descriptor(browser_id, false);
+        if manifest_file.exists() {
+            let _ = fs::remove_file(&manifest_file);
+        }
     }
 
     let statuses = detect_browsers(settings);
@@ -258,6 +262,62 @@ pub fn auto_register_all_detected_browsers(settings: &mut AppSettings) -> Vec<Br
     detect_browsers(settings)
 }
 
+/// Writes External Extension auto-install descriptors on macOS and Linux
+/// so Chrome, Brave, Edge, and Firefox automatically load the bundled extension when installed.
+pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Result<(), String> {
+    let home = directories::BaseDirs::new()
+        .map(|b| b.home_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    #[cfg(target_os = "macos")]
+    let ext_dir = {
+        let app_support = home.join("Library/Application Support");
+        match browser_id {
+            "chrome" => Some(app_support.join("Google/Chrome/External Extensions")),
+            "brave" => Some(app_support.join("BraveSoftware/Brave-Browser/External Extensions")),
+            "edge" => Some(app_support.join("Microsoft Edge/External Extensions")),
+            "firefox" => Some(app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")),
+            _ => None,
+        }
+    };
+
+    #[cfg(target_os = "linux")]
+    let ext_dir = {
+        let config = home.join(".config");
+        match browser_id {
+            "chrome" => Some(config.join("google-chrome/External Extensions")),
+            "brave" => Some(config.join("BraveSoftware/Brave-Browser/External Extensions")),
+            "edge" => Some(config.join("microsoft-edge/External Extensions")),
+            "firefox" => Some(home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")),
+            _ => None,
+        }
+    };
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let ext_dir: Option<PathBuf> = None;
+
+    if let Some(dir) = ext_dir {
+        let _ = fs::create_dir_all(&dir);
+        if browser_id == "firefox" {
+            let xpi_dest = dir.join(format!("{}.xpi", FIREFOX_EXTENSION_ID));
+            if !enable && xpi_dest.exists() {
+                let _ = fs::remove_file(xpi_dest);
+            }
+        } else {
+            let descriptor_file = dir.join(format!("{}.json", CHROMIUM_EXTENSION_ID));
+            if enable {
+                let payload = serde_json::json!({
+                    "external_update_url": "https://clients2.google.com/service/update2/crx"
+                });
+                let _ = fs::write(descriptor_file, serde_json::to_string_pretty(&payload).unwrap_or_default());
+            } else if descriptor_file.exists() {
+                let _ = fs::remove_file(descriptor_file);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 fn register_windows_registry_native_host(browser_id: &str, manifest_path: &Path) -> Result<(), String> {
     use winreg::enums::*;
@@ -274,5 +334,26 @@ fn register_windows_registry_native_host(browser_id: &str, manifest_path: &Path)
     let (key, _) = hkcu.create_subkey(&subkey).map_err(|e| e.to_string())?;
     key.set_value("", &manifest_path.to_string_lossy().to_string())
         .map_err(|e| e.to_string())?;
+
+    // Also register External Extension auto-install key (IDM / FDM method)
+    if browser_id == "firefox" {
+        let (ff_ext, _) = hkcu.create_subkey(r"Software\Mozilla\Firefox\Extensions").map_err(|e| e.to_string())?;
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(parent) = exe.parent() {
+                let xpi_path = parent.join("extensions\firefox\xdm-extension-firefox.xpi");
+                let _ = ff_ext.set_value(FIREFOX_EXTENSION_ID, &xpi_path.to_string_lossy().to_string());
+            }
+        }
+    } else {
+        let ext_subkey = match browser_id {
+            "chrome" => format!(r"Software\Google\Chrome\Extensions\{}", CHROMIUM_EXTENSION_ID),
+            "edge" => format!(r"Software\Microsoft\Edge\Extensions\{}", CHROMIUM_EXTENSION_ID),
+            "brave" => format!(r"Software\BraveSoftware\Brave-Browser\Extensions\{}", CHROMIUM_EXTENSION_ID),
+            _ => format!(r"Software\Google\Chrome\Extensions\{}", CHROMIUM_EXTENSION_ID),
+        };
+        if let Ok((ext_key, _)) = hkcu.create_subkey(&ext_subkey) {
+            let _ = ext_key.set_value("update_url", &"https://clients2.google.com/service/update2/crx");
+        }
+    }
     Ok(())
 }
