@@ -70,7 +70,13 @@ pub fn parse_magnet_uri(uri: &str) -> Result<ParsedMagnet, String> {
 fn urlencoding_decode(input: &str) -> String {
     let plus_replaced = input.replace('+', " ");
     url::form_urlencoded::parse(plus_replaced.as_bytes())
-        .map(|(k, v)| if v.is_empty() { k.to_string() } else { format!("{}={}", k, v) })
+        .map(|(k, v)| {
+            if v.is_empty() {
+                k.to_string()
+            } else {
+                format!("{}={}", k, v)
+            }
+        })
         .collect::<Vec<_>>()
         .join("")
 }

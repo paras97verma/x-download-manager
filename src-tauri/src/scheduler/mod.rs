@@ -2,9 +2,9 @@
 //! Evaluates time-of-day queue windows (e.g., Night Off-Peak Queue), concurrency limits,
 //! and post-queue completion actions.
 
+use chrono::{Datelike, Local, Timelike};
 use std::sync::Arc;
 use std::time::Duration;
-use chrono::{Datelike, Local, Timelike};
 
 use crate::engine::{DownloadEngine, DownloadStatus};
 
@@ -36,7 +36,8 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
                     }
                     if d.queue_id == q.id && d.status == DownloadStatus::Queued {
                         d.status = DownloadStatus::Downloading;
-                        d.transfer_log.push(format!("Scheduled queue '{}' started download", q.name));
+                        d.transfer_log
+                            .push(format!("Scheduled queue '{}' started download", q.name));
                         slots -= 1;
                     }
                 }
@@ -48,7 +49,10 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
                     if d.queue_id == q.id && d.status == DownloadStatus::Downloading {
                         d.status = DownloadStatus::Paused;
                         d.speed_bps = 0;
-                        d.transfer_log.push(format!("Scheduled queue '{}' paused download at stop window", q.name));
+                        d.transfer_log.push(format!(
+                            "Scheduled queue '{}' paused download at stop window",
+                            q.name
+                        ));
                     }
                 }
             }
