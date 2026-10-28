@@ -317,7 +317,7 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
         };
 
         for path in candidates {
-            if Path::new(path).exists() {
+            if PathBuf::from(path).exists() {
                 return Some(path.to_string());
             }
         }
@@ -644,7 +644,7 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
 #[cfg(target_os = "windows")]
 fn register_windows_registry_native_host(
     browser_id: &str,
-    manifest_path: &Path,
+    manifest_path: &PathBuf,
 ) -> Result<(), String> {
     use winreg::enums::*;
     use winreg::RegKey;
