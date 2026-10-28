@@ -79,10 +79,16 @@ pub struct SchedulerQueueConfig {
     pub post_queue_action: String, // "none" | "exit_app" | "sleep" | "shutdown"
 }
 
+fn default_ui_mode() -> String {
+    "simple".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     // General
     pub theme: String, // "dark" | "light" | "midnight"
+    #[serde(default = "default_ui_mode")]
+    pub ui_mode: String, // "simple" | "advanced"
     pub start_on_boot: bool,
     pub minimize_to_tray: bool,
     pub show_completion_dialog: bool,
@@ -136,6 +142,7 @@ impl Default for AppSettings {
 
         Self {
             theme: "dark".to_string(),
+            ui_mode: "simple".to_string(),
             start_on_boot: true,
             minimize_to_tray: true,
             show_completion_dialog: true,

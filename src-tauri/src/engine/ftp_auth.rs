@@ -257,6 +257,237 @@ pub async fn download_via_ftp(
     Ok(total_written)
 }
 
+/// Full execution of an FTP / FTPS download with live telemetry, credentials resolution, and cancellation
+pub async fn execute_ftp_download(
+    item_id: String,
+    downloads: std::sync::Arc<parking_lot::RwLock<Vec<crate::engine::DownloadItem>>>,
+    settings: std::sync::Arc<parking_lot::RwLock<AppSettings>>,
+    mut cancel_rx: tokio::sync::watch::Receiver<bool>,
+) -> Result<u64, String> {
+    let (item_snapshot, current_settings) = {
+        let dls = downloads.read();
+        let found = dls
+            .iter()
+            .find(|d| d.id == item_id)
+            .cloned()
+            .ok_or_else(|| "Download item not found".to_string())?;
+        (found, settings.read().clone())
+    };
+
+    let ftp_url = &item_snapshot.url;
+    let parsed = url::Url::parse(ftp_url).map_err(|e| format!("Invalid FTP URL: {}", e))?;
+    let host = parsed.host_str().ok_or("Missing FTP host")?;
+    let port = parsed.port().unwrap_or(21);
+    let remote_path = parsed.path();
+
+    let matched_cred = match_site_credential(ftp_url, &current_settings.site_credentials);
+    let username = if !parsed.username().is_empty() {
+        parsed.username().to_string()
+    } else if let Some(c) = matched_cred {
+        c.username.clone()
+    } else {
+        "anonymous".to_string()
+    };
+
+    let password = if let Some(p) = parsed.password() {
+        p.to_string()
+    } else if let Some(c) = matched_cred {
+        c.password_or_token.clone()
+    } else {
+        "anonymous@xdm.local".to_string()
+    };
+
+    // Attempt connection
+    let mut ftp_stream = match AsyncRustlsFtpStream::connect(format!("{}:{}", host, port)).await {
+        Ok(s) => s,
+        Err(e) => {
+            let err_msg = format!("FTP connection error: {}", e);
+            let mut dls = downloads.write();
+            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                d.status = crate::engine::DownloadStatus::Failed;
+                d.error_message = Some(err_msg.clone());
+                d.transfer_log.push(format!("[ERROR] {}", err_msg));
+            }
+            return Err(err_msg);
+        }
+    };
+
+    if let Err(e) = ftp_stream.login(&username, &password).await {
+        let err_msg = format!("FTP authentication failed for user {}: {}", username, e);
+        let mut dls = downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+            d.status = crate::engine::DownloadStatus::Failed;
+            d.error_message = Some(err_msg.clone());
+            d.transfer_log.push(format!("[ERROR] {}", err_msg));
+        }
+        return Err(err_msg);
+    }
+
+    if let Err(e) = ftp_stream
+        .transfer_type(suppaftp::types::FileType::Binary)
+        .await
+    {
+        return Err(e.to_string());
+    }
+
+    let resume_offset = item_snapshot.downloaded_bytes;
+    if resume_offset > 0 {
+        let _ = ftp_stream.resume_transfer(resume_offset as usize).await;
+    }
+
+    // Try to get remote file size
+    let remote_size = ftp_stream.size(remote_path).await.ok().map(|s| s as u64);
+
+    let mut data_stream = match ftp_stream.retr_as_stream(remote_path).await {
+        Ok(s) => s,
+        Err(e) => {
+            let err_msg = format!("FTP RETR error: {}", e);
+            let mut dls = downloads.write();
+            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                d.status = crate::engine::DownloadStatus::Failed;
+                d.error_message = Some(err_msg.clone());
+                d.transfer_log.push(format!("[ERROR] {}", err_msg));
+            }
+            return Err(err_msg);
+        }
+    };
+
+    if let Some(parent) = std::path::Path::new(&item_snapshot.save_path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(resume_offset == 0)
+        .open(&item_snapshot.save_path)
+        .map_err(|e| e.to_string())?;
+
+    use std::io::{Seek, SeekFrom, Write};
+    if resume_offset > 0 {
+        file.seek(SeekFrom::Start(resume_offset))
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Update state to Downloading
+    {
+        let mut dls = downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+            if let Some(sz) = remote_size {
+                d.total_bytes = sz;
+            }
+            d.status = crate::engine::DownloadStatus::Downloading;
+            d.transfer_log.push(format!(
+                "Connected to FTP {} as user '{}' | Size: {} bytes",
+                host,
+                username,
+                remote_size.unwrap_or(0)
+            ));
+        }
+    }
+
+    let mut buf = [0u8; 65536];
+    let mut total_written = resume_offset;
+    let mut window_start = std::time::Instant::now();
+    let mut window_bytes = 0u64;
+
+    loop {
+        if *cancel_rx.borrow() {
+            let mut dls = downloads.write();
+            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                d.status = crate::engine::DownloadStatus::Paused;
+                d.speed_bps = 0;
+            }
+            return Ok(total_written);
+        }
+
+        tokio::select! {
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow() {
+                    let mut dls = downloads.write();
+                    if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                        d.status = crate::engine::DownloadStatus::Paused;
+                        d.speed_bps = 0;
+                    }
+                    return Ok(total_written);
+                }
+            }
+            res = data_stream.read(&mut buf) => {
+                let n = match res {
+                    Ok(0) => break,
+                    Ok(n) => n,
+                    Err(e) => {
+                        let err_msg = e.to_string();
+                        let mut dls = downloads.write();
+                        if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                            d.status = crate::engine::DownloadStatus::Failed;
+                            d.error_message = Some(err_msg.clone());
+                        }
+                        return Err(err_msg);
+                    }
+                };
+
+                file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                total_written += n as u64;
+                window_bytes += n as u64;
+
+                let elapsed = window_start.elapsed();
+                if elapsed >= std::time::Duration::from_millis(250) {
+                    let speed = ((window_bytes as f64) / elapsed.as_secs_f64()) as u64;
+                    window_start = std::time::Instant::now();
+                    window_bytes = 0;
+
+                    let mut dls = downloads.write();
+                    if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                        d.downloaded_bytes = total_written;
+                        d.speed_bps = speed;
+                        if d.total_bytes > total_written && speed > 0 {
+                            d.eta_seconds = Some((d.total_bytes - total_written) / speed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = ftp_stream.finalize_retr_stream(data_stream).await;
+    let _ = ftp_stream.quit().await;
+
+    // Completion
+    let should_hash = settings.read().auto_verify_checksum;
+    let computed_hash = if should_hash {
+        if let Ok(bytes) = std::fs::read(&item_snapshot.save_path) {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            Some(hex::encode(hasher.finalize()))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    {
+        let mut dls = downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+            d.status = crate::engine::DownloadStatus::Completed;
+            d.downloaded_bytes = total_written;
+            if d.total_bytes < total_written {
+                d.total_bytes = total_written;
+            }
+            d.speed_bps = 0;
+            d.eta_seconds = Some(0);
+            d.checksum_sha256 = computed_hash;
+            d.completed_at = Some(chrono::Utc::now().to_rfc3339());
+            d.transfer_log
+                .push("FTP download finished successfully.".to_string());
+        }
+    }
+
+    Ok(total_written)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -346,13 +346,10 @@ impl DownloadEngine {
             let st_arc = Arc::clone(&self.settings);
             let id_clone = item.id.clone();
             let proto = item.protocol.clone();
-            let url_clone = item.url.clone();
-            let save_clone = item.save_path.clone();
 
             tauri::async_runtime::spawn(async move {
                 if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
-                    let st = st_arc.read().clone();
-                    let _ = ftp_auth::download_via_ftp(&url_clone, &save_clone, 0, &st).await;
+                    let _ = ftp_auth::execute_ftp_download(id_clone, dls_arc, st_arc, rx).await;
                 } else if proto != DownloadProtocol::BitTorrent && proto != DownloadProtocol::Magnet
                 {
                     let _ =

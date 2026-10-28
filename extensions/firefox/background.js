@@ -96,18 +96,46 @@ function shouldInterceptDownload(downloadItem) {
   }
 }
 
-async function getCookieHeaderForUrl(url) {
+async function getCookieHeaderForUrl(url, referer) {
   if (!runtimeAPI.cookies) return "";
+  let cookies = [];
   try {
-    const cookies = await runtimeAPI.cookies.getAll({ url });
-    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-  } catch (_) {
-    return "";
+    cookies = await runtimeAPI.cookies.getAll({ url });
+  } catch (_) {}
+
+  if ((!cookies || cookies.length === 0) && referer) {
+    try {
+      cookies = await runtimeAPI.cookies.getAll({ url: referer });
+    } catch (_) {}
   }
+
+  if (!cookies || cookies.length === 0) {
+    try {
+      const u = new URL(url);
+      cookies = await runtimeAPI.cookies.getAll({ domain: u.hostname });
+    } catch (_) {}
+  }
+
+  return (cookies || []).map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
 async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
-  const cookies = await getCookieHeaderForUrl(url);
+  const cookies = await getCookieHeaderForUrl(url, referer);
+
+  // Extract embedded FTP/HTTP user:password credentials if present
+  let authUser = null;
+  let authPass = null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.username) authUser = decodeURIComponent(parsed.username);
+    if (parsed.password) authPass = decodeURIComponent(parsed.password);
+  } catch (_) {}
+
+  const isTorrent =
+    (filename && filename.toLowerCase().endsWith(".torrent")) ||
+    (url && url.toLowerCase().split("?")[0].endsWith(".torrent")) ||
+    mimeType === "application/x-bittorrent";
+
   const payload = {
     url,
     filename: filename || null,
@@ -115,6 +143,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     mime_type: mimeType || null,
     referer: referer || null,
     cookies: cookies || null,
+    auth_username: authUser,
+    auth_password: authPass,
+    is_torrent: isTorrent,
     user_agent: navigator.userAgent,
     browser: detectBrowserFamily(),
     tab_title: tabTitle || null,
@@ -173,6 +204,10 @@ if (runtimeAPI.downloads && runtimeAPI.downloads.onCreated) {
 
 function detectBrowserFamily() {
   const ua = navigator.userAgent;
+  if (ua.includes("Zen")) return "Zen";
+  if (ua.includes("LibreWolf")) return "LibreWolf";
+  if (ua.includes("Waterfox")) return "Waterfox";
+  if (ua.includes("Floorp")) return "Floorp";
   if (ua.includes("Firefox")) return "Firefox";
   if (ua.includes("Edg/")) return "Edge";
   if (ua.includes("OPR/")) return "Opera";

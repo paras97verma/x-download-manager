@@ -27,6 +27,9 @@ pub struct BrowserInterceptPayload {
     pub headers: Option<HashMap<String, String>>,
     pub browser: String, // "chrome" | "firefox" | "safari" | "brave" | "edge"
     pub tab_title: Option<String>,
+    pub auth_username: Option<String>,
+    pub auth_password: Option<String>,
+    pub is_torrent: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,10 +76,25 @@ async fn handle_intercept(
     State(engine): State<Arc<DownloadEngine>>,
     Json(payload): Json<BrowserInterceptPayload>,
 ) -> Json<serde_json::Value> {
+    let is_torrent = payload.is_torrent.unwrap_or(false)
+        || payload
+            .url
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_lowercase()
+            .ends_with(".torrent");
+
+    let category = if is_torrent {
+        Some("Torrents".to_string())
+    } else {
+        None
+    };
+
     let req = NewDownloadRequest {
         url: payload.url,
         filename: payload.filename,
-        category: None,
+        category,
         save_path: None,
         threads_count: None,
         queue_id: Some("main-queue".to_string()),
@@ -86,9 +104,9 @@ async fn handle_intercept(
         cookies: payload.cookies,
         user_agent: payload.user_agent,
         custom_headers: payload.headers,
-        auth_username: None,
-        auth_password: None,
-        sequential_torrent: None,
+        auth_username: payload.auth_username,
+        auth_password: payload.auth_password,
+        sequential_torrent: if is_torrent { Some(true) } else { None },
     };
 
     let created = engine.add_download(req.clone());

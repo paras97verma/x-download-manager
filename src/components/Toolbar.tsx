@@ -12,6 +12,7 @@ import {
   Settings,
   KeyRound,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { AppSettings } from "../types/xdm";
 
@@ -24,6 +25,8 @@ interface ToolbarProps {
   onOpenScheduler: () => void;
   onOpenExtensions: () => void;
   onOpenSettings: (initialTab?: string) => void;
+  onToggleUiMode: () => void;
+  uiMode: "simple" | "advanced";
   settings: AppSettings;
   onToggleSpeedLimiter: () => void;
   searchQuery: string;
@@ -40,12 +43,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenScheduler,
   onOpenExtensions,
   onOpenSettings,
+  onToggleUiMode,
+  uiMode,
   settings,
   onToggleSpeedLimiter,
   searchQuery,
   onSearchChange,
   selectedCount = 0,
 }) => {
+  const isMac = typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
   return (
     <header className="h-14 bg-[#111827] border-b border-slate-800 px-3 flex items-center justify-between select-none shrink-0 gap-2 overflow-x-auto">
       {/* Left Brand + Actions */}
@@ -156,6 +162,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               ? `${(settings.global_max_download_kbps / 1024).toFixed(0)} MB/s`
               : "Uncapped"}
           </span>
+        </button>
+
+        <button
+          onClick={onToggleUiMode}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition shrink-0 ${
+            uiMode === "simple"
+              ? "bg-blue-600/20 border-blue-500/40 text-blue-300 hover:bg-blue-600/30"
+              : "bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/30"
+          }`}
+          title={`Switch between Simple (Beginner) and Advanced Mode (${isMac ? "⌘" : "Ctrl+"}M)`}
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          <span className="hidden md:inline capitalize">{uiMode} Mode</span>
         </button>
 
         <button

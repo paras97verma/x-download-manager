@@ -325,6 +325,68 @@ async fn verify_file_checksum(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn pick_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        let _ = tx.send(folder.map(|p| p.to_string()));
+    });
+    rx.await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_autostart(enable: bool, app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    if enable {
+        app.autolaunch().enable().map_err(|e| e.to_string())?;
+    } else {
+        app.autolaunch().disable().map_err(|e| e.to_string())?;
+    }
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn request_notification_permission(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_notification::NotificationExt;
+    let perm = app
+        .notification()
+        .request_permission()
+        .map_err(|e| e.to_string())?;
+    Ok(perm == tauri_plugin_notification::PermissionState::Granted)
+}
+
+#[tauri::command]
+fn show_notification(title: String, body: String, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn parse_torrent_file(
+    file_path: Option<String>,
+    base64_data: Option<String>,
+) -> Result<crate::engine::TorrentMetadata, String> {
+    use base64::Engine;
+    let bytes = if let Some(path) = file_path {
+        let resolved = crate::config::resolve_path(&path);
+        std::fs::read(&resolved).map_err(|e| format!("Failed to read torrent file: {}", e))?
+    } else if let Some(b64) = base64_data {
+        base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("Invalid base64 payload: {}", e))?
+    } else {
+        return Err("No torrent path or data provided".into());
+    };
+
+    crate::engine::torrent::parse_torrent_bytes(&bytes, true)
+}
+
+#[tauri::command]
 fn move_to_queue(
     id: String,
     queue_id: String,
@@ -358,6 +420,13 @@ pub fn run_app() {
     let sched_engine = Arc::clone(&engine);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![]),
+        ))
         .manage(engine)
         .setup(move |_app| {
             tauri::async_runtime::spawn(async move {
@@ -386,6 +455,11 @@ pub fn run_app() {
             restart_download,
             verify_file_checksum,
             move_to_queue,
+            pick_directory,
+            set_autostart,
+            request_notification_permission,
+            show_notification,
+            parse_torrent_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running X Download Manager");

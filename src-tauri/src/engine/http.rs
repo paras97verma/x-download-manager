@@ -29,6 +29,69 @@ pub struct HttpProbeResult {
     pub accepts_ranges: bool,
     pub resolved_url: String,
     pub suggested_filename: Option<String>,
+    pub content_type: Option<String>,
+}
+
+pub fn is_non_html_binary_extension(filename: &str) -> bool {
+    let lower = filename.to_lowercase();
+    let ext = lower.rsplit('.').next().unwrap_or("");
+    matches!(
+        ext,
+        "zip"
+            | "rar"
+            | "7z"
+            | "tar"
+            | "gz"
+            | "xz"
+            | "bz2"
+            | "iso"
+            | "dmg"
+            | "pkg"
+            | "exe"
+            | "msi"
+            | "deb"
+            | "rpm"
+            | "bin"
+            | "apk"
+            | "appimage"
+            | "mp4"
+            | "mkv"
+            | "avi"
+            | "mov"
+            | "webm"
+            | "mp3"
+            | "flac"
+            | "wav"
+            | "pdf"
+            | "docx"
+            | "xlsx"
+            | "pptx"
+            | "torrent"
+    )
+}
+
+fn extract_disposition_filename(headers: &HeaderMap) -> Option<String> {
+    let val = headers
+        .get(reqwest::header::CONTENT_DISPOSITION)?
+        .to_str()
+        .ok()?;
+    for part in val.split(';') {
+        let p = part.trim();
+        if let Some(rest) = p.strip_prefix("filename*=") {
+            if let Some(actual) = rest.split("''").nth(1) {
+                let clean = actual.trim_matches('"').trim();
+                if !clean.is_empty() {
+                    return Some(clean.to_string());
+                }
+            }
+        } else if let Some(rest) = p.strip_prefix("filename=") {
+            let clean = rest.trim_matches('"').trim_matches('\'').trim();
+            if !clean.is_empty() {
+                return Some(clean.to_string());
+            }
+        }
+    }
+    None
 }
 
 pub fn build_http_client(
@@ -114,11 +177,20 @@ pub async fn probe_remote_resource(
                 .map(|v| v.contains("bytes"))
                 .unwrap_or(false);
 
+            let content_type = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string());
+
+            let suggested_filename = extract_disposition_filename(resp.headers());
+
             return Ok(HttpProbeResult {
                 total_bytes,
                 accepts_ranges,
                 resolved_url: resp.url().to_string(),
-                suggested_filename: None,
+                suggested_filename,
+                content_type,
             });
         }
     }
@@ -142,11 +214,20 @@ pub async fn probe_remote_resource(
         .or_else(|| get_resp.content_length())
         .unwrap_or(0);
 
+    let content_type = get_resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    let suggested_filename = extract_disposition_filename(get_resp.headers());
+
     Ok(HttpProbeResult {
         total_bytes,
         accepts_ranges,
         resolved_url: get_resp.url().to_string(),
-        suggested_filename: None,
+        suggested_filename,
+        content_type,
     })
 }
 
@@ -216,6 +297,39 @@ pub async fn execute_segmented_http_download(
 
     // Probe file size and range support
     let probe = probe_remote_resource(&client, &target_url).await?;
+
+    // Check if remote returned HTML error/login page instead of requested binary file
+    if is_non_html_binary_extension(&item_snapshot.filename) {
+        if let Some(ref ct) = probe.content_type {
+            if ct.to_lowercase().contains("text/html") && probe.total_bytes < 3_000_000 {
+                let err_msg = "Remote server returned an HTML error or login page (Content-Type: text/html) instead of the requested binary file. The link may have expired, require authentication credentials, or need updated browser cookies.".to_string();
+                let mut dls = downloads.write();
+                if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                    d.status = DownloadStatus::Failed;
+                    d.error_message = Some(err_msg.clone());
+                    d.transfer_log.push(format!("[ERROR] {}", err_msg));
+                }
+                return Err(err_msg);
+            }
+        }
+    }
+
+    // Apply suggested filename from Content-Disposition if available
+    let final_save_path = if let Some(ref sname) = probe.suggested_filename {
+        if !sname.is_empty() && sname != &item_snapshot.filename {
+            let p = Path::new(&item_snapshot.save_path);
+            if let Some(parent) = p.parent() {
+                parent.join(sname).to_string_lossy().to_string()
+            } else {
+                item_snapshot.save_path.clone()
+            }
+        } else {
+            item_snapshot.save_path.clone()
+        }
+    } else {
+        item_snapshot.save_path.clone()
+    };
+
     let threads = if probe.accepts_ranges && probe.total_bytes > 0 {
         item_snapshot.threads_count
     } else {
@@ -226,16 +340,12 @@ pub async fn execute_segmented_http_download(
     let segments = compute_initial_segments(probe.total_bytes, threads, min_seg_bytes);
 
     // Pre-allocate destination file on disk
-    if let Some(parent) = Path::new(&item_snapshot.save_path).parent() {
+    if let Some(parent) = Path::new(&final_save_path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     {
-        let file = File::create(&item_snapshot.save_path).map_err(|e| {
-            format!(
-                "Failed to create target file {}: {}",
-                item_snapshot.save_path, e
-            )
-        })?;
+        let file = File::create(&final_save_path)
+            .map_err(|e| format!("Failed to create target file {}: {}", final_save_path, e))?;
         if probe.total_bytes > 0 {
             let _ = file.set_len(probe.total_bytes);
         }
@@ -248,6 +358,12 @@ pub async fn execute_segmented_http_download(
             d.total_bytes = probe.total_bytes;
             d.resumable = probe.accepts_ranges;
             d.resolved_url = Some(probe.resolved_url.clone());
+            d.save_path = final_save_path.clone();
+            if let Some(ref sname) = probe.suggested_filename {
+                if !sname.is_empty() {
+                    d.filename = sname.clone();
+                }
+            }
             d.status = DownloadStatus::Downloading;
             d.segments = segments.clone();
             d.transfer_log.push(format!(
@@ -264,7 +380,7 @@ pub async fn execute_segmented_http_download(
     for seg in segments {
         let client_clone = client.clone();
         let url_clone = probe.resolved_url.clone();
-        let save_path_clone = item_snapshot.save_path.clone();
+        let save_path_clone = final_save_path.clone();
         let dls_clone = Arc::clone(&downloads);
         let settings_clone = Arc::clone(&settings);
         let item_id_clone = item_id.clone();
@@ -381,7 +497,7 @@ pub async fn execute_segmented_http_download(
     // Verify SHA-256 checksum on completion if enabled
     let should_hash = settings.read().auto_verify_checksum;
     let computed_hash = if should_hash {
-        if let Ok(bytes) = std::fs::read(&item_snapshot.save_path) {
+        if let Ok(bytes) = std::fs::read(&final_save_path) {
             let mut hasher = Sha256::new();
             hasher.update(&bytes);
             Some(hex::encode(hasher.finalize()))

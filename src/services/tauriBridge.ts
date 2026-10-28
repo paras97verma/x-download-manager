@@ -184,6 +184,71 @@ export async function apiMoveToQueue(id: string, queueId: string): Promise<void>
   }
 }
 
+export async function apiPickDirectory(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return "~/Downloads/XDM";
+  }
+  try {
+    return await invoke<string | null>("pick_directory");
+  } catch (err) {
+    console.error("Failed to pick_directory via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiSetAutostart(enable: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) return enable;
+  try {
+    return await invoke<boolean>("set_autostart", { enable });
+  } catch (err) {
+    console.error("Failed to set_autostart via Tauri:", err);
+    return false;
+  }
+}
+
+export async function apiPromptNotificationPermission(): Promise<boolean> {
+  if (!isTauriRuntime()) {
+    if (typeof Notification !== "undefined") {
+      const res = await Notification.requestPermission();
+      return res === "granted";
+    }
+    return true;
+  }
+  try {
+    return await invoke<boolean>("request_notification_permission");
+  } catch (err) {
+    console.error("Failed to request_notification_permission via Tauri:", err);
+    return false;
+  }
+}
+
+export async function apiShowNotification(title: string, body: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(title, { body });
+    }
+    return;
+  }
+  try {
+    await invoke("show_notification", { title, body });
+  } catch (err) {
+    console.error("Failed to show_notification via Tauri:", err);
+  }
+}
+
+export async function apiParseTorrentFile(
+  filePath?: string,
+  base64Data?: string
+): Promise<any | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke("parse_torrent_file", { filePath, base64Data });
+  } catch (err) {
+    console.error("Failed to parse_torrent_file via Tauri:", err);
+    return null;
+  }
+}
+
 export function buildSegments(
   totalBytes: number,
   count: number,
@@ -213,6 +278,7 @@ export const INITIAL_DOWNLOADS: DownloadItem[] = [];
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
+  ui_mode: "simple",
   start_on_boot: true,
   minimize_to_tray: true,
   show_completion_dialog: true,

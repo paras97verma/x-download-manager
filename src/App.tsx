@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { MenuBar } from "./components/MenuBar";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar } from "./components/Sidebar";
 import { DownloadTable } from "./components/DownloadTable";
@@ -379,6 +380,15 @@ export const App: React.FC = () => {
     );
   };
 
+  const toggleUiMode = () => {
+    const nextMode = (settings.ui_mode || "simple") === "simple" ? "advanced" : "simple";
+    const nextSettings = { ...settings, ui_mode: nextMode as "simple" | "advanced" };
+    setSettings(nextSettings);
+    if (isTauriRuntime()) {
+      apiUpdateSettings(nextSettings);
+    }
+  };
+
   // Standard macOS Keyboard Shortcuts (Cmd + , for Settings, Cmd + N for New URL, etc.)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
@@ -386,6 +396,13 @@ export const App: React.FC = () => {
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement;
+
+      // Cmd + M / Ctrl + M -> Toggle Simple / Advanced Mode
+      if ((e.metaKey || e.ctrlKey) && (e.key === "m" || e.key === "M")) {
+        e.preventDefault();
+        toggleUiMode();
+        return;
+      }
 
       // Cmd + , / Ctrl + , -> Settings Modal
       if ((e.metaKey || e.ctrlKey) && (e.key === "," || e.key === "Settings")) {
@@ -458,6 +475,45 @@ export const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0b0f17] text-slate-100 overflow-hidden">
+      <MenuBar
+        onOpenAddUrl={() => setAddModalMode("url")}
+        onOpenAddTorrent={() => setAddModalMode("torrent")}
+        onOpenSettings={(tab) => setSettingsTab(tab || "general")}
+        onOpenScheduler={() => setShowSchedulerModal(true)}
+        onOpenExtensions={() => setShowExtensionsModal(true)}
+        onToggleUiMode={toggleUiMode}
+        uiMode={settings.ui_mode || "simple"}
+        onResumeSelected={handleResumeBatch}
+        onPauseSelected={handlePauseBatch}
+        onStopAll={() => {
+          if (isTauriRuntime()) {
+            downloads
+              .filter((d) => d.status === "downloading")
+              .forEach((d) => apiPauseDownload(d.id));
+          }
+          setDownloads((prev) =>
+            prev.map((d) =>
+              d.status === "downloading" ? { ...d, status: "paused", speed_bps: 0 } : d
+            )
+          );
+        }}
+        onDeleteSelected={(deleteFile) => handleDeleteBatch(Boolean(deleteFile))}
+        onSelectAll={() => handleSelectAll(true)}
+        onDeselectAll={() => handleSelectAll(false)}
+        onOpenFile={
+          selectedItem?.status === "completed"
+            ? () => apiOpenFile(selectedItem.save_path)
+            : undefined
+        }
+        onShowInFolder={
+          selectedItem ? () => apiShowInFolder(selectedItem.save_path) : undefined
+        }
+        onRestartSelected={
+          selectedItem ? () => handleRestartDownload(selectedItem.id) : undefined
+        }
+        selectedCount={selectedIds.size}
+      />
+
       <Toolbar
         onOpenAddModal={(mode) => setAddModalMode(mode)}
         onResumeSelected={handleResumeBatch}
@@ -479,6 +535,8 @@ export const App: React.FC = () => {
         onOpenScheduler={() => setShowSchedulerModal(true)}
         onOpenExtensions={() => setShowExtensionsModal(true)}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
+        onToggleUiMode={toggleUiMode}
+        uiMode={settings.ui_mode || "simple"}
         settings={settings}
         onToggleSpeedLimiter={() => {
           const next = {
@@ -521,7 +579,9 @@ export const App: React.FC = () => {
             onShowInFolder={(path) => apiShowInFolder(path)}
             onDeleteDownload={(id, deleteFile) => handleDeleteOne(id, deleteFile)}
           />
-          <SegmentInspector item={selectedItem} />
+          {(settings.ui_mode || "simple") === "advanced" && (
+            <SegmentInspector item={selectedItem} />
+          )}
         </main>
       </div>
 

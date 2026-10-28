@@ -139,6 +139,7 @@ export interface BrowserStatus {
 
 export interface AppSettings {
   theme: "dark" | "light" | "midnight";
+  ui_mode: "simple" | "advanced";
   start_on_boot: boolean;
   minimize_to_tray: boolean;
   show_completion_dialog: boolean;
