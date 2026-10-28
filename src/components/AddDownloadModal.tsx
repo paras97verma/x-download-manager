@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { X, Plus, Magnet, KeyRound, Cpu } from "lucide-react";
 import { AppSettings, NewDownloadRequest } from "../types/xdm";
 
@@ -15,11 +15,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   onClose,
   onAdd,
 }) => {
-  const [url, setUrl] = useState(
-    initialMode === "torrent"
-      ? "magnet:?xt=urn:btih:a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4&dn=Linux_Mint_22_Cinnamon_64bit.iso"
-      : "https://usersdrive.com/f82k91m40zpa.html"
-  );
+  const [url, setUrl] = useState("");
   const [filename, setFilename] = useState("");
   const [category, setCategory] = useState("Auto");
   const [threadsCount, setThreadsCount] = useState(settings.default_threads_per_download);
@@ -28,6 +24,39 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [authPass, setAuthPass] = useState("");
   const [cookies, setCookies] = useState("");
   const [sequentialTorrent, setSequentialTorrent] = useState(true);
+
+  // Automatically check clipboard for valid download URL on open
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+      navigator.clipboard
+        .readText()
+        .then((text) => {
+          const trimmed = text.trim();
+          if (
+            trimmed.startsWith("http://") ||
+            trimmed.startsWith("https://") ||
+            trimmed.startsWith("magnet:?") ||
+            trimmed.startsWith("ftp://") ||
+            trimmed.startsWith("ftps://") ||
+            trimmed.startsWith("sftp://")
+          ) {
+            setUrl(trimmed);
+            try {
+              if (trimmed.startsWith("http")) {
+                const u = new URL(trimmed);
+                const last = u.pathname.split("/").pop();
+                if (last && last.includes(".")) {
+                  setFilename(decodeURIComponent(last));
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   const handleSubmit = (startImmediately: boolean) => {
     if (!url.trim()) return;

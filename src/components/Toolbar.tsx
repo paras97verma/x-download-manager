@@ -28,6 +28,7 @@ interface ToolbarProps {
   onToggleSpeedLimiter: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  selectedCount?: number;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -43,6 +44,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToggleSpeedLimiter,
   searchQuery,
   onSearchChange,
+  selectedCount = 0,
 }) => {
   return (
     <header className="h-16 bg-[#111827] border-b border-slate-800 px-4 flex items-center justify-between select-none shrink-0">
@@ -89,20 +91,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={onResumeSelected}
-          className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
-          title="Resume Selected Download"
+          disabled={selectedCount === 0}
+          className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 text-xs font-medium transition"
+          title="Resume Selected Download(s)"
         >
           <Play className="w-3.5 h-3.5 text-emerald-400" />
-          Resume
+          Resume {selectedCount > 1 ? `(${selectedCount})` : ""}
         </button>
 
         <button
           onClick={onPauseSelected}
-          className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
-          title="Pause Selected Download"
+          disabled={selectedCount === 0}
+          className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 text-xs font-medium transition"
+          title="Pause Selected Download(s)"
         >
           <Pause className="w-3.5 h-3.5 text-amber-400" />
-          Pause
+          Pause {selectedCount > 1 ? `(${selectedCount})` : ""}
         </button>
 
         <button
@@ -116,10 +120,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={onDeleteSelected}
-          className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-rose-950/60 hover:text-rose-300 text-slate-300 text-xs font-medium transition"
-          title="Remove Selected Task"
+          disabled={selectedCount === 0}
+          className="flex items-center gap-1 px-2.5 py-2 rounded-lg bg-slate-800/80 hover:bg-rose-950/60 hover:text-rose-300 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-300 text-xs font-medium transition"
+          title="Remove Selected Task(s)"
         >
           <Trash2 className="w-3.5 h-3.5" />
+          {selectedCount > 1 ? ` (${selectedCount})` : ""}
         </button>
       </div>
 

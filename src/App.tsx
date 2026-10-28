@@ -15,8 +15,10 @@ import {
   apiGetBrowserStatuses,
   apiGetDownloads,
   apiGetSettings,
+  apiOpenFile,
   apiPauseDownload,
   apiResumeDownload,
+  apiShowInFolder,
   apiToggleBrowserExtension,
   apiUpdateSettings,
   buildSegments,
@@ -35,7 +37,9 @@ export const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [browsers, setBrowsers] = useState<BrowserStatus[]>(INITIAL_BROWSERS);
 
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedQueue, setSelectedQueue] = useState<string>("all");
@@ -52,9 +56,12 @@ export const App: React.FC = () => {
     try {
       const list = await apiGetDownloads();
       setDownloads(list);
-      setSelectedId((prev) => {
-        if (prev && list.some((d) => d.id === prev)) return prev;
-        return list.length > 0 ? list[0].id : null;
+      setSelectedIds((prev) => {
+        const next = new Set<string>();
+        for (const id of prev) {
+          if (list.some((d) => d.id === id)) next.add(id);
+        }
+        return next;
       });
     } catch (e) {
       console.warn("Telemetry polling failed:", e);
@@ -78,6 +85,7 @@ export const App: React.FC = () => {
   }, [syncFromBackend]);
 
   // Live telemetry simulation tick only when running in web preview mode (outside Tauri)
+  // Incorporates natural speed fluctuations so throughput reflects real network conditions
   useEffect(() => {
     if (isTauriRuntime()) return;
 
@@ -87,18 +95,37 @@ export const App: React.FC = () => {
           if (d.status !== "downloading") return d;
           const capBps = settings.speed_limiter_enabled
             ? settings.global_max_download_kbps * 1024
-            : d.speed_bps;
-          const effectiveSpeed = Math.min(d.speed_bps || 12_500_000, capBps);
-          const nextBytes = Math.min(d.total_bytes, d.downloaded_bytes + Math.floor(effectiveSpeed * 0.5));
+            : 32_000_000;
+
+          // Natural fluctuation with +/- 12% random variance on each tick
+          const baseSpeed = d.speed_bps > 0 ? d.speed_bps : 14_500_000;
+          const jitter = 0.88 + Math.random() * 0.24;
+          const fluctuatingSpeed = Math.round(Math.min(baseSpeed * jitter, capBps));
+
+          const nextBytes = Math.min(
+            d.total_bytes,
+            d.downloaded_bytes + Math.floor(fluctuatingSpeed * 0.5)
+          );
           const ratio = d.total_bytes > 0 ? nextBytes / d.total_bytes : 0;
           const completed = nextBytes >= d.total_bytes && d.total_bytes > 0;
           const remaining = Math.max(0, d.total_bytes - nextBytes);
 
+          const fluctuatingUp =
+            d.upload_speed_bps > 0
+              ? Math.round(d.upload_speed_bps * (0.85 + Math.random() * 0.3))
+              : 0;
+
           return {
             ...d,
             downloaded_bytes: nextBytes,
-            speed_bps: completed ? 0 : effectiveSpeed,
-            eta_seconds: completed ? 0 : effectiveSpeed > 0 ? Math.ceil(remaining / effectiveSpeed) : null,
+            speed_bps: completed ? 0 : fluctuatingSpeed,
+            upload_speed_bps: completed ? 0 : fluctuatingUp,
+            eta_seconds:
+              completed
+                ? 0
+                : fluctuatingSpeed > 0
+                ? Math.ceil(remaining / fluctuatingSpeed)
+                : null,
             status: completed ? "completed" : "downloading",
             segments: buildSegments(d.total_bytes, d.threads_count, ratio, !completed),
           };
@@ -123,10 +150,14 @@ export const App: React.FC = () => {
     });
   }, [downloads, selectedCategory, selectedStatus, selectedQueue, searchQuery]);
 
-  const selectedItem = useMemo(
-    () => downloads.find((d) => d.id === selectedId) || null,
-    [downloads, selectedId]
-  );
+  // Primary selected item for segment inspection
+  const selectedItem = useMemo(() => {
+    if (lastSelectedId && downloads.some((d) => d.id === lastSelectedId)) {
+      return downloads.find((d) => d.id === lastSelectedId) || null;
+    }
+    const firstId = Array.from(selectedIds)[0];
+    return firstId ? downloads.find((d) => d.id === firstId) || null : null;
+  }, [downloads, selectedIds, lastSelectedId]);
 
   const totalDownSpeed = useMemo(
     () =>
@@ -144,13 +175,53 @@ export const App: React.FC = () => {
     [downloads]
   );
 
+  // Multi-Selection handler with Shift range and Cmd/Ctrl multi-click
+  const handleSelect = (id: string, isMulti = false, isRange = false) => {
+    setLastSelectedId(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (isRange && lastSelectedId) {
+        const idxA = filteredDownloads.findIndex((d) => d.id === lastSelectedId);
+        const idxB = filteredDownloads.findIndex((d) => d.id === id);
+        if (idxA !== -1 && idxB !== -1) {
+          const [start, end] = idxA < idxB ? [idxA, idxB] : [idxB, idxA];
+          for (let i = start; i <= end; i++) {
+            next.add(filteredDownloads[i].id);
+          }
+          return next;
+        }
+      }
+
+      if (isMulti) {
+        if (next.has(id)) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      } else {
+        next.clear();
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = (all: boolean) => {
+    if (all) {
+      setSelectedIds(new Set(filteredDownloads.map((d) => d.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
   const handleAddDownload = async (req: NewDownloadRequest) => {
     if (isTauriRuntime()) {
       try {
         const item = await apiAddDownload(req);
         if (item) {
           setDownloads((prev) => [item, ...prev.filter((d) => d.id !== item.id)]);
-          setSelectedId(item.id);
+          setSelectedIds(new Set([item.id]));
+          setLastSelectedId(item.id);
           return;
         }
       } catch (err) {
@@ -160,7 +231,9 @@ export const App: React.FC = () => {
 
     const isMagnet = req.url.toLowerCase().startsWith("magnet:?");
     const isUsersdrive = req.url.toLowerCase().includes("usersdrive.com");
-    const isFtp = req.url.toLowerCase().startsWith("ftp://") || req.url.toLowerCase().startsWith("sftp://");
+    const isFtp =
+      req.url.toLowerCase().startsWith("ftp://") ||
+      req.url.toLowerCase().startsWith("sftp://");
     const protocol = isMagnet
       ? "magnet"
       : isUsersdrive
@@ -181,7 +254,9 @@ export const App: React.FC = () => {
       id: `dl-${Date.now()}`,
       filename: fname,
       url: req.url,
-      resolved_url: isUsersdrive ? `https://cdn4.usersdrive.com/d/auto_resolved/${fname}` : req.url,
+      resolved_url: isUsersdrive
+        ? `https://cdn4.usersdrive.com/d/auto_resolved/${fname}`
+        : req.url,
       protocol,
       category: req.category || (isMagnet ? "Torrents" : "Compressed"),
       queue_id: req.queue_id || "main-queue",
@@ -201,14 +276,12 @@ export const App: React.FC = () => {
       created_at: new Date().toISOString(),
       transfer_log: [
         `[${new Date().toLocaleTimeString()}] Task created (${protocol.toUpperCase()}) with ${threads} parallel threads`,
-        isUsersdrive
-          ? `[${new Date().toLocaleTimeString()}] Usersdrive Authenticated Resolver extracted direct stream link`
-          : `[${new Date().toLocaleTimeString()}] Range probe succeeded (206 Partial Content)`,
       ],
     };
 
     setDownloads((prev) => [newItem, ...prev]);
-    setSelectedId(newItem.id);
+    setSelectedIds(new Set([newItem.id]));
+    setLastSelectedId(newItem.id);
   };
 
   const handleTogglePauseResume = (item: DownloadItem) => {
@@ -233,16 +306,129 @@ export const App: React.FC = () => {
     );
   };
 
+  const handleResumeBatch = () => {
+    selectedIds.forEach((id) => {
+      const item = downloads.find((d) => d.id === id);
+      if (item && item.status !== "downloading" && item.status !== "completed") {
+        handleTogglePauseResume(item);
+      }
+    });
+  };
+
+  const handlePauseBatch = () => {
+    selectedIds.forEach((id) => {
+      const item = downloads.find((d) => d.id === id);
+      if (item && item.status === "downloading") {
+        handleTogglePauseResume(item);
+      }
+    });
+  };
+
+  const handleDeleteBatch = (deleteFile = false) => {
+    if (selectedIds.size === 0) return;
+    selectedIds.forEach((id) => {
+      if (isTauriRuntime()) {
+        apiDeleteDownload(id, deleteFile);
+      }
+    });
+    setDownloads((prev) => prev.filter((d) => !selectedIds.has(d.id)));
+    setSelectedIds(new Set());
+    setLastSelectedId(null);
+  };
+
+  const handleDeleteOne = (id: string, deleteFile = false) => {
+    if (isTauriRuntime()) {
+      apiDeleteDownload(id, deleteFile);
+    }
+    setDownloads((prev) => prev.filter((d) => d.id !== id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  // Standard macOS Keyboard Shortcuts (Cmd + , for Settings, Cmd + N for New URL, etc.)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isInput =
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement;
+
+      // Cmd + , / Ctrl + , -> Settings Modal
+      if ((e.metaKey || e.ctrlKey) && (e.key === "," || e.key === "Settings")) {
+        e.preventDefault();
+        setSettingsTab("general");
+        return;
+      }
+
+      // Cmd + N / Ctrl + N -> Add URL Modal
+      if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) {
+        e.preventDefault();
+        setAddModalMode("url");
+        return;
+      }
+
+      // Cmd + T / Ctrl + T -> Add Torrent Modal
+      if ((e.metaKey || e.ctrlKey) && (e.key === "t" || e.key === "T")) {
+        e.preventDefault();
+        setAddModalMode("torrent");
+        return;
+      }
+
+      // Cmd + A / Ctrl + A -> Select All (when not in text input)
+      if (!isInput && (e.metaKey || e.ctrlKey) && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        handleSelectAll(true);
+        return;
+      }
+
+      // Delete / Backspace -> Delete Selected (when not in text input)
+      if (!isInput && (e.key === "Delete" || e.key === "Backspace")) {
+        if (selectedIds.size > 0) {
+          e.preventDefault();
+          handleDeleteBatch(false);
+        }
+        return;
+      }
+
+      // Spacebar -> Pause/Resume Primary Selected
+      if (!isInput && e.key === " ") {
+        if (selectedItem) {
+          e.preventDefault();
+          handleTogglePauseResume(selectedItem);
+        }
+        return;
+      }
+
+      // Escape -> Deselect All / Close Modals
+      if (e.key === "Escape") {
+        if (addModalMode) setAddModalMode(null);
+        else if (showExtensionsModal) setShowExtensionsModal(false);
+        else if (settingsTab) setSettingsTab(null);
+        else if (showSchedulerModal) setShowSchedulerModal(false);
+        else if (selectedIds.size > 0) setSelectedIds(new Set());
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [
+    selectedIds,
+    selectedItem,
+    addModalMode,
+    showExtensionsModal,
+    settingsTab,
+    showSchedulerModal,
+  ]);
+
   return (
     <div className="h-screen w-screen flex flex-col bg-[#0b0f17] text-slate-100 overflow-hidden">
       <Toolbar
         onOpenAddModal={(mode) => setAddModalMode(mode)}
-        onResumeSelected={() => {
-          if (selectedItem) handleTogglePauseResume({ ...selectedItem, status: "paused" });
-        }}
-        onPauseSelected={() => {
-          if (selectedItem) handleTogglePauseResume({ ...selectedItem, status: "downloading" });
-        }}
+        onResumeSelected={handleResumeBatch}
+        onPauseSelected={handlePauseBatch}
         onStopAll={() => {
           if (isTauriRuntime()) {
             downloads
@@ -255,20 +441,17 @@ export const App: React.FC = () => {
             )
           );
         }}
-        onDeleteSelected={() => {
-          if (!selectedId) return;
-          if (isTauriRuntime()) {
-            apiDeleteDownload(selectedId, false);
-          }
-          setDownloads((prev) => prev.filter((d) => d.id !== selectedId));
-          setSelectedId(null);
-        }}
+        onDeleteSelected={() => handleDeleteBatch(false)}
+        selectedCount={selectedIds.size}
         onOpenScheduler={() => setShowSchedulerModal(true)}
         onOpenExtensions={() => setShowExtensionsModal(true)}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         settings={settings}
         onToggleSpeedLimiter={() => {
-          const next = { ...settings, speed_limiter_enabled: !settings.speed_limiter_enabled };
+          const next = {
+            ...settings,
+            speed_limiter_enabled: !settings.speed_limiter_enabled,
+          };
           setSettings(next);
           if (isTauriRuntime()) {
             apiUpdateSettings(next);
@@ -293,9 +476,13 @@ export const App: React.FC = () => {
         <main className="flex-1 flex flex-col overflow-hidden">
           <DownloadTable
             downloads={filteredDownloads}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
+            selectedIds={selectedIds}
+            onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
             onTogglePauseResume={handleTogglePauseResume}
+            onOpenFile={(path) => apiOpenFile(path)}
+            onShowInFolder={(path) => apiShowInFolder(path)}
+            onDeleteDownload={(id, deleteFile) => handleDeleteOne(id, deleteFile)}
           />
           <SegmentInspector item={selectedItem} />
         </main>
@@ -346,7 +533,9 @@ export const App: React.FC = () => {
             if (isTauriRuntime()) {
               apiToggleBrowserExtension(browserId, enable).then((updated) => {
                 if (updated) {
-                  setBrowsers((prev) => prev.map((b) => (b.id === browserId ? updated : b)));
+                  setBrowsers((prev) =>
+                    prev.map((b) => (b.id === browserId ? updated : b))
+                  );
                 }
               });
             }
@@ -403,25 +592,6 @@ export const App: React.FC = () => {
           onClose={() => setSettingsTab(null)}
         />
       )}
-
-      {showSchedulerModal && (
-        <SchedulerModal
-          settings={settings}
-          onStartQueueNow={(qId) => {
-            setDownloads((prev) =>
-              prev.map((d) =>
-                d.queue_id === qId && d.status !== "completed"
-                  ? { ...d, status: "downloading", speed_bps: 14_500_000 }
-                  : d
-              )
-            );
-          }}
-          onClose={() => setShowSchedulerModal(false)}
-        />
-      )}
-    </div>
-  );
-};
 
       {showSchedulerModal && (
         <SchedulerModal

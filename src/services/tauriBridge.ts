@@ -107,6 +107,52 @@ export async function apiToggleBrowserExtension(
   }
 }
 
+export async function apiOpenFile(path: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    console.log("Mock: Opening file:", path);
+    return;
+  }
+  try {
+    await invoke("open_file", { path });
+  } catch (err) {
+    console.error("Failed to open_file via Tauri:", err);
+  }
+}
+
+export async function apiShowInFolder(path: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    console.log("Mock: Showing file in folder:", path);
+    return;
+  }
+  try {
+    await invoke("show_in_folder", { path });
+  } catch (err) {
+    console.error("Failed to show_in_folder via Tauri:", err);
+  }
+}
+
+export async function apiOpenBrowserUrl(url: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    window.open(url, "_blank");
+    return;
+  }
+  try {
+    await invoke("open_browser_url", { url });
+  } catch (err) {
+    console.error("Failed to open_browser_url via Tauri:", err);
+  }
+}
+
+export async function apiOpenExtensionFolder(family: string): Promise<string | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<string>("open_extension_folder", { family });
+  } catch (err) {
+    console.error("Failed to open_extension_folder via Tauri:", err);
+    return null;
+  }
+}
+
 export function buildSegments(
   totalBytes: number,
   count: number,

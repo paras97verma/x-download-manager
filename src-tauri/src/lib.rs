@@ -137,10 +137,131 @@ async fn resolve_authenticated_link(
     resolve_usersdrive_or_filehost(&url, &st, cookies).await
 }
 
+#[tauri::command]
+fn open_file(path: String) -> Result<(), String> {
+    let resolved = crate::config::resolve_path(&path);
+    if !resolved.exists() {
+        return Err(format!("File does not exist: {}", resolved.display()));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&resolved)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &resolved.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&resolved)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn show_in_folder(path: String) -> Result<(), String> {
+    let resolved = crate::config::resolve_path(&path);
+    #[cfg(target_os = "macos")]
+    {
+        if resolved.exists() {
+            std::process::Command::new("open")
+                .arg("-R")
+                .arg(&resolved)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        } else if let Some(parent) = resolved.parent() {
+            std::process::Command::new("open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if resolved.exists() {
+            std::process::Command::new("explorer")
+                .arg(format!("/select,\"{}\"", resolved.display()))
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        } else if let Some(parent) = resolved.parent() {
+            std::process::Command::new("explorer")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(parent) = resolved.parent() {
+            std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_browser_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn open_extension_folder(family: String) -> Result<String, String> {
+    let dir = crate::browser::get_or_create_extension_dir(&family)?;
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&dir).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer").arg(&dir).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
+    }
+    Ok(dir.to_string_lossy().to_string())
+}
+
 pub fn run_app() {
     let engine = Arc::new(DownloadEngine::new());
 
-    // Auto-install browser extension Native Messaging manifests on startup if enabled
+    // Auto-install browser extension Native Messaging manifests and extract bundles
+    let _ = browser::get_or_create_extension_dir("chromium");
+    let _ = browser::get_or_create_extension_dir("firefox");
+
     {
         let mut st = engine.settings.write();
         if st.browser.auto_install_extensions_on_startup {
@@ -175,6 +296,10 @@ pub fn run_app() {
             get_browser_statuses,
             toggle_browser_extension,
             resolve_authenticated_link,
+            open_file,
+            show_in_folder,
+            open_browser_url,
+            open_extension_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running X Download Manager");

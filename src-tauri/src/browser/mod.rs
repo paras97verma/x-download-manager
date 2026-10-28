@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use crate::config::AppSettings;
 
 pub const CHROMIUM_EXTENSION_ID: &str = "knldjmfmopnpolahpmmgbagdohdnhkik";
+pub const CHROMIUM_UNPACKED_ID: &str = "degffimdimlipahdfmgibgkliiihcbbj";
 pub const FIREFOX_EXTENSION_ID: &str = "xdm-extension@peivee.com";
 pub const SAFARI_EXTENSION_BUNDLE_ID: &str = "com.peivee.xdm.SafariExtension";
 pub const NATIVE_HOST_NAME: &str = "com.peivee.xdm";
@@ -479,7 +480,10 @@ pub fn configure_browser_integration(
                     description: "X Download Manager Native Messaging Host".to_string(),
                     path: current_exe.clone(),
                     host_type: "stdio".to_string(),
-                    allowed_origins: vec![format!("chrome-extension://{}/", CHROMIUM_EXTENSION_ID)],
+                    allowed_origins: vec![
+                        format!("chrome-extension://{}/", CHROMIUM_EXTENSION_ID),
+                        format!("chrome-extension://{}/", CHROMIUM_UNPACKED_ID),
+                    ],
                 };
                 if let Ok(json) = serde_json::to_string_pretty(&cr_manifest) {
                     let _ = fs::write(&manifest_file, json);
@@ -625,21 +629,75 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
                 let _ = fs::remove_file(xpi_dest);
             }
         } else {
-            let descriptor_file = dir.join(format!("{}.json", CHROMIUM_EXTENSION_ID));
+            let descriptor_file1 = dir.join(format!("{}.json", CHROMIUM_EXTENSION_ID));
+            let descriptor_file2 = dir.join(format!("{}.json", CHROMIUM_UNPACKED_ID));
             if enable {
                 let payload = serde_json::json!({
                     "external_update_url": "https://clients2.google.com/service/update2/crx"
                 });
-                let _ = fs::write(
-                    descriptor_file,
-                    serde_json::to_string_pretty(&payload).unwrap_or_default(),
-                );
-            } else if descriptor_file.exists() {
-                let _ = fs::remove_file(descriptor_file);
+                let json = serde_json::to_string_pretty(&payload).unwrap_or_default();
+                let _ = fs::write(descriptor_file1, &json);
+                let _ = fs::write(descriptor_file2, &json);
+            } else {
+                if descriptor_file1.exists() {
+                    let _ = fs::remove_file(descriptor_file1);
+                }
+                if descriptor_file2.exists() {
+                    let _ = fs::remove_file(descriptor_file2);
+                }
             }
         }
     }
     Ok(())
+}
+
+pub fn get_or_create_extension_dir(family: &str) -> Result<PathBuf, String> {
+    let base =
+        if let Some(proj) = directories::ProjectDirs::from("com", "peivee", "XDownloadManager") {
+            proj.config_dir().join("extensions")
+        } else {
+            PathBuf::from("extensions")
+        };
+
+    let target_dir = if family.eq_ignore_ascii_case("firefox") {
+        base.join("firefox")
+    } else {
+        base.join("chromium")
+    };
+
+    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+
+    if family.eq_ignore_ascii_case("firefox") {
+        let manifest = include_str!("../../../extensions/firefox/manifest.json");
+        let bg = include_str!("../../../extensions/firefox/background.js");
+        let content = include_str!("../../../extensions/firefox/content.js");
+        let popup_html = include_str!("../../../extensions/firefox/popup.html");
+        let popup_js = include_str!("../../../extensions/firefox/popup.js");
+        let styles = include_str!("../../../extensions/firefox/styles.css");
+
+        let _ = fs::write(target_dir.join("manifest.json"), manifest);
+        let _ = fs::write(target_dir.join("background.js"), bg);
+        let _ = fs::write(target_dir.join("content.js"), content);
+        let _ = fs::write(target_dir.join("popup.html"), popup_html);
+        let _ = fs::write(target_dir.join("popup.js"), popup_js);
+        let _ = fs::write(target_dir.join("styles.css"), styles);
+    } else {
+        let manifest = include_str!("../../../extensions/chromium/manifest.json");
+        let bg = include_str!("../../../extensions/chromium/background.js");
+        let content = include_str!("../../../extensions/chromium/content.js");
+        let popup_html = include_str!("../../../extensions/chromium/popup.html");
+        let popup_js = include_str!("../../../extensions/chromium/popup.js");
+        let styles = include_str!("../../../extensions/chromium/styles.css");
+
+        let _ = fs::write(target_dir.join("manifest.json"), manifest);
+        let _ = fs::write(target_dir.join("background.js"), bg);
+        let _ = fs::write(target_dir.join("content.js"), content);
+        let _ = fs::write(target_dir.join("popup.html"), popup_html);
+        let _ = fs::write(target_dir.join("popup.js"), popup_js);
+        let _ = fs::write(target_dir.join("styles.css"), styles);
+    }
+
+    Ok(target_dir)
 }
 
 #[cfg(target_os = "windows")]

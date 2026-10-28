@@ -5,6 +5,7 @@
   "version": "1.0.0",
   "description": "Intercepts downloads, authenticated file hosts (Usersdrive, FTP), and streaming media for X Download Manager. Made with ❤️ by ~peivee.",
   "author": "~peivee",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA709LeolNrd9J+f37HiXM3VkZLwz0j57RuTNOmKaytu45VGRPaJWqJprwAu/akju0Ocbx76ntlx4meg/Kr8pWpiukI3os3cvMIKuJ//Jmhy1IfPV3cwwUgUUox61eke/JzDgENbxzf2R1z+gzsZeh8TMflZadgAupOCXft2ciZZ96LWCipXM9s1dZt9ZZs3K6NfQtFRrGNl0QBGwZ86a1JMJVR8jJJmy5m2xD6sOdXwxpMncksDjf9CahSzJbnmKULIwuQJkA3IrUtQRD1Z1AApgi/mlHh9E20HXVDr0AJHOakYgire3Rjvj9RGpac/5hHS2sC0RxmfPKwLJsUoTJGwIDAQAB",
   "permissions": [
     "downloads",
     "cookies",

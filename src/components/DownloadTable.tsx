@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Globe,
   Magnet,
@@ -9,23 +9,81 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  FolderOpen,
+  FileText,
+  Copy,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
 import { DownloadItem } from "../types/xdm";
 import { formatBytes, formatEta, formatSpeed } from "../services/tauriBridge";
 
 interface DownloadTableProps {
   downloads: DownloadItem[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedIds: Set<string>;
+  onSelect: (id: string, isMulti?: boolean, isRange?: boolean) => void;
+  onSelectAll: (all: boolean) => void;
   onTogglePauseResume: (item: DownloadItem) => void;
+  onOpenFile: (path: string) => void;
+  onShowInFolder: (path: string) => void;
+  onDeleteDownload: (id: string, deleteFile: boolean) => void;
+}
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  item: DownloadItem;
 }
 
 export const DownloadTable: React.FC<DownloadTableProps> = ({
   downloads,
-  selectedId,
+  selectedIds,
   onSelect,
+  onSelectAll,
   onTogglePauseResume,
+  onOpenFile,
+  onShowInFolder,
+  onDeleteDownload,
 }) => {
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close context menu on outside click or escape
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("mousedown", handleOutside);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  const handleRowContextMenu = (e: React.MouseEvent, item: DownloadItem) => {
+    e.preventDefault();
+    if (!selectedIds.has(item.id)) {
+      onSelect(item.id, false);
+    }
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 260);
+    setContextMenu({ x, y, item });
+  };
+
+  const handleDoubleClick = (item: DownloadItem) => {
+    if (item.status === "completed") {
+      onOpenFile(item.save_path);
+    } else {
+      onTogglePauseResume(item);
+    }
+  };
+
   const getProtocolBadge = (item: DownloadItem) => {
     switch (item.protocol) {
       case "magnet":
@@ -59,11 +117,26 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
     }
   };
 
+  const allSelected = downloads.length > 0 && selectedIds.size === downloads.length;
+  const isIndeterminate = selectedIds.size > 0 && selectedIds.size < downloads.length;
+
   return (
-    <div className="flex-1 overflow-auto bg-[#0b0f17]">
-      <table className="w-full text-left border-collapse select-none">
+    <div className="flex-1 overflow-auto bg-[#0b0f17] relative select-none">
+      <table className="w-full text-left border-collapse">
         <thead className="sticky top-0 bg-[#111827] border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400 z-10">
           <tr>
+            <th className="py-2.5 px-3 w-8 text-center">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = isIndeterminate;
+                }}
+                onChange={(e) => onSelectAll(e.target.checked)}
+                className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                title="Select all downloads"
+              />
+            </th>
             <th className="py-2.5 px-3">File Name</th>
             <th className="py-2.5 px-3">Protocol / Auth</th>
             <th className="py-2.5 px-3 w-52">Progress & Segments</th>
@@ -77,14 +150,14 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
         <tbody className="divide-y divide-slate-800/60 text-xs">
           {downloads.length === 0 && (
             <tr>
-              <td colSpan={8} className="py-24 text-center text-slate-500">
+              <td colSpan={9} className="py-24 text-center text-slate-500">
                 <div className="flex flex-col items-center justify-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
                     <Globe className="w-6 h-6 text-slate-400" />
                   </div>
                   <div className="text-sm font-medium text-slate-300">No downloads in list</div>
                   <div className="text-xs text-slate-500 max-w-sm leading-relaxed">
-                    Click <strong className="text-blue-400">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or download any file in Chrome, Firefox, Safari, Arc, Brave, Edge, or Zen to intercept automatically.
+                    Click <strong className="text-blue-400">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or trigger a download in Dia, Arc, Chrome, Firefox, Safari, Brave, Edge, or Zen to intercept automatically.
                   </div>
                 </div>
               </td>
@@ -95,18 +168,31 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               item.total_bytes > 0
                 ? Math.min(100, (item.downloaded_bytes / item.total_bytes) * 100)
                 : 0;
-            const isSelected = item.id === selectedId;
+            const isSelected = selectedIds.has(item.id);
 
             return (
               <tr
                 key={item.id}
-                onClick={() => onSelect(item.id)}
+                onClick={(e) => onSelect(item.id, e.metaKey || e.ctrlKey, e.shiftKey)}
+                onDoubleClick={() => handleDoubleClick(item)}
+                onContextMenu={(e) => handleRowContextMenu(e, item)}
                 className={`cursor-pointer transition ${
                   isSelected
                     ? "bg-blue-600/15 hover:bg-blue-600/20"
                     : "hover:bg-slate-900/90"
                 }`}
               >
+                <td
+                  className="py-2.5 px-3 w-8 text-center"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => onSelect(item.id, true)}
+                    className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                  />
+                </td>
                 <td className="py-2.5 px-3 font-medium text-slate-100 max-w-xs">
                   <div className="truncate font-semibold">{item.filename}</div>
                   <div className="text-[10px] text-slate-400 truncate">{item.url}</div>
@@ -140,7 +226,13 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                       })
                     ) : (
                       <div
-                        className="h-full bg-blue-500"
+                        className={`h-full transition-all duration-300 ${
+                          item.status === "completed"
+                            ? "bg-emerald-500"
+                            : item.status === "paused"
+                            ? "bg-amber-500"
+                            : "bg-blue-500"
+                        }`}
                         style={{ width: `${pct}%` }}
                       />
                     )}
@@ -172,9 +264,28 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 </td>
                 <td className="py-2.5 px-3 text-right">
                   {item.status === "completed" ? (
-                    <span className="inline-flex items-center gap-1 text-emerald-400 text-[11px] font-semibold">
-                      <CheckCircle2 className="w-4 h-4" /> Done
-                    </span>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenFile(item.save_path);
+                        }}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1 text-[11px]"
+                        title="Open file"
+                      >
+                        <FileText className="w-3 h-3 text-blue-400" /> Open
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onShowInFolder(item.save_path);
+                        }}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                        title="Show in Finder"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   ) : item.status === "failed" ? (
                     <span className="inline-flex items-center gap-1 text-rose-400 text-[11px]">
                       <AlertCircle className="w-4 h-4" /> Error
@@ -208,6 +319,112 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
           })}
         </tbody>
       </table>
+
+      {/* macOS / Desktop Right-Click Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          className="fixed z-50 w-56 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200 overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.item.status === "downloading" ? (
+            <button
+              onClick={() => {
+                onTogglePauseResume(contextMenu.item);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            >
+              <Pause className="w-3.5 h-3.5 text-amber-400" />
+              Pause Download
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                onTogglePauseResume(contextMenu.item);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            >
+              <Play className="w-3.5 h-3.5 text-emerald-400" />
+              Resume Download
+            </button>
+          )}
+
+          {contextMenu.item.status === "completed" && (
+            <button
+              onClick={() => {
+                onOpenFile(contextMenu.item.save_path);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left font-medium text-emerald-300"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open File
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              onShowInFolder(contextMenu.item.save_path);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
+            Show in Finder / Folder
+          </button>
+
+          <div className="h-px bg-slate-700/60 my-1" />
+
+          <button
+            onClick={() => {
+              navigator.clipboard?.writeText(contextMenu.item.url);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+          >
+            <Copy className="w-3.5 h-3.5 text-slate-400" />
+            Copy Download Link
+          </button>
+
+          <button
+            onClick={() => {
+              navigator.clipboard?.writeText(contextMenu.item.save_path);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+          >
+            <Copy className="w-3.5 h-3.5 text-slate-400" />
+            Copy File Save Path
+          </button>
+
+          <div className="h-px bg-slate-700/60 my-1" />
+
+          <button
+            onClick={() => {
+              onDeleteDownload(contextMenu.item.id, false);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-rose-950/70 hover:text-rose-200 text-rose-300 text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Remove from List
+          </button>
+
+          <button
+            onClick={() => {
+              onDeleteDownload(contextMenu.item.id, true);
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-rose-950/70 hover:text-rose-200 text-rose-400 text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete File from Disk
+          </button>
+        </div>
+      )}
     </div>
   );
 };
