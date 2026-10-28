@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "X Download Manager — Cross-Platform Multi-Threaded, Torrent & FTP Download Manager",
-  "author": "Paras Verma <paras.97.verma@gmail.com>",
+  "author": "~peivee",
   "license": "MIT",
   "type": "module",
   "scripts": {

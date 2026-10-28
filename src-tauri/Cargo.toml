@@ -2,7 +2,7 @@
 name = "x-download-manager"
 version = "1.0.0"
 description = "X Download Manager — High-Speed Cross-Platform Multi-Threaded, Torrent, and FTP Download Manager"
-authors = ["Paras Verma <paras.97.verma@gmail.com>"]
+authors = ["~peivee"]
 license = "MIT"
 repository = "https://github.com/paras97verma/x-download-manager"
 edition = "2021"

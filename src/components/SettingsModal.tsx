@@ -11,6 +11,7 @@ import {
   Globe,
   Plus,
   Trash2,
+  Info,
 } from "lucide-react";
 import { AppSettings, SiteCredential } from "../types/xdm";
 
@@ -45,6 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: "categories", label: "File Categories", icon: FolderOpen },
     { id: "browser", label: "Browser Monitoring", icon: Puzzle },
     { id: "proxy", label: "Proxy & Network", icon: Globe },
+    { id: "about", label: "About & Credits", icon: Info },
   ];
 
   const addCredential = () => {
@@ -525,6 +527,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     placeholder="Port"
                     className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200"
                   />
+                </div>
+              </div>
+            )}
+
+            {activeTab === "about" && (
+              <div className="space-y-4">
+                <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 text-center space-y-3.5">
+                  <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30 text-white font-black text-2xl">
+                    X
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">X Download Manager</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Version 1.0.0 (Production Release)</p>
+                  </div>
+                  <div>
+                    <span className="inline-block px-4 py-2 rounded-xl bg-slate-800/90 border border-slate-700/60 text-sm font-semibold text-white shadow-sm tracking-wide">
+                      Made with ❤️ by ~peivee
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                    High-speed native multi-threaded download accelerator, BitTorrent / Magnet engine, FTP/SFTP client, and automated cross-browser interceptor.
+                  </p>
                 </div>
               </div>
             )}

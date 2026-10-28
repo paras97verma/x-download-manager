@@ -134,7 +134,7 @@ jobs:
             - `xdm-extension-safari.zip` (Apple Safari WebExtension + macOS Wrapper)
 
             ---
-            *Made with ❤️ by [Paras Verma](https://github.com/paras97verma)*
+            *Made with ❤️ by ~peivee*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -45,8 +45,8 @@
     ],
     "category": "Utility",
     "shortDescription": "Cross-Platform Multi-Threaded, Torrent & FTP Download Manager",
-    "longDescription": "X Download Manager (XDM) is a blazingly fast native cross-platform download accelerator and manager for macOS, Windows, and Linux with multi-threaded HTTP/HTTPS segmentation, BitTorrent/Magnet engine, FTP/SFTP & authenticated file-sharing support (Usersdrive, 1fichier, etc.), and automatic browser extension integration for Chromium, Firefox, and Safari. Made with ❤️ by Paras Verma.",
-    "copyright": "Copyright © 2026 Paras Verma. All rights reserved.",
+    "longDescription": "X Download Manager (XDM) is a blazingly fast native cross-platform download accelerator and manager for macOS, Windows, and Linux with multi-threaded HTTP/HTTPS segmentation, BitTorrent/Magnet engine, FTP/SFTP & authenticated file-sharing support (Usersdrive, 1fichier, etc.), and automatic browser extension integration for Chromium, Firefox, and Safari. Made with ❤️ by ~peivee.",
+    "copyright": "Copyright © 2026 ~peivee. All rights reserved.",
     "macOS": {
       "minimumSystemVersion": "11.0",
       "signingIdentity": "-",

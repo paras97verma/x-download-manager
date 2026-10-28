@@ -178,4 +178,4 @@ While X Download Manager automatically registers the Native Messaging Host for d
 
 ---
 
-Made with ❤️ by [Paras Verma](https://github.com/paras97verma)
+Made with ❤️ by ~peivee

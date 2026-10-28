@@ -59,7 +59,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 v1.0.0 RUST
               </span>
             </div>
-            <div className="text-[11px] text-slate-400">Multi-Thread • BitTorrent • FTP • Auth</div>
+            <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              <span>Multi-Thread • BitTorrent • FTP</span>
+              <span className="text-slate-600">•</span>
+              <span className="text-slate-200 font-medium">Made with ❤️ by ~peivee</span>
+            </div>
           </div>
         </div>
 
