@@ -49,9 +49,8 @@
     "copyright": "Copyright © 2026 ~peivee. All rights reserved.",
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "signingIdentity": "-",
       "entitlements": "entitlements.mac.plist",
-      "hardenedRuntime": true
+      "hardenedRuntime": false
     },
     "windows": {
       "allowDowngrades": true,
