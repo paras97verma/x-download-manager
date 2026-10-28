@@ -180,7 +180,7 @@ pub fn get_native_messaging_dir(browser_id: &str) -> PathBuf {
     #[cfg(target_os = "linux")]
     {
         let config = home.join(".config");
-        return match browser_id {
+        match browser_id {
             "chrome" => config.join("google-chrome/NativeMessagingHosts"),
             "brave" => config.join("BraveSoftware/Brave-Browser/NativeMessagingHosts"),
             "edge" => config.join("microsoft-edge/NativeMessagingHosts"),
@@ -188,7 +188,7 @@ pub fn get_native_messaging_dir(browser_id: &str) -> PathBuf {
             "vivaldi" => config.join("vivaldi/NativeMessagingHosts"),
             "firefox" => home.join(".mozilla/native-messaging-hosts"),
             _ => config.join("xdm/NativeMessagingHosts"),
-        };
+        }
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
