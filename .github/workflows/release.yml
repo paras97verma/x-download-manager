@@ -2,8 +2,6 @@ name: Verify, Build & Release X Download Manager (macOS DMG, Windows EXE/MSI, Li
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -12,6 +10,10 @@ on:
         description: "Release Version Type (stable, beta, nightly)"
         required: false
         default: "stable"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

@@ -299,18 +299,37 @@ pub async fn execute_segmented_http_download(
     let probe = probe_remote_resource(&client, &target_url).await?;
 
     // Check if remote returned HTML error/login page instead of requested binary file
-    if is_non_html_binary_extension(&item_snapshot.filename) {
-        if let Some(ref ct) = probe.content_type {
-            if ct.to_lowercase().contains("text/html") && probe.total_bytes < 3_000_000 {
-                let err_msg = "Remote server returned an HTML error or login page (Content-Type: text/html) instead of the requested binary file. The link may have expired, require authentication credentials, or need updated browser cookies.".to_string();
-                let mut dls = downloads.write();
-                if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
-                    d.status = DownloadStatus::Failed;
-                    d.error_message = Some(err_msg.clone());
-                    d.transfer_log.push(format!("[ERROR] {}", err_msg));
-                }
-                return Err(err_msg);
+    let requested_as_binary = is_non_html_binary_extension(&item_snapshot.filename)
+        || is_non_html_binary_extension(&target_url);
+
+    if requested_as_binary {
+        let is_html_mime = probe
+            .content_type
+            .as_ref()
+            .map(|ct| {
+                let l = ct.to_lowercase();
+                l.contains("text/html") || l.contains("application/xhtml+xml")
+            })
+            .unwrap_or(false);
+
+        let suggested_is_html = probe
+            .suggested_filename
+            .as_ref()
+            .map(|s| {
+                let l = s.to_lowercase();
+                l.ends_with(".html") || l.ends_with(".htm")
+            })
+            .unwrap_or(false);
+
+        if (is_html_mime && probe.total_bytes < 10_000_000) || suggested_is_html {
+            let err_msg = "Remote server returned an HTML error or landing page (Content-Type: text/html) instead of the requested binary file. This occurs on file hosts (MediaFire, 1fichier, Usersdrive) when a captcha, wait timer, or active browser session is required. Please trigger the download in your browser so the XDM extension can intercept the direct CDN link.".to_string();
+            let mut dls = downloads.write();
+            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                d.status = DownloadStatus::Failed;
+                d.error_message = Some(err_msg.clone());
+                d.transfer_log.push(format!("[ERROR] {}", err_msg));
             }
+            return Err(err_msg);
         }
     }
 

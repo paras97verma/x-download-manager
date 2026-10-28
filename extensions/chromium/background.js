@@ -84,12 +84,38 @@ function shouldInterceptDownload(downloadItem) {
   const url = downloadItem.finalUrl || downloadItem.url || "";
   if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
 
+  const mime = (downloadItem.mime || "").toLowerCase();
+  const filename = (downloadItem.filename || "").toLowerCase();
+
+  // "Intercept late, not early":
+  // Never intercept HTML pages, landing templates, countdowns, captcha challenges, or error pages!
+  if (mime === "text/html" || mime === "application/xhtml+xml") {
+    return false;
+  }
+  if (filename.endsWith(".html") || filename.endsWith(".htm")) {
+    return false;
+  }
+
   try {
     const parsed = new URL(url);
     if (state.ignoredDomains.some((d) => parsed.hostname.endsWith(d))) {
       return false;
     }
-    // Intercept all file downloads (documents, archives, software, media, data, code, etc.)
+
+    // Guard against intercepting web page navigations masquerading as downloads
+    const path = parsed.pathname.toLowerCase();
+    if (
+      (path === "" ||
+        path === "/" ||
+        path.endsWith(".php") ||
+        path.endsWith(".asp") ||
+        path.endsWith(".aspx") ||
+        path.endsWith(".jsp")) &&
+      (!mime || mime.includes("text") || !filename)
+    ) {
+      return false;
+    }
+
     return true;
   } catch (_) {
     return false;
@@ -98,25 +124,49 @@ function shouldInterceptDownload(downloadItem) {
 
 async function getCookieHeaderForUrl(url, referer) {
   if (!runtimeAPI.cookies) return "";
-  let cookies = [];
-  try {
-    cookies = await runtimeAPI.cookies.getAll({ url });
-  } catch (_) {}
+  const cookieMap = new Map();
 
-  if ((!cookies || cookies.length === 0) && referer) {
+  async function collectCookies(targetUrl) {
+    if (!targetUrl || typeof targetUrl !== "string") return;
     try {
-      cookies = await runtimeAPI.cookies.getAll({ url: referer });
+      const direct = await runtimeAPI.cookies.getAll({ url: targetUrl });
+      if (direct && Array.isArray(direct)) {
+        for (const c of direct) {
+          if (c && c.name) cookieMap.set(c.name, c.value);
+        }
+      }
+    } catch (_) {}
+
+    try {
+      const u = new URL(targetUrl);
+      const parts = u.hostname.split(".");
+      if (parts.length >= 2) {
+        // Collect domain-wide cookies (e.g. ".mediafire.com", ".1fichier.com", ".usersdrive.com")
+        const rootDomain = parts.slice(-2).join(".");
+        const domainCookies = await runtimeAPI.cookies.getAll({ domain: rootDomain });
+        if (domainCookies && Array.isArray(domainCookies)) {
+          for (const c of domainCookies) {
+            if (c && c.name && !cookieMap.has(c.name)) {
+              cookieMap.set(c.name, c.value);
+            }
+          }
+        }
+      }
     } catch (_) {}
   }
 
-  if (!cookies || cookies.length === 0) {
-    try {
-      const u = new URL(url);
-      cookies = await runtimeAPI.cookies.getAll({ domain: u.hostname });
-    } catch (_) {}
+  // Intercept late: merge cookies from landing page (Referer) and resolved CDN stream URL
+  if (referer) {
+    await collectCookies(referer);
+  }
+  if (url) {
+    await collectCookies(url);
   }
 
-  return (cookies || []).map((c) => `${c.name}=${c.value}`).join("; ");
+  if (cookieMap.size === 0) return "";
+  return Array.from(cookieMap.entries())
+    .map(([name, val]) => `${name}=${val}`)
+    .join("; ");
 }
 
 async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
@@ -177,29 +227,54 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
   return false;
 }
 
-// Intercept browser downloads automatically
-if (runtimeAPI.downloads && runtimeAPI.downloads.onCreated) {
-  runtimeAPI.downloads.onCreated.addListener(async (downloadItem) => {
-    if (!shouldInterceptDownload(downloadItem)) return;
+const interceptedDownloadIds = new Set();
 
-    const url = downloadItem.finalUrl || downloadItem.url;
-    const accepted = await dispatchToXdm({
-      url,
-      filename: downloadItem.filename || null,
-      fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
-      mimeType: downloadItem.mime || null,
-      referer: downloadItem.referrer || null,
-    });
+async function handleDownloadInterception(downloadItem) {
+  if (downloadItem.id && interceptedDownloadIds.has(downloadItem.id)) return false;
+  if (!shouldInterceptDownload(downloadItem)) return false;
 
-    if (accepted) {
-      try {
-        runtimeAPI.downloads.cancel(downloadItem.id);
-        if (runtimeAPI.downloads.erase) {
-          runtimeAPI.downloads.erase({ id: downloadItem.id });
-        }
-      } catch (_) {}
+  if (downloadItem.id) {
+    interceptedDownloadIds.add(downloadItem.id);
+    if (interceptedDownloadIds.size > 500) {
+      const first = interceptedDownloadIds.values().next().value;
+      interceptedDownloadIds.delete(first);
     }
+  }
+
+  const url = downloadItem.finalUrl || downloadItem.url;
+  const accepted = await dispatchToXdm({
+    url,
+    filename: downloadItem.filename || null,
+    fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
+    mimeType: downloadItem.mime || null,
+    referer: downloadItem.referrer || null,
   });
+
+  if (accepted) {
+    try {
+      runtimeAPI.downloads.cancel(downloadItem.id);
+      if (runtimeAPI.downloads.erase) {
+        runtimeAPI.downloads.erase({ id: downloadItem.id });
+      }
+    } catch (_) {}
+    return true;
+  }
+  return false;
+}
+
+// "Intercept late, not early":
+// Prefer `downloads.onDeterminingFilename` because the browser has followed all redirects,
+// negotiated session cookies, and determined the final CDN URL and true MIME type.
+if (runtimeAPI.downloads) {
+  if (runtimeAPI.downloads.onDeterminingFilename) {
+    runtimeAPI.downloads.onDeterminingFilename.addListener((downloadItem) => {
+      handleDownloadInterception(downloadItem);
+    });
+  } else if (runtimeAPI.downloads.onCreated) {
+    runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
+      handleDownloadInterception(downloadItem);
+    });
+  }
 }
 
 function detectBrowserFamily() {

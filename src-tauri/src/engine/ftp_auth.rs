@@ -91,6 +91,56 @@ pub async fn resolve_usersdrive_or_filehost(
 
     let html = resp.text().await.map_err(|e| e.to_string())?;
 
+    // Check for MediaFire direct CDN link
+    if page_url.contains("mediafire.com") {
+        let mf_re = Regex::new(r#"https?://download[0-9]*\.mediafire\.com/[^\s"'<>]+"#)
+            .map_err(|e| e.to_string())?;
+        if let Some(mat) = mf_re.find(&html) {
+            let direct_url = mat.as_str().to_string();
+            let filename = direct_url
+                .split('?')
+                .next()
+                .and_then(|u| u.rsplit('/').next())
+                .map(|s| s.to_string());
+            return Ok(ResolvedAuthDownload {
+                direct_url,
+                filename,
+                cookies: effective_cookies,
+                auth_header: None,
+                referer: page_url.to_string(),
+                resolver_note: "Extracted MediaFire direct CDN download link from page".to_string(),
+            });
+        }
+    }
+
+    // Check for 1fichier direct download link
+    if page_url.contains("1fichier.com") {
+        let f1_re = Regex::new(r#"https?://[a-zA-Z0-9.\-]+\.1fichier\.com/[^\s"'<>]+"#)
+            .map_err(|e| e.to_string())?;
+        for mat in f1_re.find_iter(&html) {
+            let candidate = mat.as_str();
+            if !candidate.contains("auth.1fichier.com")
+                && !candidate.ends_with(".css")
+                && !candidate.ends_with(".js")
+            {
+                let direct_url = candidate.to_string();
+                let filename = direct_url
+                    .split('?')
+                    .next()
+                    .and_then(|u| u.rsplit('/').next())
+                    .map(|s| s.to_string());
+                return Ok(ResolvedAuthDownload {
+                    direct_url,
+                    filename,
+                    cookies: effective_cookies,
+                    auth_header: None,
+                    referer: page_url.to_string(),
+                    resolver_note: "Extracted 1fichier direct download link from page".to_string(),
+                });
+            }
+        }
+    }
+
     // Check for direct download link in HTML (`https://*.usersdrive.com/d/...` or `<a href=".../d/..."`)
     let direct_re =
         Regex::new(r#"https?://[a-zA-Z0-9.\-]*usersdrive\.com/d/[a-zA-Z0-9]+/[^\s"'<>]+"#)
