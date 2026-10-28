@@ -134,7 +134,7 @@ jobs:
             - `xdm-extension-safari.zip` (Apple Safari WebExtension + macOS Wrapper)
 
             ---
-            *Made with ❤️ by ~peivee*
+            *Made with ❤️ by [Paras Verma](https://github.com/paras97verma)*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -186,10 +186,59 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm install
 
+      - name: Configure macOS Code Signing & Notarization
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
+            echo "Apple Developer signing identity detected: ${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            node -e '
+              const fs = require("fs");
+              const p = "src-tauri/tauri.conf.json";
+              const conf = JSON.parse(fs.readFileSync(p, "utf8"));
+              conf.bundle.macOS.signingIdentity = process.env.SIGNING_IDENTITY;
+              fs.writeFileSync(p, JSON.stringify(conf, null, 2));
+            '
+          else
+            echo "Using default ad-hoc signing with hardened runtime and entitlements for macOS."
+          fi
+        env:
+          SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+
+      - name: Setup Windows Code Signing Certificate
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          if ("${{ secrets.WINDOWS_CERTIFICATE }}" -ne "") {
+            Write-Host "Importing Windows Authenticode Code Signing Certificate..."
+            $certBytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERTIFICATE }}")
+            $certPath = "$env:RUNNER_TEMP\code_signing.pfx"
+            [IO.File]::WriteAllBytes($certPath, $certBytes)
+            $pfxPass = ConvertTo-SecureString -String "${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}" -Force -AsPlainText
+            $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $pfxPass
+            $thumbprint = $cert.Thumbprint
+            Write-Host "Applying certificate thumbprint to Tauri config: $thumbprint"
+            node -e @"
+              const fs = require('fs');
+              const p = 'src-tauri/tauri.conf.json';
+              const conf = JSON.parse(fs.readFileSync(p, 'utf8'));
+              conf.bundle.windows.certificateThumbprint = '$thumbprint';
+              fs.writeFileSync(p, JSON.stringify(conf, null, 2));
+"@
+          } else {
+            Write-Host "No Windows Code Signing PFX secret detected. Standard Authenticode metadata enabled."
+          }
+
       - name: Build Native Desktop Bundles (.dmg / .exe / .msi / .deb / .AppImage)
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ needs.verify.outputs.version_tag }}
           releaseId: ${{ needs.create-release.outputs.release_id }}

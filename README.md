@@ -40,6 +40,80 @@ X Download Manager seamlessly intercepts download links, streaming video/audio, 
 
 ---
 
+## 🛡️ Security & Installation Guide (macOS Gatekeeper & Windows SmartScreen)
+
+X Download Manager is 100% free, open-source, and privacy-respecting software built directly from source code on GitHub Actions. Because open-source projects do not use expensive proprietary commercial certificates ($100–$1,000/year), macOS and Windows will display standard one-time security prompts when you run the downloaded installer for the first time.
+
+Follow these simple instructions to open and run X Download Manager:
+
+### 🍎 macOS (Gatekeeper / "Unidentified Developer")
+
+When opening `X Download Manager.app` or mounting the `.dmg` on macOS Sonoma, Ventura, Sequoia, or later, Apple Gatekeeper may show:
+> *"X Download Manager" can't be opened because Apple cannot check it for malicious software.* or *"blocked from use because it is not from an identified developer"*.
+
+**Option 1: Quick Override in System Settings (Recommended)**
+1. Try opening the app once. If the dialog appears, click **Done**.
+2. Open **System Settings** → **Privacy & Security**.
+3. Scroll down to the **Security** section where you will see:
+   > *"X Download Manager" was blocked from use because it is not from an identified developer.*
+4. Click **Open Anyway** and enter your Mac password or Touch ID.
+
+**Option 2: Finder Right-Click (Control-Click)**
+1. Move `X Download Manager.app` to your `/Applications` folder.
+2. Hold down the **Control (`Ctrl`)** key and **right-click** `X Download Manager.app`.
+3. Select **Open** from the menu.
+4. Click **Open** in the confirmation dialog.
+
+**Option 3: One-line Terminal Command (Permanent)**
+If you prefer running a command, remove the macOS browser download quarantine bit once:
+```bash
+xattr -cr "/Applications/X Download Manager.app"
+```
+*After this, the app opens instantly on normal double-click with zero prompts.*
+
+---
+
+### 🪟 Windows (Microsoft Defender SmartScreen / "Untrusted App")
+
+When launching `x-download-manager_1.0.0_x64-setup.exe` or `.msi`, Microsoft Defender SmartScreen may display:
+> *Windows protected your PC: Microsoft Defender SmartScreen prevented an unrecognized app from starting.*
+
+**Option 1: Run Anyway via SmartScreen Dialog (Recommended)**
+1. On the blue SmartScreen window, click **More info** (under the description text).
+2. Click the **Run anyway** button that appears in the bottom right corner.
+
+**Option 2: Unblock via File Properties**
+1. Right-click the downloaded `.exe` or `.msi` file and select **Properties**.
+2. On the **General** tab, look at the bottom section under **Security**.
+3. Check the **Unblock** box and click **Apply** → **OK**.
+4. Double-click to launch the installer normally.
+
+**Option 3: PowerShell One-Liner**
+In PowerShell, run:
+```powershell
+Unblock-File -Path "$HOME\Downloads\x-download-manager_*.exe"
+```
+
+---
+
+### 🔑 For Maintainers: Automatic Code Signing with Secrets
+
+If you own an Apple Developer Program subscription or Windows Authenticode Certificate (PFX), you can add them to your GitHub repository secrets to automatically produce fully notarized and EV-signed binaries on every release:
+
+- **macOS (Notarization & Gatekeeper bypass)**:
+  - `APPLE_CERTIFICATE`: Base64-encoded Apple Developer ID Application `.p12` certificate.
+  - `APPLE_CERTIFICATE_PASSWORD`: Password for the `.p12` certificate.
+  - `APPLE_SIGNING_IDENTITY`: e.g. `Developer ID Application: Your Name (TEAM_ID)`.
+  - `APPLE_ID`: Your Apple ID email.
+  - `APPLE_PASSWORD`: App-specific password generated from [appleid.apple.com](https://appleid.apple.com).
+  - `APPLE_TEAM_ID`: Your 10-character Apple Team ID.
+
+- **Windows (SmartScreen reputation)**:
+  - `WINDOWS_CERTIFICATE`: Base64-encoded Code Signing `.pfx` certificate.
+  - `WINDOWS_CERTIFICATE_PASSWORD`: Password for the `.pfx` certificate.
+
+---
+
 ## Key Highlights
 
 1. **Multi-Threaded Dynamic HTTP/HTTPS Segmentation (Up to 32 Threads)**
