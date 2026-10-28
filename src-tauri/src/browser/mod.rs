@@ -115,12 +115,12 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
 }
 
 fn probe_browser_executable(browser_id: &str) -> Option<String> {
-    let home = directories::BaseDirs::new()
-        .map(|b| b.home_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
-
     #[cfg(target_os = "macos")]
     {
+        let home = directories::BaseDirs::new()
+            .map(|b| b.home_dir().to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+
         let candidates: Vec<PathBuf> = match browser_id {
             "chrome" => vec![
                 PathBuf::from("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
@@ -524,6 +524,7 @@ pub fn auto_register_all_detected_browsers(settings: &mut AppSettings) -> Vec<Br
 /// Writes External Extension auto-install descriptors on macOS and Linux
 /// so Chrome, Brave, Edge, Arc, Dia, Firefox, Zen, etc. automatically load the bundled extension when installed.
 pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Result<(), String> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     let home = directories::BaseDirs::new()
         .map(|b| b.home_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
