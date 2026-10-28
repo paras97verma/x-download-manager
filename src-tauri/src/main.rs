@@ -24,9 +24,7 @@ fn main() {
     if args.iter().any(|a| a == "--unregister-browsers-silent") {
         let cfg = xdm_lib::config::ConfigManager::new();
         let mut st = cfg.load();
-        for b in [
-            "chrome", "brave", "edge", "opera", "vivaldi", "firefox", "safari",
-        ] {
+        for (b, _, _) in xdm_lib::browser::SUPPORTED_BROWSERS {
             let _ = xdm_lib::browser::configure_browser_integration(b, false, &mut st);
         }
         return;

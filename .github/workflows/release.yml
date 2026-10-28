@@ -129,9 +129,9 @@ jobs:
             - **Linux (x86_64)**: `.deb`, `.AppImage`, & `.rpm`
 
             ### Included Browser Extensions
-            - `xdm-extension-chromium.zip` (Chrome, Brave, Edge, Opera, Vivaldi)
-            - `xdm-extension-firefox.xpi` (Mozilla Firefox / Gecko)
-            - `xdm-extension-safari.zip` (Apple Safari WebExtension + macOS Wrapper)
+            - `xdm-extension-chromium.zip` (Chrome, Arc, Dia, Brave, Edge, Opera, Opera GX, Vivaldi, Thorium, Chromium, Yandex)
+            - `xdm-extension-firefox.xpi` (Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp)
+            - `xdm-extension-safari.zip` (Apple Safari WebExtension, Orion Browser + macOS Wrapper)
 
             ---
             *Made with ❤️ by ~peivee*

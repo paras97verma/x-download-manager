@@ -34,9 +34,9 @@ X Download Manager seamlessly intercepts download links, streaming video/audio, 
 
 | Browser | Supported Browsers | Download Package | Manual Installation |
 | :--- | :--- | :--- | :--- |
-| **Chromium** | Chrome, Brave, Edge, Opera, Vivaldi | [⬇️ **`xdm-extension-chromium.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest) | `chrome://extensions` → Enable *Developer mode* → *Load unpacked* |
-| **Firefox** | Mozilla Firefox, LibreWolf, Waterfox | [⬇️ **`xdm-extension-firefox.xpi`**](https://github.com/paras97verma/x-download-manager/releases/latest) | Click to install in Firefox, or load via `about:debugging` |
-| **Safari** | Apple Safari (macOS) | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest) | Built-in Xcode wrapper project (`extensions/safari`) |
+| **Chromium** | Chrome, Arc, Dia, Brave, Edge, Opera, Opera GX, Vivaldi, Thorium, Ungoogled Chromium, Yandex | [⬇️ **`xdm-extension-chromium.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest) | `chrome://extensions` → Enable *Developer mode* → *Load unpacked* |
+| **Firefox** | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | [⬇️ **`xdm-extension-firefox.xpi`**](https://github.com/paras97verma/x-download-manager/releases/latest) | Click to install in Firefox/Zen, or load via `about:debugging` |
+| **Safari / WebKit** | Apple Safari (macOS), Orion Browser | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest) | Built-in Xcode wrapper project (`extensions/safari`) |
 
 ---
 
