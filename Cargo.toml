@@ -1,0 +1,10 @@
+[workspace]
+members = ["src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["~peivee"]
+license = "MIT"
+repository = "https://github.com/peivee/x-download-manager"

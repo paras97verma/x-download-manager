@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "X Download Manager",
+  "version": "1.0.0",
+  "identifier": "com.peivee.xdm",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "X Download Manager",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app", "nsis", "msi", "deb", "appimage", "rpm"],
+    "resources": [
+      "../extensions/chromium/**/*",
+      "../extensions/firefox/**/*",
+      "../extensions/safari/**/*"
+    ],
+    "category": "Utility",
+    "shortDescription": "Cross-Platform Multi-Threaded, Torrent & FTP Download Manager",
+    "longDescription": "X Download Manager (XDM) is a blazingly fast native cross-platform download accelerator and manager for macOS, Windows, and Linux with multi-threaded HTTP/HTTPS segmentation, BitTorrent/Magnet engine, FTP/SFTP & authenticated file-sharing support (Usersdrive, 1fichier, etc.), and automatic browser extension integration for Chromium, Firefox, and Safari. Made with ❤️ by ~peivee.",
+    "copyright": "Copyright © 2026 ~peivee. All rights reserved.",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "wix": null,
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  }
+}

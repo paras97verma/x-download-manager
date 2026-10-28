@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>X Download Manager</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="xdm-popup">
+    <div class="xdm-header">
+      <div class="xdm-logo">X</div>
+      <div>
+        <div class="xdm-title">X Download Manager</div>
+        <div id="xdm-conn-status" class="xdm-subtitle">Checking Desktop Bridge...</div>
+      </div>
+    </div>
+
+    <div class="xdm-card">
+      <label class="xdm-toggle-row">
+        <span>Intercept Browser Downloads</span>
+        <input type="checkbox" id="xdm-enable-toggle" checked />
+      </label>
+      <div class="xdm-hint">Hold <strong>Alt / Option</strong> while clicking any link to bypass XDM.</div>
+    </div>
+
+    <div class="xdm-card">
+      <div class="xdm-label">Quick Send URL / Usersdrive / Magnet</div>
+      <div class="xdm-input-row">
+        <input type="text" id="xdm-quick-url" placeholder="https://... or magnet:?xt=..." />
+        <button id="xdm-send-btn">Download</button>
+      </div>
+    </div>
+
+    <div class="xdm-footer">
+      Made with ❤️ by ~peivee
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

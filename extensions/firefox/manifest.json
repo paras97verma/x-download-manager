@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "X Download Manager Integration",
+  "short_name": "XDM",
+  "version": "1.0.0",
+  "description": "Intercepts downloads, authenticated file hosts (Usersdrive, FTP), and streaming media for X Download Manager. Made with ❤️ by ~peivee.",
+  "author": "~peivee",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "xdm-extension@peivee.com",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "downloads",
+    "cookies",
+    "contextMenus",
+    "storage",
+    "tabs",
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_title": "X Download Manager",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

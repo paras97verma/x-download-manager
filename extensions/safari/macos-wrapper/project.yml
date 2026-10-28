@@ -1,0 +1,16 @@
+name: XDMSafariExtension
+options:
+  bundleIdPrefix: com.peivee.xdm
+targets:
+  XDMSafariExtension:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "12.0"
+    sources:
+      - SafariWebExtensionHandler.swift
+      - path: ../
+        excludes:
+          - macos-wrapper/**
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.peivee.xdm.SafariExtension
+      INFOPLIST_FILE: Info.plist

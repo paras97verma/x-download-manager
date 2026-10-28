@@ -1,0 +1,51 @@
+[package]
+name = "x-download-manager"
+version = "1.0.0"
+description = "X Download Manager — High-Speed Cross-Platform Multi-Threaded, Torrent, and FTP Download Manager"
+authors = ["~peivee"]
+license = "MIT"
+repository = "https://github.com/peivee/x-download-manager"
+edition = "2021"
+default-run = "x-download-manager"
+
+[lib]
+name = "xdm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "x-download-manager"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = ["tray-icon", "unstable"] }
+tauri-plugin-shell = "2.0.0"
+tauri-plugin-dialog = "2.0.0"
+tauri-plugin-notification = "2.0.0"
+tauri-plugin-autostart = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.40", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "cookies", "gzip", "brotli", "rustls-tls", "socks"] }
+futures-util = "0.3"
+axum = { version = "0.7", features = ["ws", "macros"] }
+tower-http = { version = "0.5", features = ["cors"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+directories = "5.0"
+sha2 = "0.10"
+md-5 = "0.10"
+hex = "0.4"
+url = "2.5"
+regex = "1.10"
+base64 = "0.22"
+suppaftp = { version = "6.0", features = ["async", "async-rustls"] }
+parking_lot = "0.12"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.52"

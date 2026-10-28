@@ -1,0 +1,196 @@
+name: Verify, Build & Release X Download Manager (macOS DMG, Windows EXE/MSI, Linux DEB/AppImage)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Release Version Type (stable, beta, nightly)"
+        required: false
+        default: "stable"
+
+permissions:
+  contents: write
+
+jobs:
+  # ============================================================================
+  # STAGE 1: VERIFICATION GATE (Rust Unit Tests, Clippy, TypeScript, Extensions)
+  # ============================================================================
+  verify:
+    name: Verify Rust Core, UI & Browser Extensions
+    runs-on: ubuntu-22.04
+    outputs:
+      version_tag: ${{ steps.compute_version.outputs.version_tag }}
+      release_title: ${{ steps.compute_version.outputs.release_title }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux System Dependencies (GTK3 / WebKit2GTK)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev zip
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust Stable Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo Registry & Target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install Frontend Dependencies & Verify TypeScript + Vite Build
+        run: |
+          npm install
+          npm run typecheck
+          npm run build
+
+      - name: Run Rust Formatting, Clippy Lints & Core Engine Unit Tests
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --verbose
+
+      - name: Package Browser Extensions (Chromium, Firefox, Safari)
+        run: |
+          chmod +x ./scripts/package-extensions.sh
+          ./scripts/package-extensions.sh
+
+      - name: Upload Packaged Browser Extensions Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdm-browser-extensions
+          path: dist-extensions/*
+
+      - name: Compute Version-Typed Release Tag
+        id: compute_version
+        run: |
+          BASE_VER=$(node -p "require('./package.json').version")
+          CHANNEL="${{ github.event.inputs.release_channel || 'stable' }}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+          else
+            TAG_NAME="v${BASE_VER}-${CHANNEL}.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "version_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "release_title=X Download Manager ${TAG_NAME} (${CHANNEL^^})" >> "$GITHUB_OUTPUT"
+
+  # ============================================================================
+  # STAGE 2: CREATE VERSION-TYPED GITHUB RELEASE DRAFT
+  # ============================================================================
+  create-release:
+    name: Create Versioned GitHub Release
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_gh_release.outputs.id }}
+      upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Browser Extension Bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: xdm-browser-extensions
+          path: dist-extensions
+
+      - name: Create Version-Typed Release & Attach Browser Extensions
+        id: create_gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.verify.outputs.version_tag }}
+          name: ${{ needs.verify.outputs.release_title }}
+          draft: false
+          prerelease: ${{ contains(needs.verify.outputs.version_tag, 'beta') || contains(needs.verify.outputs.version_tag, 'nightly') }}
+          files: |
+            dist-extensions/xdm-extension-chromium.zip
+            dist-extensions/xdm-extension-firefox.xpi
+            dist-extensions/xdm-extension-firefox.zip
+            dist-extensions/xdm-extension-safari.zip
+          body: |
+            ## ${{ needs.verify.outputs.release_title }}
+            Automated verified build from `main` branch (`${{ github.sha }}`).
+
+            ### Included Native OS Packages
+            - **macOS (Universal Apple Silicon & Intel)**: `.dmg` & `.app.tar.gz`
+            - **Windows (x64)**: `.exe` (NSIS Installer) & `.msi` (WiX Installer)
+            - **Linux (x86_64)**: `.deb`, `.AppImage`, & `.rpm`
+
+            ### Included Browser Extensions
+            - `xdm-extension-chromium.zip` (Chrome, Brave, Edge, Opera, Vivaldi)
+            - `xdm-extension-firefox.xpi` (Mozilla Firefox / Gecko)
+            - `xdm-extension-safari.zip` (Apple Safari WebExtension + macOS Wrapper)
+
+            ---
+            *Made with ❤️ by ~peivee*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # STAGE 3: MULTI-PLATFORM MATRIX BUILD (macOS .dmg, Windows .exe/.msi, Linux .deb/.AppImage)
+  # ============================================================================
+  build-native:
+    name: Build Native Installer (${{ matrix.os_label }})
+    needs: [verify, create-release]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            os_label: macOS-Universal-DMG
+            args: "--target universal-apple-darwin"
+          - platform: windows-latest
+            os_label: Windows-x64-EXE-MSI
+            args: ""
+          - platform: ubuntu-22.04
+            os_label: Linux-x64-DEB-AppImage
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux Dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Cache Rust Build Artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install Frontend Dependencies
+        run: npm install
+
+      - name: Build Native Desktop Bundles (.dmg / .exe / .msi / .deb / .AppImage)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ needs.verify.outputs.version_tag }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}

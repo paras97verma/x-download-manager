@@ -1,0 +1,461 @@
+import {
+  AppSettings,
+  BrowserStatus,
+  DownloadItem,
+  NewDownloadRequest,
+  ThreadSegment,
+} from "../types/xdm";
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+  }
+}
+
+export const isTauriRuntime = (): boolean => {
+  return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
+};
+
+export function buildSegments(totalBytes: number, count: number, downloadedRatio: number, active: boolean): ThreadSegment[] {
+  const segSize = Math.floor(totalBytes / count);
+  return Array.from({ length: count }, (_, idx) => {
+    const start = idx * segSize;
+    const end = idx === count - 1 ? totalBytes - 1 : (idx + 1) * segSize - 1;
+    const len = end - start + 1;
+    const segRatio = Math.min(1, Math.max(0, downloadedRatio + (idx % 3 === 0 ? 0.08 : -0.04)));
+    const dl = Math.floor(len * segRatio);
+    return {
+      id: idx + 1,
+      start_byte: start,
+      end_byte: end,
+      downloaded_bytes: dl,
+      speed_bps: active && segRatio < 1 ? Math.floor(1_850_000 + (idx * 240_000) % 1_400_000) : 0,
+      status: segRatio >= 1 ? "completed" : active ? "receiving" : "paused",
+    };
+  });
+}
+
+export const INITIAL_DOWNLOADS: DownloadItem[] = [
+  {
+    id: "dl-1",
+    filename: "macOS_Sequoia_15.1_Universal_SDK.dmg",
+    url: "https://swcdn.apple.com/content/downloads/macos/macOS_Sequoia_15.1_Universal_SDK.dmg",
+    resolved_url: "https://swcdn.apple.com/content/downloads/macos/macOS_Sequoia_15.1_Universal_SDK.dmg",
+    protocol: "https",
+    category: "Programs",
+    queue_id: "main-queue",
+    save_path: "~/Downloads/Programs/macOS_Sequoia_15.1_Universal_SDK.dmg",
+    total_bytes: 4_294_967_296,
+    downloaded_bytes: 2_877_628_088,
+    speed_bps: 28_450_000,
+    upload_speed_bps: 0,
+    eta_seconds: 49,
+    status: "downloading",
+    resumable: true,
+    threads_count: 16,
+    segments: buildSegments(4_294_967_296, 16, 0.67, true),
+    source_browser: "Chrome",
+    referer: "https://developer.apple.com/download/all/",
+    custom_headers: { "Accept-Ranges": "bytes" },
+    created_at: "2026-10-28T06:55:12Z",
+    transfer_log: [
+      "[06:55:12] Intercepted download from Google Chrome (Extension v1.0.0)",
+      "[06:55:12] GET Range: bytes=0-0 -> HTTP/2 206 Partial Content (Accept-Ranges: bytes)",
+      "[06:55:13] Dynamic Segment Allocator: Created 16 concurrent byte-range threads",
+      "[06:56:01] Thread #4 finished chunk early -> Dynamic work-stealing split Thread #11",
+    ],
+  },
+  {
+    id: "dl-2",
+    filename: "Ubuntu-24.04.1-Desktop-amd64.iso",
+    url: "magnet:?xt=urn:btih:3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0&dn=Ubuntu-24.04.1-Desktop-amd64.iso",
+    protocol: "magnet",
+    category: "Torrents",
+    queue_id: "main-queue",
+    save_path: "~/Downloads/Torrents/Ubuntu-24.04.1-Desktop-amd64.iso",
+    total_bytes: 5_153_960_755,
+    downloaded_bytes: 3_813_930_958,
+    speed_bps: 16_820_000,
+    upload_speed_bps: 2_450_000,
+    eta_seconds: 79,
+    status: "downloading",
+    resumable: true,
+    threads_count: 12,
+    segments: buildSegments(5_153_960_755, 12, 0.74, true),
+    torrent_meta: {
+      info_hash: "3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0",
+      piece_length: 262_144,
+      total_pieces: 19660,
+      completed_pieces: 14548,
+      peers_connected: 46,
+      seeds_connected: 128,
+      share_ratio: 0.42,
+      uploaded_bytes: 1_601_851_000,
+      sequential: true,
+      trackers: [
+        "https://torrent.ubuntu.com/announce",
+        "udp://tracker.opentrackr.org:1337/announce",
+        "udp://open.stealth.si:80/announce",
+      ],
+      peers: [
+        { ip_port: "185.125.190.29:51413", client: "qBittorrent 4.6.7", flags: "D E uTP", progress_pct: 100, down_speed_bps: 6_420_000, up_speed_bps: 410_000 },
+        { ip_port: "91.189.91.48:6881", client: "Transmission 4.0.6", flags: "D H PEX", progress_pct: 100, down_speed_bps: 5_190_000, up_speed_bps: 380_000 },
+        { ip_port: "140.82.121.34:51413", client: "libtorrent 2.0.10", flags: "D E", progress_pct: 92.4, down_speed_bps: 3_110_000, up_speed_bps: 920_000 },
+        { ip_port: "198.51.100.77:58210", client: "XDM BitTorrent 1.0", flags: "D U PEX", progress_pct: 64.1, down_speed_bps: 2_100_000, up_speed_bps: 740_000 },
+      ],
+      files: [
+        { index: 0, path: "Ubuntu-24.04.1-Desktop-amd64.iso", size_bytes: 5_153_956_659, downloaded_bytes: 3_813_926_862, priority: "high" },
+        { index: 1, path: "SHA256SUMS", size_bytes: 4_096, downloaded_bytes: 4_096, priority: "normal" },
+      ],
+    },
+    source_browser: "Firefox",
+    custom_headers: {},
+    created_at: "2026-10-28T06:48:00Z",
+    transfer_log: [
+      "[06:48:00] Parsed Magnet URI (InfoHash: 3b245504cf5f11bbdbe1201cea6a6bf45aee1bc0)",
+      "[06:48:02] DHT + Tracker announce succeeded: 128 seeds, 46 leechers discovered",
+      "[06:48:03] Sequential piece mode enabled for fast verification",
+    ],
+  },
+  {
+    id: "dl-3",
+    filename: "Unreal_Engine_5.5_Assets_Bundle.7z",
+    url: "https://usersdrive.com/k9x82m4p10qa.html",
+    resolved_url: "https://cdn7.usersdrive.com/d/74a9f0c2e1b84/Unreal_Engine_5.5_Assets_Bundle.7z",
+    protocol: "usersdrive",
+    category: "Compressed",
+    queue_id: "main-queue",
+    save_path: "~/Downloads/Compressed/Unreal_Engine_5.5_Assets_Bundle.7z",
+    total_bytes: 1_932_735_283,
+    downloaded_bytes: 1_120_986_464,
+    speed_bps: 14_200_000,
+    upload_speed_bps: 0,
+    eta_seconds: 57,
+    status: "downloading",
+    resumable: true,
+    threads_count: 8,
+    segments: buildSegments(1_932_735_283, 8, 0.58, true),
+    source_browser: "Safari",
+    referer: "https://usersdrive.com/k9x82m4p10qa.html",
+    cookies: "xfss=9b81e2c7a4f019d3e; lang=english",
+    site_credential_id: "cred-usersdrive-default",
+    custom_headers: { Authorization: "Session-Cookie-Passthrough" },
+    created_at: "2026-10-28T06:58:40Z",
+    transfer_log: [
+      "[06:58:40] Matched Site Login Vault entry '*.usersdrive.com' + Safari session cookies",
+      "[06:58:41] Resolved Usersdrive stage-2 form (op=download2, id=k9x82m4p10qa) -> Direct CDN URL",
+      "[06:58:42] Spawning 8 authenticated HTTPS byte-range worker threads",
+    ],
+  },
+  {
+    id: "dl-4",
+    filename: "Blender_4.3.0_Linux_x64.tar.xz",
+    url: "ftp://ftp.nluug.nl/pub/graphics/blender/release/Blender4.3/blender-4.3.0-linux-x64.tar.xz",
+    protocol: "ftp",
+    category: "Compressed",
+    queue_id: "night-queue",
+    save_path: "~/Downloads/Compressed/Blender_4.3.0_Linux_x64.tar.xz",
+    total_bytes: 348_127_232,
+    downloaded_bytes: 156_657_254,
+    speed_bps: 0,
+    upload_speed_bps: 0,
+    eta_seconds: null,
+    status: "paused",
+    resumable: true,
+    threads_count: 4,
+    segments: buildSegments(348_127_232, 4, 0.45, false),
+    custom_headers: {},
+    created_at: "2026-10-28T06:30:00Z",
+    transfer_log: [
+      "[06:30:00] Connected to ftp.nluug.nl:21 (220 FTP Server ready)",
+      "[06:30:01] USER anonymous -> 230 Login successful | TYPE I (Binary) | REST supported",
+      "[06:34:15] Paused at byte offset 156,657,254 (ready for REST resume)",
+    ],
+  },
+  {
+    id: "dl-5",
+    filename: "DaVinci_Resolve_Studio_19.1_Installer.zip",
+    url: "https://downloads.blackmagicdesign.com/DaVinci_Resolve_Studio_19.1_Installer.zip",
+    protocol: "https",
+    category: "Compressed",
+    queue_id: "main-queue",
+    save_path: "~/Downloads/Compressed/DaVinci_Resolve_Studio_19.1_Installer.zip",
+    total_bytes: 2_684_354_560,
+    downloaded_bytes: 2_684_354_560,
+    speed_bps: 0,
+    upload_speed_bps: 0,
+    eta_seconds: 0,
+    status: "completed",
+    resumable: true,
+    threads_count: 16,
+    segments: buildSegments(2_684_354_560, 16, 1.0, false),
+    source_browser: "Brave",
+    checksum_sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    created_at: "2026-10-28T06:10:00Z",
+    completed_at: "2026-10-28T06:12:44Z",
+    custom_headers: {},
+    transfer_log: [
+      "[06:10:00] Intercepted from Brave Browser (16 threads)",
+      "[06:12:43] All 16 segments completed and merged cleanly",
+      "[06:12:44] SHA-256 checksum verified: e3b0c44298fc1c14...7852b855",
+    ],
+  },
+];
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  theme: "dark",
+  start_on_boot: true,
+  minimize_to_tray: true,
+  show_completion_dialog: true,
+  show_detailed_segment_dialog: true,
+  play_sound_on_complete: true,
+  prevent_system_sleep: true,
+  default_download_dir: "~/Downloads/XDM",
+  temp_segment_dir: "~/Downloads/XDM/.xdm_temp",
+  duplicate_file_action: "auto_rename",
+  auto_verify_checksum: true,
+  antivirus_command: "",
+
+  default_threads_per_download: 16,
+  max_threads_per_download: 32,
+  max_concurrent_downloads: 5,
+  min_segment_size_kb: 512,
+  dynamic_segment_stealing: true,
+  max_retries: 10,
+  retry_delay_seconds: 5,
+  connection_timeout_seconds: 30,
+  custom_user_agent:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 XDM/1.0",
+
+  speed_limiter_enabled: false,
+  global_max_download_kbps: 20480,
+  global_max_upload_kbps: 4096,
+
+  categories: [
+    { id: "compressed", name: "Compressed", icon: "Archive", extensions: ["zip", "rar", "7z", "tar", "gz", "xz"], default_subfolder: "Compressed" },
+    { id: "programs", name: "Programs", icon: "Cpu", extensions: ["exe", "msi", "dmg", "pkg", "deb", "rpm", "appimage", "iso"], default_subfolder: "Programs" },
+    { id: "video", name: "Video", icon: "Film", extensions: ["mp4", "mkv", "webm", "avi", "mov", "ts"], default_subfolder: "Video" },
+    { id: "music", name: "Music", icon: "Music", extensions: ["mp3", "flac", "wav", "aac", "ogg", "m4a"], default_subfolder: "Music" },
+    { id: "documents", name: "Documents", icon: "FileText", extensions: ["pdf", "epub", "docx", "xlsx", "pptx", "txt"], default_subfolder: "Documents" },
+  ],
+  site_credentials: [
+    {
+      id: "cred-usersdrive-default",
+      host_pattern: "*.usersdrive.com",
+      site_type: "usersdrive",
+      username: "peivee_premium",
+      password_or_token: "••••••••••••",
+      cookies: "xfss=9b81e2c7a4f019d3e; lang=english",
+      custom_headers: {},
+      enabled: true,
+    },
+    {
+      id: "cred-1fichier",
+      host_pattern: "*.1fichier.com",
+      site_type: "1fichier",
+      username: "peivee@xdm.local",
+      password_or_token: "Bearer_API_Key_99412a",
+      cookies: "SID=a8f9102c4d",
+      custom_headers: {},
+      enabled: true,
+    },
+    {
+      id: "cred-ftp-mirror",
+      host_pattern: "ftp.nluug.nl",
+      site_type: "ftp",
+      username: "anonymous",
+      password_or_token: "anonymous@xdm.local",
+      cookies: null,
+      custom_headers: {},
+      enabled: true,
+    },
+  ],
+  torrent: {
+    enable_dht: true,
+    enable_pex: true,
+    enable_lpd: true,
+    enable_upnp: true,
+    listen_port: 51413,
+    max_active_torrents: 5,
+    max_peers_per_torrent: 100,
+    seed_ratio_limit: 1.5,
+    seed_time_limit_minutes: 120,
+    sequential_download_default: false,
+    encryption_mode: "prefer",
+    default_trackers: [
+      "udp://tracker.opentrackr.org:1337/announce",
+      "udp://open.stealth.si:80/announce",
+      "udp://tracker.torrent.eu.org:451/announce",
+      "https://tracker.tamersunion.org:443/announce",
+    ],
+  },
+  browser: {
+    ipc_port: 45678,
+    auto_install_extensions_on_startup: true,
+    intercept_all_downloads: true,
+    min_file_size_kb: 256,
+    intercepted_extensions: [
+      "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG",
+      "DEB", "RPM", "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI",
+      "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
+    ],
+    ignored_domains: ["localhost", "127.0.0.1"],
+    capture_streaming_media: true,
+    bypass_key: "Alt",
+    enabled_browsers: {
+      chrome: true,
+      brave: true,
+      edge: true,
+      opera: true,
+      vivaldi: true,
+      firefox: true,
+      safari: true,
+    },
+  },
+  proxy: {
+    enabled: false,
+    proxy_type: "http",
+    host: "127.0.0.1",
+    port: 8080,
+    username: "",
+    password: "",
+    bypass_local: true,
+  },
+  queues: [
+    {
+      id: "main-queue",
+      name: "Main Download Queue",
+      max_concurrent: 4,
+      start_time_enabled: false,
+      start_time_hhmm: "00:00",
+      stop_time_enabled: false,
+      stop_time_hhmm: "08:00",
+      days_of_week: [0, 1, 2, 3, 4, 5, 6],
+      speed_limit_kbps: null,
+      post_queue_action: "none",
+    },
+    {
+      id: "night-queue",
+      name: "Night Off-Peak Queue",
+      max_concurrent: 8,
+      start_time_enabled: true,
+      start_time_hhmm: "01:00",
+      stop_time_enabled: true,
+      stop_time_hhmm: "07:00",
+      days_of_week: [0, 1, 2, 3, 4, 5, 6],
+      speed_limit_kbps: null,
+      post_queue_action: "sleep",
+    },
+  ],
+};
+
+export const INITIAL_BROWSERS: BrowserStatus[] = [
+  {
+    id: "chrome",
+    display_name: "Google Chrome",
+    family: "chromium",
+    detected_installed: true,
+    executable_path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    extension_enabled: true,
+    native_host_registered: true,
+    manifest_path: "~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Connected & Intercepting Downloads",
+  },
+  {
+    id: "brave",
+    display_name: "Brave Browser",
+    family: "chromium",
+    detected_installed: true,
+    executable_path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    extension_enabled: true,
+    native_host_registered: true,
+    manifest_path: "~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Connected & Intercepting Downloads",
+  },
+  {
+    id: "edge",
+    display_name: "Microsoft Edge",
+    family: "chromium",
+    detected_installed: true,
+    executable_path: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    extension_enabled: true,
+    native_host_registered: true,
+    manifest_path: "~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Connected & Intercepting Downloads",
+  },
+  {
+    id: "firefox",
+    display_name: "Mozilla Firefox",
+    family: "firefox",
+    detected_installed: true,
+    executable_path: "/Applications/Firefox.app/Contents/MacOS/firefox",
+    extension_enabled: true,
+    native_host_registered: true,
+    manifest_path: "~/Library/Application Support/Mozilla/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/firefox (WebExtension XPI)",
+    status_message: "Connected & Intercepting Downloads",
+  },
+  {
+    id: "safari",
+    display_name: "Apple Safari",
+    family: "safari",
+    detected_installed: true,
+    executable_path: "/Applications/Safari.app/Contents/MacOS/Safari",
+    extension_enabled: true,
+    native_host_registered: true,
+    manifest_path: "~/Library/Application Support/XDownloadManager/SafariExtension/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/safari (Safari App Extension)",
+    status_message: "Connected & Intercepting Downloads",
+  },
+  {
+    id: "opera",
+    display_name: "Opera",
+    family: "chromium",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: false,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Browser not detected on this system",
+  },
+  {
+    id: "vivaldi",
+    display_name: "Vivaldi",
+    family: "chromium",
+    detected_installed: false,
+    executable_path: null,
+    extension_enabled: false,
+    native_host_registered: false,
+    manifest_path: "~/Library/Application Support/Vivaldi/NativeMessagingHosts/com.peivee.xdm.json",
+    extension_bundle_path: "extensions/chromium (MV3)",
+    status_message: "Browser not detected on this system",
+  },
+];
+
+export function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 2 : 0)} ${units[i]}`;
+}
+
+export function formatSpeed(bps: number): string {
+  if (!bps || bps <= 0) return "0 B/s";
+  return `${formatBytes(bps)}/s`;
+}
+
+export function formatEta(seconds?: number | null): string {
+  if (seconds === undefined || seconds === null || seconds < 0) return "—";
+  if (seconds === 0) return "Done";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m > 60) {
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  }
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
