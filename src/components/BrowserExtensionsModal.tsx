@@ -10,6 +10,8 @@ import {
   ExternalLink,
   Sparkles,
   AlertCircle,
+  Copy,
+  CheckCheck,
 } from "lucide-react";
 import { AppSettings, BrowserStatus } from "../types/xdm";
 import { apiOpenBrowserUrl, apiOpenExtensionFolder } from "../services/tauriBridge";
@@ -30,6 +32,7 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
   onClose,
 }) => {
   const [openingFolder, setOpeningFolder] = useState<string | null>(null);
+  const [safariPathCopied, setSafariPathCopied] = useState<boolean>(false);
 
   const installedBrowsers = useMemo(
     () => browsers.filter((b) => b.detected_installed),
@@ -62,11 +65,31 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
     }
   };
 
+  const handleCopySafariPath = async () => {
+    try {
+      const folderPath = await apiOpenExtensionFolder("safari");
+      if (folderPath && typeof navigator !== "undefined" && navigator.clipboard) {
+        await navigator.clipboard.writeText(folderPath);
+      }
+      setSafariPathCopied(true);
+      setTimeout(() => setSafariPathCopied(false), 6000);
+    } catch (e) {
+      console.error("Failed to copy Safari extension path:", e);
+    }
+  };
+
   const handleLaunchAndReveal = async (b: BrowserStatus) => {
     setOpeningFolder(b.id);
     try {
       // 1. Reveal unpacked extension in Finder / Explorer for the specific browser family
-      await apiOpenExtensionFolder(b.family);
+      const folderPath = await apiOpenExtensionFolder(b.family);
+      if (b.family === "safari") {
+        if (folderPath && typeof navigator !== "undefined" && navigator.clipboard) {
+          await navigator.clipboard.writeText(folderPath);
+        }
+        setSafariPathCopied(true);
+        setTimeout(() => setSafariPathCopied(false), 6000);
+      }
       // 2. Open browser extensions page if applicable
       const url = getBrowserExtensionsUrl(b.id, b.family);
       if (url) {
@@ -137,31 +160,65 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
           </div>
 
           {/* Dedicated Safari Instructions Guide */}
-          <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/40 space-y-2">
-            <div className="font-semibold text-indigo-200 flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5">
+          <div className="p-4 rounded-xl bg-indigo-950/40 border border-indigo-500/40 space-y-3">
+            <div className="font-semibold text-indigo-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="flex items-center gap-1.5 font-bold text-sm">
                 <Puzzle className="w-4 h-4 text-indigo-400" />
-                How to Install & Enable Extension in Apple Safari (macOS):
+                Apple Safari (macOS) Extension Installation Guide
               </span>
-              <button
-                onClick={() => apiOpenExtensionFolder("safari")}
-                className="px-2.5 py-1 rounded bg-indigo-600/40 hover:bg-indigo-600 text-indigo-200 hover:text-white text-[10px] font-semibold flex items-center gap-1 transition"
-              >
-                <FolderOpen className="w-3 h-3" /> Reveal Safari Extension Folder
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopySafariPath}
+                  className="px-2.5 py-1 rounded bg-indigo-600/40 hover:bg-indigo-600 text-indigo-200 hover:text-white text-[11px] font-semibold flex items-center gap-1.5 transition border border-indigo-500/40"
+                >
+                  {safariPathCopied ? (
+                    <>
+                      <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> Path Copied to Clipboard!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> Copy Safari Extension Path
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => apiOpenExtensionFolder("safari")}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1.5 transition border border-slate-700"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" /> Reveal Folder in Finder
+                </button>
+              </div>
             </div>
-            <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 pl-1 leading-relaxed">
+
+            {/* Clarification about Safari's App Store redirect */}
+            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-2 leading-relaxed">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-amber-100">Why does Safari's "Get Extensions..." button open the Mac App Store?</strong>
+                <br />
+                In Safari Settings, the <em>Extensions</em> tab only lists extensions that are <strong>already loaded</strong>. If none are loaded yet, clicking "Get Extensions" opens the Mac App Store by Apple design.
+                <br />
+                To load XDM into Safari, <strong>do not click "Get Extensions"</strong>. Instead, use the <strong>Develop &rarr; Add Temporary Extension…</strong> menu as instructed below:
+              </div>
+            </div>
+
+            <ol className="list-decimal list-inside space-y-2 text-[11px] text-slate-300 pl-1 leading-relaxed">
               <li>
-                Open <strong className="text-white">Safari</strong> &rarr; <strong className="text-white">Settings...</strong> (<kbd className="px-1 bg-slate-800 rounded font-mono text-[10px]">⌘,</kbd>) &rarr; <strong className="text-indigo-300">Advanced</strong> tab.
+                <strong>Enable Developer Features:</strong> Open <strong className="text-white">Safari</strong> &rarr; <strong className="text-white">Settings...</strong> (<kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘,</kbd>) &rarr; <strong className="text-indigo-300">Advanced</strong> tab &rarr; check <strong className="text-amber-300">"Show features for web developers"</strong>.
               </li>
               <li>
-                Check the box: <strong className="text-amber-300">"Show features for web developers"</strong> (or "Show Develop menu in menu bar").
+                <strong>Allow Unsigned Extensions:</strong> In the macOS top menu bar, click <strong className="text-white">Develop</strong> &rarr; check <strong className="text-amber-300">"Allow Unsigned Extensions"</strong> (or in Safari Settings &rarr; <strong className="text-indigo-300">Developer</strong> tab &rarr; check "Allow unsigned extensions" and authenticate with Touch ID / Mac password).
               </li>
               <li>
-                In the macOS top menu bar, click <strong className="text-white">Develop</strong> &rarr; check <strong className="text-amber-300">"Allow Unsigned Extensions"</strong> (confirm with your Mac password / Touch ID).
+                <strong>Load Extension from Folder:</strong> In the macOS top menu bar, click <strong className="text-emerald-400 font-bold">Develop &rarr; Add Temporary Extension…</strong> (or in Safari Settings &rarr; <strong className="text-emerald-400 font-bold">Developer</strong> tab &rarr; click <strong>"Add Temporary Extension…"</strong>).
               </li>
               <li>
-                In Safari Settings, switch to the <strong className="text-indigo-300">Extensions</strong> tab, check <strong className="text-emerald-300">X Download Manager</strong> to enable it, and select <strong className="text-blue-300">"Always Allow on Every Website..."</strong>.
+                <strong>Select XDM Folder:</strong> In the file picker dialog that appears, press <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘⇧G</kbd> (Go to Folder), paste with <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘V</kbd> (the path was copied to your clipboard), and click <strong className="text-emerald-300">Select</strong>!
+              </li>
+              <li>
+                <strong>Enable & Set Permissions:</strong> Now in Safari Settings &rarr; switch to the <strong className="text-indigo-300">Extensions</strong> tab. <strong className="text-white">X Download Manager</strong> is now visible! Check its checkbox to enable it and choose <strong className="text-blue-300">"Always Allow on Every Website..."</strong>.
               </li>
             </ol>
           </div>
@@ -221,7 +278,9 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                       {openingFolder === b.id
                         ? "Opening..."
                         : b.family === "safari"
-                        ? "Reveal Safari Folder"
+                        ? safariPathCopied
+                          ? "Path Copied! (Develop Menu)"
+                          : "Load in Safari (Develop Menu)"
                         : "Load Unpacked"}
                     </button>
 

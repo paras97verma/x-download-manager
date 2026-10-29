@@ -78,3 +78,4 @@ cp "${PKG_OUTPUT_PATH}" "${DIST_PKG_DIR}/X_Download_Manager_${VERSION}_${ARCH}.p
 
 echo "==> macOS .pkg installer created successfully!"
 ls -lh "${DIST_PKG_DIR}"
+

@@ -37,7 +37,7 @@ X Download Manager seamlessly intercepts download links, streaming video/audio, 
 | :--- | :--- | :--- | :--- |
 | **Chromium** | Chrome, Arc, Dia, Brave, Edge, Opera, Opera GX, Vivaldi, Thorium, Ungoogled Chromium, Yandex | [⬇️ **`xdm-extension-chromium.zip`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-chromium.zip) | `chrome://extensions` → Enable *Developer mode* → *Load unpacked* |
 | **Firefox** | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | [⬇️ **`xdm-extension-firefox.xpi`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-firefox.xpi) | Click to install in Firefox/Zen, or load via `about:debugging` |
-| **Safari / WebKit** | Apple Safari (macOS), Orion Browser | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-safari.zip) | Built-in Xcode wrapper project (`extensions/safari`) |
+| **Safari / WebKit** | Apple Safari (macOS), Orion Browser | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-safari.zip) | Safari Settings → Advanced → Show Develop menu → Develop → Allow Unsigned Extensions → Add Temporary Extension... |
 
 ---
 

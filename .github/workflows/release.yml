@@ -191,7 +191,7 @@ jobs:
             | :--- | :--- | :--- | :--- |
             | **Chromium** | `xdm-extension-chromium.zip` | Google Chrome, Dia, Arc, Brave, Microsoft Edge, Opera, Opera GX, Vivaldi, Thorium, Chromium, Yandex | Unpack zip → Open `chrome://extensions` → Enable **Developer mode** → Click **Load unpacked** |
             | **Firefox** | `xdm-extension-firefox.xpi` / `.zip` | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | Drag & drop `.xpi` into browser window or load via `about:debugging` |
-            | **Safari** | `xdm-extension-safari.zip` | Apple Safari, Orion Browser | Open Safari Settings → Advanced → check **Show Develop menu** → Develop → **Allow Unsigned Extensions** |
+            | **Safari** | `xdm-extension-safari.zip` | Apple Safari, Orion Browser | Safari Settings → Advanced → check **Show Develop menu** → Develop → **Allow Unsigned Extensions** → **Add Temporary Extension…** |
 
             ---
 
