@@ -23,7 +23,7 @@ interface ToolbarProps {
   onStopAll: () => void;
   onDeleteSelected: () => void;
   onOpenScheduler: () => void;
-  onOpenExtensions: () => void;
+  onOpenExtensions?: () => void;
   onOpenSettings: (initialTab?: string) => void;
   onToggleUiMode: () => void;
   uiMode: "simple" | "advanced";
@@ -41,7 +41,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onStopAll,
   onDeleteSelected,
   onOpenScheduler,
-  onOpenExtensions,
   onOpenSettings,
   onToggleUiMode,
   uiMode,
@@ -53,7 +52,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 }) => {
   const isMac = typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
   return (
-    <header className="h-14 bg-[#111827] border-b border-slate-800 px-3 flex items-center justify-between select-none shrink-0 gap-2 overflow-x-auto">
+    <header className="h-14 bg-[#111827] border-b border-slate-800 px-3 flex items-center justify-between select-none shrink-0 gap-2 min-w-0">
       {/* Left Brand + Actions */}
       <div className="flex items-center gap-2 shrink-0">
         <div className="flex items-center gap-2 pr-3 border-r border-slate-800 shrink-0">
@@ -73,7 +72,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* Primary Add Actions */}
         <button
           onClick={() => onOpenAddModal("url")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow-sm transition shrink-0"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow-sm transition shrink-0"
           title="Add Download (⌘N)"
         >
           <Plus className="w-4 h-4" />
@@ -82,7 +81,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={() => onOpenAddModal("torrent")}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm transition shrink-0"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm transition shrink-0"
           title="Add Torrent or Magnet (⌘T)"
         >
           <Magnet className="w-4 h-4" />
@@ -95,7 +94,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={onResumeSelected}
           disabled={selectedCount === 0}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 text-xs font-medium transition shrink-0"
           title="Resume Selected (Space)"
         >
           <Play className="w-3.5 h-3.5 text-emerald-400" />
@@ -106,7 +105,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={onPauseSelected}
           disabled={selectedCount === 0}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-200 text-xs font-medium transition shrink-0"
           title="Pause Selected (Space)"
         >
           <Pause className="w-3.5 h-3.5 text-amber-400" />
@@ -116,7 +115,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={onStopAll}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-medium transition shrink-0"
           title="Stop All Transfers"
         >
           <Square className="w-3.5 h-3.5 text-rose-400" />
@@ -126,7 +125,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={onDeleteSelected}
           disabled={selectedCount === 0}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/60 hover:text-rose-300 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-300 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/60 hover:text-rose-300 disabled:opacity-40 disabled:hover:bg-slate-800/80 text-slate-300 text-xs font-medium transition shrink-0"
           title="Delete Selected (Backspace)"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -135,21 +134,21 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {/* Right Search + Tools */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search downloads..."
-            className="w-32 sm:w-44 lg:w-52 bg-slate-900 border border-slate-700/80 rounded-lg pl-8 pr-2.5 py-1 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-all"
+            placeholder="Search..."
+            className="w-24 sm:w-36 lg:w-44 focus:w-48 bg-slate-900 border border-slate-700/80 rounded-lg pl-8 pr-2 py-1 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-all"
           />
         </div>
 
         <button
           onClick={onToggleSpeedLimiter}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium transition shrink-0 ${
+          className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs font-medium transition shrink-0 ${
             settings.speed_limiter_enabled
               ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
               : "bg-slate-800/70 border-slate-700/70 text-slate-300 hover:bg-slate-800"
@@ -166,20 +165,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={onToggleUiMode}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition shrink-0 ${
+          className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs font-semibold transition shrink-0 ${
             uiMode === "simple"
               ? "bg-blue-600/20 border-blue-500/40 text-blue-300 hover:bg-blue-600/30"
               : "bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/30"
           }`}
-          title={`Switch between Simple (Beginner) and Advanced Mode (${isMac ? "⌘" : "Ctrl+"}M)`}
+          title={`Switch between Simple and Advanced Mode (${isMac ? "⌘" : "Ctrl+"}M)`}
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span className="hidden md:inline capitalize">{uiMode} Mode</span>
+          <span className="hidden md:inline capitalize">{uiMode}</span>
         </button>
 
         <button
           onClick={onOpenScheduler}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-xs font-medium transition shrink-0"
           title="Queues & Scheduler"
         >
           <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
@@ -188,7 +187,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={() => onOpenSettings("logins")}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-xs font-medium transition shrink-0"
           title="Site Password & Cookie Vault (Usersdrive, FTP)"
         >
           <KeyRound className="w-3.5 h-3.5 text-amber-400" />
@@ -196,17 +195,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
 
         <button
-          onClick={onOpenExtensions}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 text-xs font-semibold transition shrink-0"
-          title="Browser Extensions (Dia, Arc, Chrome, Firefox, Safari)"
-        >
-          <Puzzle className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="hidden sm:inline">Extensions</span>
-        </button>
-
-        <button
           onClick={() => onOpenSettings("general")}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition shrink-0"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition shrink-0"
           title="Settings (⌘,)"
         >
           <Settings className="w-3.5 h-3.5" />

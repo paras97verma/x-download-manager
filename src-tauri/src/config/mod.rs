@@ -101,7 +101,7 @@ pub struct AppSettings {
     pub auto_verify_checksum: bool,
     pub antivirus_command: String,
 
-    // Connections & Multi-Threading (IDM style)
+    // Connections & Multi-Threading (XDM Architecture)
     pub default_threads_per_download: usize,
     pub max_threads_per_download: usize,
     pub max_concurrent_downloads: usize,

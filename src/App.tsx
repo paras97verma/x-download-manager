@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { MenuBar } from "./components/MenuBar";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar } from "./components/Sidebar";
@@ -23,11 +23,13 @@ import {
   apiRestartDownload,
   apiResumeDownload,
   apiShowInFolder,
+  apiShowNotification,
   apiToggleBrowserExtension,
   apiUpdateSettings,
   buildSegments,
   formatSpeed,
   isTauriRuntime,
+  onNativeMenuAction,
 } from "./services/tauriBridge";
 import {
   AppSettings,
@@ -54,6 +56,49 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
+
+  const previousStatusRef = useRef<Map<string, string>>(new Map());
+
+  // Audio completion chime using Web Audio API
+  const playNotificationChime = useCallback(() => {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } catch (_) {}
+  }, []);
+
+  // Monitor download status transitions and trigger OS notification & audio chime
+  useEffect(() => {
+    for (const d of downloads) {
+      const prev = previousStatusRef.current.get(d.id);
+      if (prev && prev !== "completed" && d.status === "completed") {
+        if (settings.show_completion_dialog) {
+          apiShowNotification(
+            "Download Complete",
+            `${d.filename} has finished downloading successfully.`
+          );
+        }
+        if (settings.play_sound_on_complete) {
+          playNotificationChime();
+        }
+      }
+      previousStatusRef.current.set(d.id, d.status);
+    }
+  }, [downloads, settings.show_completion_dialog, settings.play_sound_on_complete, playNotificationChime]);
 
   // Sync real state from Tauri backend on mount and via periodic polling
   const syncFromBackend = useCallback(async () => {
@@ -467,19 +512,50 @@ export const App: React.FC = () => {
     propertiesItem,
   ]);
 
-  return (
-    <div className="h-screen w-screen flex flex-col bg-[#0b0f17] text-slate-100 overflow-hidden">
-      <MenuBar
-        onOpenAddUrl={() => setAddModalMode("url")}
-        onOpenAddTorrent={() => setAddModalMode("torrent")}
-        onOpenSettings={(tab) => setSettingsTab(tab || "general")}
-        onOpenScheduler={() => setShowSchedulerModal(true)}
-        onOpenExtensions={() => setShowExtensionsModal(true)}
-        onToggleUiMode={toggleUiMode}
-        uiMode={settings.ui_mode || "simple"}
-        onResumeSelected={handleResumeBatch}
-        onPauseSelected={handlePauseBatch}
-        onStopAll={() => {
+  // Handle native system menu actions from macOS system menu bar / native window menus
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    onNativeMenuAction((actionId) => {
+      switch (actionId) {
+        case "add_url":
+          setAddModalMode("url");
+          break;
+        case "add_torrent":
+          setAddModalMode("torrent");
+          break;
+        case "preferences":
+          setSettingsTab("general");
+          break;
+        case "about":
+          setSettingsTab("about");
+          break;
+        case "select_all":
+          handleSelectAll(true);
+          break;
+        case "deselect_all":
+          handleSelectAll(false);
+          break;
+        case "delete_selected":
+          handleDeleteBatch(false);
+          break;
+        case "delete_disk":
+          handleDeleteBatch(true);
+          break;
+        case "toggle_ui_mode":
+          toggleUiMode();
+          break;
+        case "resume_selected":
+          handleResumeBatch();
+          break;
+        case "pause_selected":
+          handlePauseBatch();
+          break;
+        case "restart_selected":
+          if (selectedItem) {
+            handleRestartDownload(selectedItem.id);
+          }
+          break;
+        case "stop_all":
           if (isTauriRuntime()) {
             downloads
               .filter((d) => d.status === "downloading")
@@ -490,23 +566,96 @@ export const App: React.FC = () => {
               d.status === "downloading" ? { ...d, status: "paused", speed_bps: 0 } : d
             )
           );
-        }}
-        onDeleteSelected={(deleteFile) => handleDeleteBatch(Boolean(deleteFile))}
-        onSelectAll={() => handleSelectAll(true)}
-        onDeselectAll={() => handleSelectAll(false)}
-        onOpenFile={
-          selectedItem?.status === "completed"
-            ? () => apiOpenFile(selectedItem.save_path)
-            : undefined
-        }
-        onShowInFolder={
-          selectedItem ? () => apiShowInFolder(selectedItem.save_path) : undefined
-        }
-        onRestartSelected={
-          selectedItem ? () => handleRestartDownload(selectedItem.id) : undefined
-        }
-        selectedCount={selectedIds.size}
-      />
+          break;
+        case "open_file":
+          if (selectedItem?.status === "completed") {
+            apiOpenFile(selectedItem.save_path);
+          }
+          break;
+        case "show_in_folder":
+          if (selectedItem) {
+            apiShowInFolder(selectedItem.save_path);
+          }
+          break;
+        case "open_scheduler":
+          setShowSchedulerModal(true);
+          break;
+        case "open_extensions":
+          setSettingsTab("browser");
+          break;
+        case "open_vault":
+          setSettingsTab("logins");
+          break;
+        case "open_speed":
+          setSettingsTab("speed");
+          break;
+        case "shortcuts_guide":
+          setSettingsTab("shortcuts");
+          break;
+        default:
+          break;
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [
+    handleSelectAll,
+    handleDeleteBatch,
+    toggleUiMode,
+    handleResumeBatch,
+    handlePauseBatch,
+    selectedItem,
+    handleRestartDownload,
+    downloads,
+  ]);
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-[#0b0f17] text-slate-100 overflow-hidden">
+      {/* Native menu handles top application menu on desktop (macOS system menu bar & native menus); only show in-window MenuBar in browser preview */}
+      {!isTauriRuntime() && (
+        <MenuBar
+          onOpenAddUrl={() => setAddModalMode("url")}
+          onOpenAddTorrent={() => setAddModalMode("torrent")}
+          onOpenSettings={(tab) => setSettingsTab(tab || "general")}
+          onOpenScheduler={() => setShowSchedulerModal(true)}
+          onOpenExtensions={() => setSettingsTab("browser")}
+          onToggleUiMode={toggleUiMode}
+          uiMode={settings.ui_mode || "simple"}
+          onResumeSelected={handleResumeBatch}
+          onPauseSelected={handlePauseBatch}
+          onStopAll={() => {
+            if (isTauriRuntime()) {
+              downloads
+                .filter((d) => d.status === "downloading")
+                .forEach((d) => apiPauseDownload(d.id));
+            }
+            setDownloads((prev) =>
+              prev.map((d) =>
+                d.status === "downloading" ? { ...d, status: "paused", speed_bps: 0 } : d
+              )
+            );
+          }}
+          onDeleteSelected={(deleteFile) => handleDeleteBatch(Boolean(deleteFile))}
+          onSelectAll={() => handleSelectAll(true)}
+          onDeselectAll={() => handleSelectAll(false)}
+          onOpenFile={
+            selectedItem?.status === "completed"
+              ? () => apiOpenFile(selectedItem.save_path)
+              : undefined
+          }
+          onShowInFolder={
+            selectedItem ? () => apiShowInFolder(selectedItem.save_path) : undefined
+          }
+          onRestartSelected={
+            selectedItem ? () => handleRestartDownload(selectedItem.id) : undefined
+          }
+          selectedCount={selectedIds.size}
+        />
+      )}
 
       <Toolbar
         onOpenAddModal={(mode) => setAddModalMode(mode)}
@@ -527,7 +676,6 @@ export const App: React.FC = () => {
         onDeleteSelected={() => handleDeleteBatch(false)}
         selectedCount={selectedIds.size}
         onOpenScheduler={() => setShowSchedulerModal(true)}
-        onOpenExtensions={() => setShowExtensionsModal(true)}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         onToggleUiMode={toggleUiMode}
         uiMode={settings.ui_mode || "simple"}
@@ -598,22 +746,25 @@ export const App: React.FC = () => {
             Extensions Connected:{" "}
             {(() => {
               const connected = browsers.filter(
-                (b) => b.detected_installed && b.extension_enabled && b.native_host_registered
+                (b) => b.detected_installed && b.extension_enabled && b.is_connected
               );
               if (connected.length === 0) {
                 return (
                   <button
-                    onClick={() => setShowExtensionsModal(true)}
-                    className="text-amber-400 hover:text-amber-300 font-medium underline underline-offset-2 ml-1"
+                    onClick={() => setSettingsTab("browser")}
+                    className="text-amber-400 hover:text-amber-300 font-medium underline underline-offset-2 ml-1 cursor-pointer"
                   >
                     0 Connected (Click to Integrate)
                   </button>
                 );
               }
               return (
-                <strong className="text-emerald-400 ml-1">
+                <button
+                  onClick={() => setSettingsTab("browser")}
+                  className="text-emerald-400 hover:text-emerald-300 font-medium ml-1 cursor-pointer underline underline-offset-2"
+                >
                   {connected.length} {connected.length === 1 ? "Browser" : "Browsers"} ({connected.map((b) => b.display_name).join(", ")})
-                </strong>
+                </button>
               );
             })()}
           </span>
@@ -691,6 +842,30 @@ export const App: React.FC = () => {
         <SettingsModal
           initialTab={settingsTab}
           settings={settings}
+          browsers={browsers}
+          onToggleBrowser={async (id, enable) => {
+            if (isTauriRuntime()) {
+              const updated = await apiToggleBrowserExtension(id, enable);
+              if (updated) {
+                setBrowsers((prev) => prev.map((b) => (b.id === id ? updated : b)));
+              }
+            } else {
+              setBrowsers((prev) =>
+                prev.map((b) => (b.id === id ? { ...b, extension_enabled: enable } : b))
+              );
+            }
+          }}
+          onReinstallAll={async () => {
+            if (isTauriRuntime()) {
+              for (const b of browsers) {
+                if (b.detected_installed) {
+                  await apiToggleBrowserExtension(b.id, true);
+                }
+              }
+              const fresh = await apiGetBrowserStatuses();
+              if (fresh) setBrowsers(fresh);
+            }
+          }}
           onSave={(newSettings) => {
             setSettings(newSettings);
             if (isTauriRuntime()) {

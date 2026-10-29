@@ -130,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* IDM Synchronized Queues */}
+        {/* XDM Synchronized Queues */}
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-2 mb-1.5">
             Download Queues

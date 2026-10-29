@@ -46,6 +46,7 @@ pub struct BrowserStatus {
     pub executable_path: Option<String>,
     pub extension_enabled: bool,
     pub native_host_registered: bool,
+    pub is_connected: bool,
     pub manifest_path: String,
     pub extension_bundle_path: String,
     pub status_message: String,
@@ -89,10 +90,17 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
             };
 
             let detected = exe.is_some() || (*id == "safari" && cfg!(target_os = "macos"));
+            let is_connected = crate::browser::ipc_server::is_browser_connected(id, name);
             let status_message = if !detected {
                 "Browser not detected on this system".to_string()
-            } else if enabled && native_registered {
+            } else if is_connected {
                 "Connected & Intercepting Downloads".to_string()
+            } else if enabled && native_registered {
+                if *id == "safari" {
+                    "Host Registered — Enable in Safari Settings > Extensions".to_string()
+                } else {
+                    "Host Registered — Extension not yet active in browser".to_string()
+                }
             } else if enabled {
                 "Ready — Click Install/Repair to register Native Host".to_string()
             } else {
@@ -107,6 +115,7 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
                 executable_path: exe,
                 extension_enabled: enabled,
                 native_host_registered: native_registered,
+                is_connected,
                 manifest_path: manifest_file.to_string_lossy().to_string(),
                 extension_bundle_path: ext_bundle,
                 status_message,
@@ -689,6 +698,8 @@ pub fn get_or_create_extension_dir(family: &str) -> Result<PathBuf, String> {
 
     let target_dir = if family.eq_ignore_ascii_case("firefox") {
         base.join("firefox")
+    } else if family.eq_ignore_ascii_case("safari") {
+        base.join("safari")
     } else {
         base.join("chromium")
     };
@@ -702,6 +713,20 @@ pub fn get_or_create_extension_dir(family: &str) -> Result<PathBuf, String> {
         let popup_html = include_str!("../../../extensions/firefox/popup.html");
         let popup_js = include_str!("../../../extensions/firefox/popup.js");
         let styles = include_str!("../../../extensions/firefox/styles.css");
+
+        let _ = fs::write(target_dir.join("manifest.json"), manifest);
+        let _ = fs::write(target_dir.join("background.js"), bg);
+        let _ = fs::write(target_dir.join("content.js"), content);
+        let _ = fs::write(target_dir.join("popup.html"), popup_html);
+        let _ = fs::write(target_dir.join("popup.js"), popup_js);
+        let _ = fs::write(target_dir.join("styles.css"), styles);
+    } else if family.eq_ignore_ascii_case("safari") {
+        let manifest = include_str!("../../../extensions/safari/manifest.json");
+        let bg = include_str!("../../../extensions/safari/background.js");
+        let content = include_str!("../../../extensions/safari/content.js");
+        let popup_html = include_str!("../../../extensions/safari/popup.html");
+        let popup_js = include_str!("../../../extensions/safari/popup.js");
+        let styles = include_str!("../../../extensions/safari/styles.css");
 
         let _ = fs::write(target_dir.join("manifest.json"), manifest);
         let _ = fs::write(target_dir.join("background.js"), bg);

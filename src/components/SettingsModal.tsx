@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Sliders,
@@ -18,17 +18,29 @@ import {
   Folder,
   Bell,
   Power,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  RefreshCw,
+  Shield,
 } from "lucide-react";
-import { AppSettings, SiteCredential } from "../types/xdm";
+import { AppSettings, BrowserStatus, SiteCredential } from "../types/xdm";
 import {
   apiPickDirectory,
   apiPromptNotificationPermission,
   apiSetAutostart,
+  apiIsAutostartEnabled,
+  apiOpenExtensionFolder,
+  apiOpenBrowserUrl,
+  apiShowNotification,
 } from "../services/tauriBridge";
 
 interface SettingsModalProps {
   initialTab?: string;
   settings: AppSettings;
+  browsers?: BrowserStatus[];
+  onToggleBrowser?: (browserId: string, enable: boolean) => void;
+  onReinstallAll?: () => void;
   onSave: (updated: AppSettings) => void;
   onClose: () => void;
 }
@@ -36,11 +48,22 @@ interface SettingsModalProps {
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   initialTab = "general",
   settings,
+  browsers = [],
+  onToggleBrowser,
+  onReinstallAll,
   onSave,
   onClose,
 }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [draft, setDraft] = useState<AppSettings>(JSON.parse(JSON.stringify(settings)));
+  const [openingFolder, setOpeningFolder] = useState<string | null>(null);
+
+  // Sync actual OS autostart state on modal load
+  useEffect(() => {
+    apiIsAutostartEnabled().then((enabled) => {
+      setDraft((prev) => ({ ...prev, start_on_boot: enabled }));
+    });
+  }, []);
 
   const [newHostPattern, setNewHostPattern] = useState("");
   const [newSiteType, setNewSiteType] = useState<SiteCredential["site_type"]>("usersdrive");
@@ -59,7 +82,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: "torrent", label: "BitTorrent / DHT", icon: Magnet },
     { id: "logins", label: "Site Logins & Auth", icon: KeyRound },
     { id: "categories", label: "File Categories", icon: FolderOpen },
-    { id: "browser", label: "Browser Monitoring", icon: Puzzle },
+    { id: "browser", label: "Browser Extensions & Integration", icon: Puzzle },
     { id: "proxy", label: "Proxy & Network", icon: Globe },
     { id: "shortcuts", label: "Shortcuts & Keybindings", icon: Keyboard },
     { id: "about", label: "About & Credits", icon: Info },
@@ -89,10 +112,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setDraft({ ...draft, play_sound_on_complete: enabled, show_completion_dialog: enabled });
     if (enabled) {
       try {
-        await apiPromptNotificationPermission();
+        const granted = await apiPromptNotificationPermission();
+        if (granted) {
+          await apiShowNotification(
+            "X Download Manager",
+            "Download completion notifications are active!"
+          );
+        }
       } catch (e) {
         console.error("Failed to prompt notification permission:", e);
       }
+    }
+  };
+
+  const getBrowserExtensionsUrl = (id: string, family: string): string => {
+    switch (id) {
+      case "dia":
+        return "dia://extensions";
+      case "arc":
+        return "arc://extensions";
+      case "brave":
+        return "brave://extensions";
+      case "edge":
+        return "edge://extensions";
+      case "opera":
+      case "operagx":
+        return "opera://extensions";
+      case "vivaldi":
+        return "vivaldi://extensions";
+      case "safari":
+        return "";
+      default:
+        return family === "firefox" ? "about:addons" : "chrome://extensions";
+    }
+  };
+
+  const handleLaunchAndReveal = async (b: BrowserStatus) => {
+    setOpeningFolder(b.id);
+    try {
+      await apiOpenExtensionFolder(b.family);
+      const url = getBrowserExtensionsUrl(b.id, b.family);
+      if (url) {
+        await apiOpenBrowserUrl(url);
+      }
+    } catch (err) {
+      console.error("Failed to launch extension helper:", err);
+    } finally {
+      setTimeout(() => setOpeningFolder(null), 1500);
     }
   };
 
@@ -300,7 +366,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Connections & Multi-Threading Tab */}
             {activeTab === "connections" && (
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white">Multi-Threaded Segmentation Engine (IDM Architecture)</h3>
+                <h3 className="text-sm font-bold text-white">Multi-Threaded Segmentation Engine (XDM Architecture)</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
                     <label className="block text-slate-200 font-semibold">
@@ -606,10 +672,155 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
 
-            {/* Browser Monitoring */}
+            {/* Browser Extensions & Monitoring Tab */}
             {activeTab === "browser" && (
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white">Browser Interception & Download Handoff</h3>
+                <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="font-semibold text-indigo-200 flex items-center gap-1.5 text-xs">
+                      <Shield className="w-4 h-4 text-indigo-400" />
+                      Native IPC Host Active on 127.0.0.1:{draft.browser.ipc_port}
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Receives intercepted downloads, auth cookies, referers, and torrent payloads directly from your browsers.
+                    </div>
+                  </div>
+                  {onReinstallAll && (
+                    <button
+                      type="button"
+                      onClick={onReinstallAll}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shrink-0 transition"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Re-register All Hosts
+                    </button>
+                  )}
+                </div>
+
+                {/* Dedicated Safari Instructions Guide (macOS) */}
+                <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/40 space-y-2">
+                  <div className="font-semibold text-indigo-200 flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <Puzzle className="w-4 h-4 text-indigo-400" />
+                      How to Install & Enable Extension in Apple Safari (macOS):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => apiOpenExtensionFolder("safari")}
+                      className="px-2.5 py-1 rounded bg-indigo-600/40 hover:bg-indigo-600 text-indigo-200 hover:text-white text-[10px] font-semibold flex items-center gap-1 transition"
+                    >
+                      <FolderOpen className="w-3 h-3" /> Reveal Safari Extension Folder
+                    </button>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-300 pl-1 leading-relaxed">
+                    <li>
+                      Open <strong className="text-white">Safari</strong> &rarr; <strong className="text-white">Settings...</strong> (<kbd className="px-1 bg-slate-800 rounded font-mono text-[10px]">⌘,</kbd>) &rarr; <strong className="text-indigo-300">Advanced</strong> tab.
+                    </li>
+                    <li>
+                      Check the box: <strong className="text-amber-300">"Show features for web developers"</strong> (or "Show Develop menu in menu bar").
+                    </li>
+                    <li>
+                      In the macOS top menu bar, click <strong className="text-white">Develop</strong> &rarr; check <strong className="text-amber-300">"Allow Unsigned Extensions"</strong> (authenticate with Touch ID / Mac password).
+                    </li>
+                    <li>
+                      In Safari Settings, switch to the <strong className="text-indigo-300">Extensions</strong> tab, check <strong className="text-emerald-300">X Download Manager</strong> to enable it, and select <strong className="text-blue-300">"Always Allow on Every Website..."</strong>.
+                    </li>
+                  </ol>
+                </div>
+
+                {/* Installed Browsers List */}
+                <div className="space-y-2">
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    Installed Browsers & Extension Status ({browsers.filter((b) => b.detected_installed).length})
+                  </div>
+
+                  {browsers.filter((b) => b.detected_installed).length === 0 ? (
+                    <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs">
+                      No supported browsers detected automatically. Ensure Dia, Chrome, Safari, or Firefox is installed.
+                    </div>
+                  ) : (
+                    browsers
+                      .filter((b) => b.detected_installed)
+                      .map((b) => (
+                        <div
+                          key={b.id}
+                          className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 flex items-center justify-between gap-3 transition"
+                        >
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-100 text-xs">{b.display_name}</span>
+                              <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">
+                                {b.family}
+                              </span>
+                              {b.is_connected ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
+                                  <CheckCircle2 className="w-3 h-3" /> Connected
+                                </span>
+                              ) : b.native_host_registered ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">
+                                  <AlertCircle className="w-3 h-3" /> Host Registered
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-medium">
+                                  Ready
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              Host: <span className="font-mono text-slate-300">{b.manifest_path}</span>
+                            </div>
+                            <div className={`text-[10px] font-medium ${b.is_connected ? "text-emerald-400" : "text-slate-400"}`}>
+                              {b.status_message}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleLaunchAndReveal(b)}
+                              className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-semibold text-xs flex items-center gap-1 transition"
+                              title={`Open ${b.display_name} extensions and reveal folder`}
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              {openingFolder === b.id
+                                ? "Opening..."
+                                : b.family === "safari"
+                                ? "Reveal Safari Folder"
+                                : "Load Unpacked"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => apiOpenExtensionFolder(b.family)}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700"
+                              title="Reveal Extension Folder in Finder"
+                            >
+                              <FolderOpen className="w-3.5 h-3.5" />
+                            </button>
+
+                            {onToggleBrowser && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleBrowser(b.id, !b.extension_enabled)}
+                                className={`px-2.5 py-1 rounded-lg font-semibold text-xs flex items-center gap-1 transition ${
+                                  b.extension_enabled
+                                    ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 hover:bg-rose-600/20 hover:text-rose-300 hover:border-rose-500/40"
+                                    : "bg-slate-800 text-slate-300 hover:bg-blue-600 hover:text-white"
+                                }`}
+                              >
+                                <Power className="w-3 h-3" />
+                                {b.extension_enabled ? "Enabled" : "Enable"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+
+                {/* Integration Options */}
+                <h4 className="text-xs font-bold text-slate-200 mt-2">Interception Preferences</h4>
                 <label className="flex items-center gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
                   <input
                     type="checkbox"
@@ -626,16 +837,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="rounded bg-slate-950 border-slate-700 text-blue-600"
                   />
                   <div>
-                    <div className="font-semibold text-slate-200">
+                    <div className="font-semibold text-slate-200 text-xs">
                       Auto-register Native Messaging Host when X Download Manager starts
                     </div>
                     <div className="text-[10px] text-slate-400">
-                      Registers Native Messaging manifests across Dia, Opera, Arc, Safari, Firefox, and Chromium.
+                      Ensures Native Messaging manifests across Dia, Opera, Arc, Safari, Firefox, and Chromium stay registered.
                     </div>
                   </div>
                 </label>
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">
+                  <label className="block text-slate-300 font-semibold mb-1 text-xs">
                     Automatically Intercept File Extensions (Comma separated)
                   </label>
                   <textarea

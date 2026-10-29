@@ -1,6 +1,7 @@
 pub mod browser;
 pub mod config;
 pub mod engine;
+pub mod menu;
 pub mod scheduler;
 
 use std::sync::Arc;
@@ -346,6 +347,12 @@ fn set_autostart(enable: bool, app: tauri::AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn is_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn request_notification_permission(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri_plugin_notification::NotificationExt;
     let perm = app
@@ -428,7 +435,67 @@ pub fn run_app() {
             Some(vec![]),
         ))
         .manage(engine)
-        .setup(move |_app| {
+        .setup(move |app| {
+            // Setup Native System Application Menu (macOS system menu bar / Windows & Linux native menu)
+            if let Ok(native_menu) = menu::create_native_app_menu(app.handle()) {
+                let _ = app.set_menu(native_menu);
+            }
+
+            // Setup Tray Icon & Context Menu
+            if let Ok(show_i) = tauri::menu::MenuItem::with_id(
+                app,
+                "show",
+                "Show X Download Manager",
+                true,
+                None::<&str>,
+            ) {
+                if let Ok(quit_i) =
+                    tauri::menu::MenuItem::with_id(app, "quit", "Quit XDM", true, None::<&str>)
+                {
+                    if let Ok(menu) = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i]) {
+                        let mut builder = tauri::tray::TrayIconBuilder::new()
+                            .menu(&menu)
+                            .show_menu_on_left_click(false)
+                            .on_menu_event(|app, event| match event.id.as_ref() {
+                                "quit" => {
+                                    app.exit(0);
+                                }
+                                "show" => {
+                                    use tauri::Manager;
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.show();
+                                        let _ = window.unminimize();
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                                _ => {}
+                            })
+                            .on_tray_icon_event(|tray, event| {
+                                if let tauri::tray::TrayIconEvent::Click {
+                                    button: tauri::tray::MouseButton::Left,
+                                    button_state: tauri::tray::MouseButtonState::Up,
+                                    ..
+                                } = event
+                                {
+                                    let app = tray.app_handle();
+                                    use tauri::Manager;
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.show();
+                                        let _ = window.unminimize();
+                                        let _ = window.set_focus();
+                                    }
+                                }
+                            });
+
+                        if let Some(icon) = app.default_window_icon() {
+                            builder = builder.icon(icon.clone());
+                        }
+
+                        let _ = builder.build(app);
+                    }
+                }
+            }
+
             tauri::async_runtime::spawn(async move {
                 browser::ipc_server::start_browser_ipc_server(ipc_engine, ipc_port).await;
             });
@@ -436,6 +503,38 @@ pub fn run_app() {
                 scheduler::run_scheduler_loop(sched_engine).await;
             });
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            match id {
+                "quit" => {
+                    app.exit(0);
+                }
+                "show" => {
+                    use tauri::Manager;
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                }
+                _ => {
+                    use tauri::Emitter;
+                    let _ = app.emit("menu-action", id);
+                }
+            }
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                use tauri::Manager;
+                let app = window.app_handle();
+                if let Some(engine) = app.try_state::<Arc<crate::engine::DownloadEngine>>() {
+                    if engine.settings.read().minimize_to_tray {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_downloads,
@@ -457,6 +556,7 @@ pub fn run_app() {
             move_to_queue,
             pick_directory,
             set_autostart,
+            is_autostart_enabled,
             request_notification_permission,
             show_notification,
             parse_torrent_file,

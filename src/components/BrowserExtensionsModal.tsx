@@ -55,6 +55,8 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
         return "opera://extensions";
       case "vivaldi":
         return "vivaldi://extensions";
+      case "safari":
+        return "";
       default:
         return family === "firefox" ? "about:addons" : "chrome://extensions";
     }
@@ -63,11 +65,13 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
   const handleLaunchAndReveal = async (b: BrowserStatus) => {
     setOpeningFolder(b.id);
     try {
-      // 1. Reveal unpacked extension in Finder / Explorer
+      // 1. Reveal unpacked extension in Finder / Explorer for the specific browser family
       await apiOpenExtensionFolder(b.family);
-      // 2. Open browser extensions page
+      // 2. Open browser extensions page if applicable
       const url = getBrowserExtensionsUrl(b.id, b.family);
-      await apiOpenBrowserUrl(url);
+      if (url) {
+        await apiOpenBrowserUrl(url);
+      }
     } catch (err) {
       console.error("Failed to launch extension helper:", err);
     } finally {
@@ -116,18 +120,48 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
             </button>
           </div>
 
-          {/* Quick Activation Guide */}
+          {/* Quick Activation Guide for Chromium & Firefox */}
           <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/30 space-y-2">
             <div className="font-semibold text-blue-200 flex items-center gap-1.5 text-xs">
               <Sparkles className="w-4 h-4 text-blue-400" />
-              How to Activate in Dia Browser & Chromium:
+              How to Activate in Dia, Arc, Chrome & Firefox:
             </div>
             <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 pl-1 leading-relaxed">
               <li>
                 Click <strong className="text-blue-300">"Load Unpacked"</strong> on your installed browser below. This opens Finder with the extension folder selected and opens the browser extensions page.
               </li>
               <li>
-                Turn on <strong className="text-amber-300">Developer mode</strong> (top-right of the browser), click <strong className="text-emerald-300">Load unpacked</strong>, and select the opened extension folder.
+                Turn on <strong className="text-amber-300">Developer mode</strong> (top-right of browser), click <strong className="text-emerald-300">Load unpacked</strong>, and select the opened extension folder.
+              </li>
+            </ol>
+          </div>
+
+          {/* Dedicated Safari Instructions Guide */}
+          <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/40 space-y-2">
+            <div className="font-semibold text-indigo-200 flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5">
+                <Puzzle className="w-4 h-4 text-indigo-400" />
+                How to Install & Enable Extension in Apple Safari (macOS):
+              </span>
+              <button
+                onClick={() => apiOpenExtensionFolder("safari")}
+                className="px-2.5 py-1 rounded bg-indigo-600/40 hover:bg-indigo-600 text-indigo-200 hover:text-white text-[10px] font-semibold flex items-center gap-1 transition"
+              >
+                <FolderOpen className="w-3 h-3" /> Reveal Safari Extension Folder
+              </button>
+            </div>
+            <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 pl-1 leading-relaxed">
+              <li>
+                Open <strong className="text-white">Safari</strong> &rarr; <strong className="text-white">Settings...</strong> (<kbd className="px-1 bg-slate-800 rounded font-mono text-[10px]">⌘,</kbd>) &rarr; <strong className="text-indigo-300">Advanced</strong> tab.
+              </li>
+              <li>
+                Check the box: <strong className="text-amber-300">"Show features for web developers"</strong> (or "Show Develop menu in menu bar").
+              </li>
+              <li>
+                In the macOS top menu bar, click <strong className="text-white">Develop</strong> &rarr; check <strong className="text-amber-300">"Allow Unsigned Extensions"</strong> (confirm with your Mac password / Touch ID).
+              </li>
+              <li>
+                In Safari Settings, switch to the <strong className="text-indigo-300">Extensions</strong> tab, check <strong className="text-emerald-300">X Download Manager</strong> to enable it, and select <strong className="text-blue-300">"Always Allow on Every Website..."</strong>.
               </li>
             </ol>
           </div>
@@ -155,14 +189,26 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                       <span className="text-[10px] uppercase px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">
                         {b.family}
                       </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
-                        <CheckCircle2 className="w-3 h-3" /> Ready
-                      </span>
+                      {b.is_connected ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-medium">
+                          <CheckCircle2 className="w-3 h-3" /> Connected
+                        </span>
+                      ) : b.native_host_registered ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 font-medium">
+                          <AlertCircle className="w-3 h-3" /> Host Registered
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-medium">
+                          Ready to Register
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-slate-400 truncate">
                       Host Manifest: <span className="font-mono text-slate-300">{b.manifest_path}</span>
                     </div>
-                    <div className="text-[11px] text-emerald-400 font-medium">{b.status_message}</div>
+                    <div className={`text-[11px] font-medium ${b.is_connected ? "text-emerald-400" : "text-slate-400"}`}>
+                      {b.status_message}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -172,7 +218,11 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                       title={`Open ${b.display_name} extensions and reveal folder`}
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
-                      {openingFolder === b.id ? "Opening..." : "Load Unpacked"}
+                      {openingFolder === b.id
+                        ? "Opening..."
+                        : b.family === "safari"
+                        ? "Reveal Safari Folder"
+                        : "Load Unpacked"}
                     </button>
 
                     <button

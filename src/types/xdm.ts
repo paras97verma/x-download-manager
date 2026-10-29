@@ -132,6 +132,7 @@ export interface BrowserStatus {
   executable_path?: string | null;
   extension_enabled: boolean;
   native_host_registered: boolean;
+  is_connected: boolean;
   manifest_path: string;
   extension_bundle_path: string;
   status_message: string;
