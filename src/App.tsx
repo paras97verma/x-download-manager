@@ -29,6 +29,7 @@ import {
   buildSegments,
   formatSpeed,
   isTauriRuntime,
+  onNativeMenuAction,
 } from "./services/tauriBridge";
 import {
   AppSettings,
@@ -511,19 +512,50 @@ export const App: React.FC = () => {
     propertiesItem,
   ]);
 
-  return (
-    <div className="h-screen w-screen flex flex-col bg-[#0b0f17] text-slate-100 overflow-hidden">
-      <MenuBar
-        onOpenAddUrl={() => setAddModalMode("url")}
-        onOpenAddTorrent={() => setAddModalMode("torrent")}
-        onOpenSettings={(tab) => setSettingsTab(tab || "general")}
-        onOpenScheduler={() => setShowSchedulerModal(true)}
-        onOpenExtensions={() => setSettingsTab("browser")}
-        onToggleUiMode={toggleUiMode}
-        uiMode={settings.ui_mode || "simple"}
-        onResumeSelected={handleResumeBatch}
-        onPauseSelected={handlePauseBatch}
-        onStopAll={() => {
+  // Handle native system menu actions from macOS system menu bar / native window menus
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    onNativeMenuAction((actionId) => {
+      switch (actionId) {
+        case "add_url":
+          setAddModalMode("url");
+          break;
+        case "add_torrent":
+          setAddModalMode("torrent");
+          break;
+        case "preferences":
+          setSettingsTab("general");
+          break;
+        case "about":
+          setSettingsTab("about");
+          break;
+        case "select_all":
+          handleSelectAll(true);
+          break;
+        case "deselect_all":
+          handleSelectAll(false);
+          break;
+        case "delete_selected":
+          handleDeleteBatch(false);
+          break;
+        case "delete_disk":
+          handleDeleteBatch(true);
+          break;
+        case "toggle_ui_mode":
+          toggleUiMode();
+          break;
+        case "resume_selected":
+          handleResumeBatch();
+          break;
+        case "pause_selected":
+          handlePauseBatch();
+          break;
+        case "restart_selected":
+          if (selectedItem) {
+            handleRestartDownload(selectedItem.id);
+          }
+          break;
+        case "stop_all":
           if (isTauriRuntime()) {
             downloads
               .filter((d) => d.status === "downloading")
@@ -534,23 +566,96 @@ export const App: React.FC = () => {
               d.status === "downloading" ? { ...d, status: "paused", speed_bps: 0 } : d
             )
           );
-        }}
-        onDeleteSelected={(deleteFile) => handleDeleteBatch(Boolean(deleteFile))}
-        onSelectAll={() => handleSelectAll(true)}
-        onDeselectAll={() => handleSelectAll(false)}
-        onOpenFile={
-          selectedItem?.status === "completed"
-            ? () => apiOpenFile(selectedItem.save_path)
-            : undefined
-        }
-        onShowInFolder={
-          selectedItem ? () => apiShowInFolder(selectedItem.save_path) : undefined
-        }
-        onRestartSelected={
-          selectedItem ? () => handleRestartDownload(selectedItem.id) : undefined
-        }
-        selectedCount={selectedIds.size}
-      />
+          break;
+        case "open_file":
+          if (selectedItem?.status === "completed") {
+            apiOpenFile(selectedItem.save_path);
+          }
+          break;
+        case "show_in_folder":
+          if (selectedItem) {
+            apiShowInFolder(selectedItem.save_path);
+          }
+          break;
+        case "open_scheduler":
+          setShowSchedulerModal(true);
+          break;
+        case "open_extensions":
+          setSettingsTab("browser");
+          break;
+        case "open_vault":
+          setSettingsTab("logins");
+          break;
+        case "open_speed":
+          setSettingsTab("speed");
+          break;
+        case "shortcuts_guide":
+          setSettingsTab("shortcuts");
+          break;
+        default:
+          break;
+      }
+    }).then((cleanup) => {
+      unlisten = cleanup;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [
+    handleSelectAll,
+    handleDeleteBatch,
+    toggleUiMode,
+    handleResumeBatch,
+    handlePauseBatch,
+    selectedItem,
+    handleRestartDownload,
+    downloads,
+  ]);
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-[#0b0f17] text-slate-100 overflow-hidden">
+      {/* Native menu handles top application menu on desktop (macOS system menu bar & native menus); only show in-window MenuBar in browser preview */}
+      {!isTauriRuntime() && (
+        <MenuBar
+          onOpenAddUrl={() => setAddModalMode("url")}
+          onOpenAddTorrent={() => setAddModalMode("torrent")}
+          onOpenSettings={(tab) => setSettingsTab(tab || "general")}
+          onOpenScheduler={() => setShowSchedulerModal(true)}
+          onOpenExtensions={() => setSettingsTab("browser")}
+          onToggleUiMode={toggleUiMode}
+          uiMode={settings.ui_mode || "simple"}
+          onResumeSelected={handleResumeBatch}
+          onPauseSelected={handlePauseBatch}
+          onStopAll={() => {
+            if (isTauriRuntime()) {
+              downloads
+                .filter((d) => d.status === "downloading")
+                .forEach((d) => apiPauseDownload(d.id));
+            }
+            setDownloads((prev) =>
+              prev.map((d) =>
+                d.status === "downloading" ? { ...d, status: "paused", speed_bps: 0 } : d
+              )
+            );
+          }}
+          onDeleteSelected={(deleteFile) => handleDeleteBatch(Boolean(deleteFile))}
+          onSelectAll={() => handleSelectAll(true)}
+          onDeselectAll={() => handleSelectAll(false)}
+          onOpenFile={
+            selectedItem?.status === "completed"
+              ? () => apiOpenFile(selectedItem.save_path)
+              : undefined
+          }
+          onShowInFolder={
+            selectedItem ? () => apiShowInFolder(selectedItem.save_path) : undefined
+          }
+          onRestartSelected={
+            selectedItem ? () => handleRestartDownload(selectedItem.id) : undefined
+          }
+          selectedCount={selectedIds.size}
+        />
+      )}
 
       <Toolbar
         onOpenAddModal={(mode) => setAddModalMode(mode)}

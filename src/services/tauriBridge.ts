@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
   AppSettings,
   BrowserStatus,
@@ -16,6 +17,20 @@ declare global {
 export const isTauriRuntime = (): boolean => {
   return typeof window !== "undefined" && Boolean(window.__TAURI_INTERNALS__);
 };
+
+export async function onNativeMenuAction(
+  callback: (actionId: string) => void
+): Promise<UnlistenFn | (() => void)> {
+  if (!isTauriRuntime()) return () => {};
+  try {
+    return await listen<string>("menu-action", (event) => {
+      callback(event.payload);
+    });
+  } catch (err) {
+    console.warn("Failed to listen for menu-action:", err);
+    return () => {};
+  }
+}
 
 export async function apiGetDownloads(): Promise<DownloadItem[]> {
   if (!isTauriRuntime()) return [];

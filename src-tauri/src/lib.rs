@@ -1,6 +1,7 @@
 pub mod browser;
 pub mod config;
 pub mod engine;
+pub mod menu;
 pub mod scheduler;
 
 use std::sync::Arc;
@@ -435,6 +436,11 @@ pub fn run_app() {
         ))
         .manage(engine)
         .setup(move |app| {
+            // Setup Native System Application Menu (macOS system menu bar / Windows & Linux native menu)
+            if let Ok(native_menu) = menu::create_native_app_menu(app.handle()) {
+                let _ = app.set_menu(native_menu);
+            }
+
             // Setup Tray Icon & Context Menu
             if let Ok(show_i) = tauri::menu::MenuItem::with_id(
                 app,
@@ -497,6 +503,26 @@ pub fn run_app() {
                 scheduler::run_scheduler_loop(sched_engine).await;
             });
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            match id {
+                "quit" => {
+                    app.exit(0);
+                }
+                "show" => {
+                    use tauri::Manager;
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                }
+                _ => {
+                    use tauri::Emitter;
+                    let _ = app.emit("menu-action", id);
+                }
+            }
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
