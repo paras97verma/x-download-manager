@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Prevent direct pushes to remote main branch in x-download-manager
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+    if [ "$remote_ref" = "refs/heads/main" ]; then
+        echo ""
+        echo "=================================================================="
+        echo " ❌ DIRECT PUSH TO REMOTE 'main' IS DISABLED!"
+        echo "=================================================================="
+        echo " Pushing directly to 'origin/main' is prohibited."
+        echo " All changes must be merged into main via Pull Request."
+        echo ""
+        echo " Push your branch and open a Pull Request instead:"
+        echo "   git push origin HEAD"
+        echo "=================================================================="
+        exit 1
+    fi
+done
+
+exit 0

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Prevent direct commits to main branch in x-download-manager
+
+BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+
+if [ "$BRANCH" = "main" ]; then
+    echo ""
+    echo "=================================================================="
+    echo " ❌ DIRECT COMMITS TO 'main' ARE DISABLED FOR THIS REPOSITORY!"
+    echo "=================================================================="
+    echo " Direct commit to 'main' is not allowed."
+    echo " Please create a feature/fix branch and merge into main via PR:"
+    echo ""
+    echo "   git checkout -b feature/your-feature-name"
+    echo "   git commit -m \"your message\""
+    echo "   git push origin feature/your-feature-name"
+    echo ""
+    echo "=================================================================="
+    exit 1
+fi
+
+exit 0
