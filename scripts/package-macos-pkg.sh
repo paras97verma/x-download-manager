@@ -18,8 +18,16 @@ fi
 VERSION="${RAW_VERSION#v}"
 
 # 2. Locate built macOS .app bundle
-APP_PATH=""
+APP_PATH="${2:-}"
+if [[ -n "${APP_PATH}" && ! -d "${APP_PATH}" ]]; then
+  APP_PATH=""
+fi
+
 SEARCH_PATHS=(
+  "${ROOT_DIR}/target/universal-apple-darwin/release/bundle/macos/X Download Manager.app"
+  "${ROOT_DIR}/target/release/bundle/macos/X Download Manager.app"
+  "${ROOT_DIR}/target/aarch64-apple-darwin/release/bundle/macos/X Download Manager.app"
+  "${ROOT_DIR}/target/x86_64-apple-darwin/release/bundle/macos/X Download Manager.app"
   "${ROOT_DIR}/src-tauri/target/universal-apple-darwin/release/bundle/macos/X Download Manager.app"
   "${ROOT_DIR}/src-tauri/target/release/bundle/macos/X Download Manager.app"
   "${ROOT_DIR}/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/X Download Manager.app"
@@ -34,15 +42,26 @@ for p in "${SEARCH_PATHS[@]}"; do
 done
 
 if [[ -z "${APP_PATH}" ]]; then
-  # Fallback to search in target directory
-  FOUND_PATH="$(find "${ROOT_DIR}/src-tauri/target" -maxdepth 6 -type d -name "X Download Manager.app" 2>/dev/null | head -n 1 || true)"
+  # Fallback to search in target and src-tauri/target directories
+  FOUND_PATH="$(find "${ROOT_DIR}/target" "${ROOT_DIR}/src-tauri/target" -maxdepth 6 -type d -name "X Download Manager.app" 2>/dev/null | head -n 1 || true)"
   if [[ -n "${FOUND_PATH}" && -d "${FOUND_PATH}" ]]; then
     APP_PATH="${FOUND_PATH}"
   fi
 fi
 
 if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
-  echo "Error: Could not locate 'X Download Manager.app' bundle in src-tauri/target/." >&2
+  # Last-ditch search anywhere in repo
+  FOUND_PATH="$(find "${ROOT_DIR}" -maxdepth 7 -type d -name "X Download Manager.app" 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${FOUND_PATH}" && -d "${FOUND_PATH}" ]]; then
+    APP_PATH="${FOUND_PATH}"
+  fi
+fi
+
+if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
+  echo "Error: Could not locate 'X Download Manager.app' bundle in target/ or src-tauri/target/." >&2
+  echo "Contents of target directory:" >&2
+  ls -la "${ROOT_DIR}/target" 2>/dev/null || true
+  ls -la "${ROOT_DIR}/src-tauri/target" 2>/dev/null || true
   echo "Ensure 'cargo tauri build' has completed before running this script." >&2
   exit 1
 fi
