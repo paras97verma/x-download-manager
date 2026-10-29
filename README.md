@@ -17,6 +17,7 @@ Get the latest verified build for your operating system and browser:
 
 | Operating System | Architecture | Package Format | Download Link (v1.0.0) | Latest Release |
 | :--- | :--- | :--- | :--- | :--- |
+| **macOS** | Universal (Apple Silicon & Intel) | `.pkg` Installer | [⬇️ **Download for macOS (.pkg)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/X-Download-Manager_1.0.0_universal.pkg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
 | **macOS** | Universal (Apple Silicon & Intel) | `.dmg` Installer | [⬇️ **Download for macOS (.dmg)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_universal.dmg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
 | **Windows** | 64-bit (x64) | `.exe` (NSIS Installer) | [⬇️ **Download for Windows (.exe)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_x64-setup.exe) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
 | **Windows** | 64-bit (x64) | `.msi` (WiX Installer) | [⬇️ **Download for Windows (.msi)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_x64_en-US.msi) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
@@ -131,7 +132,7 @@ If you own an Apple Developer Program subscription or Windows Authenticode Certi
    - On first launch, XDM automatically detects all installed browsers on macOS, Windows, and Linux and registers its **Native Messaging Host (`com.peivee.xdm.json`)** + **Local IPC Server (`127.0.0.1:45678`)**.
    - Enable, disable, or reinstall extensions per browser directly inside XDM's **Browser Extensions** manager.
 5. **Automated GitHub Actions CI/CD Release Pipeline**
-   - Every verified push/merge to `main` runs `cargo fmt`, `cargo clippy`, `cargo test`, and `npm run build`, then builds and publishes version-typed `.dmg` (macOS), `.exe`/`.msi` (Windows), `.deb`/`.AppImage`/`.rpm` (Linux), and packaged browser extensions.
+   - Every verified push/merge to `main` runs `cargo fmt`, `cargo clippy`, `cargo test`, and `npm run build`, then builds and publishes version-typed `.dmg`/`.pkg` (macOS), `.exe`/`.msi` (Windows), `.deb`/`.AppImage`/`.rpm` (Linux), and packaged browser extensions.
 
 ---
 
@@ -156,8 +157,10 @@ npm run package:extensions
 # 4. Launch X Download Manager in development mode
 npm run tauri dev
 
-# 5. Build native OS installer (.dmg / .exe / .msi / .deb / .AppImage)
+# 5. Build native OS installer (.dmg / .pkg / .exe / .msi / .deb / .AppImage)
 npm run tauri build
+# (On macOS) package .pkg component installer:
+npm run package:pkg
 ```
 
 ---
