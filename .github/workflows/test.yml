@@ -37,24 +37,29 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup Rust Stable Toolchain
+      - name: Setup Rust Stable Toolchain with LLVM Coverage Tools
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
+
+      - name: Install cargo-llvm-cov and cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-audit
 
       - name: Cache Cargo Dependencies & Build Output
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Enforce Rust Formatting Standard
+      # ========================================================================
+      # 1. CODE QUALITY & STATIC ANALYSIS
+      # ========================================================================
+      - name: Enforce Rust Formatting Standard (cargo fmt)
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
       - name: Run Clippy Static Analysis Linter (-D warnings)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-
-      - name: Run All Integration Tests from Start to Finish
-        run: cargo test --manifest-path src-tauri/Cargo.toml --all-targets --verbose
 
       - name: Install Frontend Dependencies
         run: npm ci || npm install
@@ -62,6 +67,35 @@ jobs:
       - name: TypeScript Static Typecheck
         run: npm run typecheck
 
+      # ========================================================================
+      # 2. CODE SCANNING & DEPENDENCY SECURITY AUDIT
+      # ========================================================================
+      - name: Rust Dependency Vulnerability Scan (cargo audit)
+        run: cargo audit --file Cargo.lock || true
+
+      - name: Frontend Dependency Vulnerability Scan (npm audit)
+        run: npm audit --omit=dev --audit-level=high || true
+
+      # ========================================================================
+      # 3. CODE COVERAGE & INTEGRATION TESTS
+      # ========================================================================
+      - name: Run All Integration Tests with Code Coverage (llvm-cov)
+        run: |
+          echo "### 📊 Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-targets >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-targets --lcov --output-path lcov.info
+
+      - name: Upload Code Coverage Report (LCOV)
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: lcov.info
+
+      # ========================================================================
+      # 4. FRONTEND BUILD & WEBEXTENSIONS INTEGRITY
+      # ========================================================================
       - name: Production Vite Frontend Build
         run: npm run build
 

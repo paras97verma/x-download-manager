@@ -59,3 +59,4 @@ body:
       label: Relevant Logs or Screenshots
       description: Paste any transfer logs, terminal output, or attach screenshots.
       render: shell
+

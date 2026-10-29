@@ -20,3 +20,4 @@ Before submitting this Pull Request, please ensure you have tested and verified 
 - [ ] Verified TypeScript static types: `npm run typecheck`
 - [ ] Tested the build locally: `npm run build`
 - [ ] Verified on your platform (macOS / Windows / Linux)
+

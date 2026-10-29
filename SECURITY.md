@@ -23,3 +23,4 @@ If you discover a security vulnerability in X Download Manager (e.g. credential 
    - Any suggested remediations
 
 We aim to acknowledge reports within 48 hours and provide a fix or mitigation timeframe promptly.
+

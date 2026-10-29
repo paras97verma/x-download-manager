@@ -53,3 +53,4 @@ an individual is officially representing the community in public spaces.
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to `paras.97.verma@gmail.com`. All complaints will be reviewed and
 investigated promptly and fairly.
+
