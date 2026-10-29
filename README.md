@@ -178,4 +178,15 @@ While X Download Manager automatically registers the Native Messaging Host for d
 
 ---
 
+## 🤝 Community & Contributing
+
+We welcome contributions from the community! Please review our guidelines before opening a Pull Request:
+- [Contributing Guide](.github/CONTRIBUTING.md)
+- [Code of Conduct](.github/CODE_OF_CONDUCT.md)
+- [Security Policy](.github/SECURITY.md)
+- [Architecture Overview](ARCHITECTURE.md)
+- [License (MIT)](LICENSE)
+
+---
+
 Made with ❤️ by ~peivee
