@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       version_tag: ${{ steps.compute_version.outputs.version_tag }}
+      version: ${{ steps.compute_version.outputs.version }}
       release_title: ${{ steps.compute_version.outputs.release_title }}
     steps:
       - name: Checkout Repository
@@ -44,6 +45,46 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 22
+
+      - name: Compute Version-Typed Release Tag & Synchronize Manifests
+        id: compute_version
+        run: |
+          BASE_VER=$(node -p "require('./package.json').version")
+          CHANNEL="${{ github.event.inputs.release_channel || 'stable' }}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            RELEASE_TITLE="X Download Manager ${TAG_NAME}"
+          elif [[ "${CHANNEL}" == "stable" ]]; then
+            TAG_NAME="v${BASE_VER}"
+            RELEASE_TITLE="X Download Manager v${BASE_VER}"
+          else
+            TAG_NAME="v${BASE_VER}-${CHANNEL}.${GITHUB_RUN_NUMBER}"
+            RELEASE_TITLE="X Download Manager ${TAG_NAME} (${CHANNEL^^})"
+          fi
+          VER="${TAG_NAME#v}"
+          echo "version_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "release_title=${RELEASE_TITLE}" >> "$GITHUB_OUTPUT"
+          echo "VITE_APP_VERSION=${VER}" >> "$GITHUB_ENV"
+
+          echo "Synchronizing project manifests to version: $VER"
+          node -e "
+            const fs = require('fs');
+            const ver = process.argv[1];
+            if (!ver) process.exit(0);
+
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = ver;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+
+            const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            tauri.version = ver;
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(tauri, null, 2) + '\n');
+
+            let cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
+            cargo = cargo.replace(/^version\s*=\s*\"[^\"]+\"/m, 'version = \"' + ver + '\"');
+            fs.writeFileSync('src-tauri/Cargo.toml', cargo);
+          " "$VER"
 
       - name: Setup Rust Stable Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -77,24 +118,6 @@ jobs:
         with:
           name: xdm-browser-extensions
           path: dist-extensions/*
-
-      - name: Compute Version-Typed Release Tag
-        id: compute_version
-        run: |
-          BASE_VER=$(node -p "require('./package.json').version")
-          CHANNEL="${{ github.event.inputs.release_channel || 'stable' }}"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            TAG_NAME="${GITHUB_REF#refs/tags/}"
-            RELEASE_TITLE="X Download Manager ${TAG_NAME}"
-          elif [[ "${CHANNEL}" == "stable" ]]; then
-            TAG_NAME="v${BASE_VER}"
-            RELEASE_TITLE="X Download Manager v${BASE_VER}"
-          else
-            TAG_NAME="v${BASE_VER}-${CHANNEL}.${GITHUB_RUN_NUMBER}"
-            RELEASE_TITLE="X Download Manager ${TAG_NAME} (${CHANNEL^^})"
-          fi
-          echo "version_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "release_title=${RELEASE_TITLE}" >> "$GITHUB_OUTPUT"
 
   # ============================================================================
   # STAGE 2: CREATE VERSION-TYPED GITHUB RELEASE DRAFT
@@ -252,6 +275,7 @@ jobs:
           VER="${RAW_TAG#v}"
           if [ -n "$VER" ]; then
             echo "Synchronizing project manifests to version: $VER"
+            echo "VITE_APP_VERSION=${VER}" >> "$GITHUB_ENV"
             node -e "
               const fs = require('fs');
               const ver = process.argv[1];
@@ -278,6 +302,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_APP_VERSION: ${{ needs.verify.outputs.version }}
         with:
           tagName: ${{ needs.verify.outputs.version_tag }}
           releaseId: ${{ needs.create-release.outputs.release_id }}

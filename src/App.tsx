@@ -27,6 +27,7 @@ import {
   apiToggleBrowserExtension,
   apiUpdateSettings,
   apiGetAppVersion,
+  DEFAULT_APP_VERSION,
   buildSegments,
   formatSpeed,
   isTauriRuntime,
@@ -57,7 +58,7 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
-  const [appVersion, setAppVersion] = useState<string>("1.0.2");
+  const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
 
   const previousStatusRef = useRef<Map<string, string>>(new Map());
 

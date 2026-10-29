@@ -239,8 +239,13 @@ fn open_browser_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+fn get_app_version(app: tauri::AppHandle) -> String {
+    let ver = app.package_info().version.to_string();
+    if !ver.is_empty() {
+        ver
+    } else {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
 }
 
 #[tauri::command]

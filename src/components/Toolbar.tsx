@@ -66,7 +66,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               X Download Manager
             </span>
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 whitespace-nowrap">
-              v{appVersion || "1.0.2"}
+              v{appVersion || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "")}
             </span>
           </div>
         </div>
