@@ -75,7 +75,7 @@ export const SchedulerModal: React.FC<SchedulerModalProps> = ({
               <CalendarClock className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">IDM Queue Scheduler & Bandwidth Planner</h2>
+              <h2 className="text-sm font-bold text-white">XDM Queue Scheduler & Bandwidth Planner</h2>
               <p className="text-[11px] text-slate-400">
                 Automate download schedules, set concurrency limits, and execute actions on queue completion.
               </p>

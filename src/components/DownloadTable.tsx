@@ -339,7 +339,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
         </tbody>
       </table>
 
-      {/* IDM / FDM Full Right-Click Context Menu */}
+      {/* XDM Full Right-Click Context Menu */}
       {contextMenu && (
         <div
           ref={contextMenuRef}

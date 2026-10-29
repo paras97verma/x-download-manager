@@ -25,7 +25,8 @@ let state = {
 // Periodically sync settings from running XDM Desktop App
 async function syncWithDesktopApp() {
   try {
-    const res = await fetch(`${XDM_IPC_URL}/api/v1/status`);
+    const browser = detectBrowserFamily();
+    const res = await fetch(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`);
     if (res.ok) {
       const cfg = await res.json();
       state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;

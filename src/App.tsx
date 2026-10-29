@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { MenuBar } from "./components/MenuBar";
 import { Toolbar } from "./components/Toolbar";
 import { Sidebar } from "./components/Sidebar";
@@ -23,6 +23,7 @@ import {
   apiRestartDownload,
   apiResumeDownload,
   apiShowInFolder,
+  apiShowNotification,
   apiToggleBrowserExtension,
   apiUpdateSettings,
   buildSegments,
@@ -54,6 +55,49 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
+
+  const previousStatusRef = useRef<Map<string, string>>(new Map());
+
+  // Audio completion chime using Web Audio API
+  const playNotificationChime = useCallback(() => {
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } catch (_) {}
+  }, []);
+
+  // Monitor download status transitions and trigger OS notification & audio chime
+  useEffect(() => {
+    for (const d of downloads) {
+      const prev = previousStatusRef.current.get(d.id);
+      if (prev && prev !== "completed" && d.status === "completed") {
+        if (settings.show_completion_dialog) {
+          apiShowNotification(
+            "Download Complete",
+            `${d.filename} has finished downloading successfully.`
+          );
+        }
+        if (settings.play_sound_on_complete) {
+          playNotificationChime();
+        }
+      }
+      previousStatusRef.current.set(d.id, d.status);
+    }
+  }, [downloads, settings.show_completion_dialog, settings.play_sound_on_complete, playNotificationChime]);
 
   // Sync real state from Tauri backend on mount and via periodic polling
   const syncFromBackend = useCallback(async () => {
@@ -474,7 +518,7 @@ export const App: React.FC = () => {
         onOpenAddTorrent={() => setAddModalMode("torrent")}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         onOpenScheduler={() => setShowSchedulerModal(true)}
-        onOpenExtensions={() => setShowExtensionsModal(true)}
+        onOpenExtensions={() => setSettingsTab("browser")}
         onToggleUiMode={toggleUiMode}
         uiMode={settings.ui_mode || "simple"}
         onResumeSelected={handleResumeBatch}
@@ -527,7 +571,6 @@ export const App: React.FC = () => {
         onDeleteSelected={() => handleDeleteBatch(false)}
         selectedCount={selectedIds.size}
         onOpenScheduler={() => setShowSchedulerModal(true)}
-        onOpenExtensions={() => setShowExtensionsModal(true)}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         onToggleUiMode={toggleUiMode}
         uiMode={settings.ui_mode || "simple"}
@@ -598,22 +641,25 @@ export const App: React.FC = () => {
             Extensions Connected:{" "}
             {(() => {
               const connected = browsers.filter(
-                (b) => b.detected_installed && b.extension_enabled && b.native_host_registered
+                (b) => b.detected_installed && b.extension_enabled && b.is_connected
               );
               if (connected.length === 0) {
                 return (
                   <button
-                    onClick={() => setShowExtensionsModal(true)}
-                    className="text-amber-400 hover:text-amber-300 font-medium underline underline-offset-2 ml-1"
+                    onClick={() => setSettingsTab("browser")}
+                    className="text-amber-400 hover:text-amber-300 font-medium underline underline-offset-2 ml-1 cursor-pointer"
                   >
                     0 Connected (Click to Integrate)
                   </button>
                 );
               }
               return (
-                <strong className="text-emerald-400 ml-1">
+                <button
+                  onClick={() => setSettingsTab("browser")}
+                  className="text-emerald-400 hover:text-emerald-300 font-medium ml-1 cursor-pointer underline underline-offset-2"
+                >
                   {connected.length} {connected.length === 1 ? "Browser" : "Browsers"} ({connected.map((b) => b.display_name).join(", ")})
-                </strong>
+                </button>
               );
             })()}
           </span>
@@ -691,6 +737,30 @@ export const App: React.FC = () => {
         <SettingsModal
           initialTab={settingsTab}
           settings={settings}
+          browsers={browsers}
+          onToggleBrowser={async (id, enable) => {
+            if (isTauriRuntime()) {
+              const updated = await apiToggleBrowserExtension(id, enable);
+              if (updated) {
+                setBrowsers((prev) => prev.map((b) => (b.id === id ? updated : b)));
+              }
+            } else {
+              setBrowsers((prev) =>
+                prev.map((b) => (b.id === id ? { ...b, extension_enabled: enable } : b))
+              );
+            }
+          }}
+          onReinstallAll={async () => {
+            if (isTauriRuntime()) {
+              for (const b of browsers) {
+                if (b.detected_installed) {
+                  await apiToggleBrowserExtension(b.id, true);
+                }
+              }
+              const fresh = await apiGetBrowserStatuses();
+              if (fresh) setBrowsers(fresh);
+            }
+          }}
           onSave={(newSettings) => {
             setSettings(newSettings);
             if (isTauriRuntime()) {

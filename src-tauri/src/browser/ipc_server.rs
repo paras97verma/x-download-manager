@@ -3,17 +3,50 @@
 //! from X Download Manager's Chrome, Firefox, and Safari browser extensions.
 
 use axum::{
-    extract::{Json, State},
+    extract::{Json, Query, State},
     routing::{get, post},
     Router,
 };
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 use tower_http::cors::CorsLayer;
 
 use crate::engine::{DownloadEngine, NewDownloadRequest};
+
+static LAST_BROWSER_HEARTBEATS: OnceLock<RwLock<HashMap<String, Instant>>> = OnceLock::new();
+
+fn get_heartbeat_map() -> &'static RwLock<HashMap<String, Instant>> {
+    LAST_BROWSER_HEARTBEATS.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+pub fn record_browser_heartbeat(browser: &str) {
+    let b = browser.trim().to_lowercase();
+    if !b.is_empty() {
+        get_heartbeat_map().write().insert(b, Instant::now());
+    }
+}
+
+pub fn is_browser_connected(browser_id: &str, display_name: &str) -> bool {
+    let map = get_heartbeat_map().read();
+    let b_id = browser_id.to_lowercase();
+    let d_name = display_name.to_lowercase();
+    for (k, instant) in map.iter() {
+        if instant.elapsed().as_secs() < 90
+            && (k == &b_id
+                || k.contains(&b_id)
+                || b_id.contains(k)
+                || k.contains(&d_name)
+                || d_name.contains(k))
+        {
+            return true;
+        }
+    }
+    false
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserInterceptPayload {
@@ -59,7 +92,13 @@ pub async fn start_browser_ipc_server(engine: Arc<DownloadEngine>, port: u16) {
     }
 }
 
-async fn handle_status(State(engine): State<Arc<DownloadEngine>>) -> Json<IpcStatusResponse> {
+async fn handle_status(
+    State(engine): State<Arc<DownloadEngine>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Json<IpcStatusResponse> {
+    if let Some(browser) = params.get("browser") {
+        record_browser_heartbeat(browser);
+    }
     let st = engine.settings.read();
     Json(IpcStatusResponse {
         app: "X Download Manager".to_string(),
@@ -76,6 +115,7 @@ async fn handle_intercept(
     State(engine): State<Arc<DownloadEngine>>,
     Json(payload): Json<BrowserInterceptPayload>,
 ) -> Json<serde_json::Value> {
+    record_browser_heartbeat(&payload.browser);
     let is_torrent = payload.is_torrent.unwrap_or(false)
         || payload
             .url

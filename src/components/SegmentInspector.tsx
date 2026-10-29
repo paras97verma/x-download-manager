@@ -79,10 +79,10 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
       <div className="flex-1 overflow-auto p-3">
         {activeTab === "segments" && (
           <div className="space-y-3">
-            {/* IDM Visual Chunk Map */}
+            {/* XDM Visual Chunk Map */}
             <div>
               <div className="text-[11px] text-slate-400 mb-1 flex justify-between">
-                <span>IDM Dynamic Byte-Range Allocation Map ({item.threads_count} Threads)</span>
+                <span>XDM Dynamic Byte-Range Allocation Map ({item.threads_count} Threads)</span>
                 <span className="text-slate-300 font-mono">
                   {formatBytes(item.downloaded_bytes)} / {formatBytes(item.total_bytes)}
                 </span>

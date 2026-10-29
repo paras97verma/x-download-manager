@@ -206,6 +206,16 @@ export async function apiSetAutostart(enable: boolean): Promise<boolean> {
   }
 }
 
+export async function apiIsAutostartEnabled(): Promise<boolean> {
+  if (!isTauriRuntime()) return true;
+  try {
+    return await invoke<boolean>("is_autostart_enabled");
+  } catch (err) {
+    console.error("Failed to query is_autostart_enabled via Tauri:", err);
+    return false;
+  }
+}
+
 export async function apiPromptNotificationPermission(): Promise<boolean> {
   if (!isTauriRuntime()) {
     if (typeof Notification !== "undefined") {
@@ -402,6 +412,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Dia/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -414,6 +425,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/XDownloadManager/SafariExtension/com.peivee.xdm.json",
     extension_bundle_path: "extensions/safari (Safari Web Extension)",
     status_message: "Detecting...",
@@ -426,6 +438,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -438,6 +451,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -450,6 +464,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -462,6 +477,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Arc/User Data/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -474,6 +490,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Mozilla/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
     status_message: "Detecting...",
@@ -486,6 +503,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/zen/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
     status_message: "Detecting...",
@@ -498,6 +516,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Orion/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -510,6 +529,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/LibreWolf/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
     status_message: "Detecting...",
@@ -522,6 +542,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Waterfox/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
     status_message: "Detecting...",
@@ -534,6 +555,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Floorp/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/firefox (WebExtension XPI)",
     status_message: "Detecting...",
@@ -546,6 +568,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Chromium/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -558,6 +581,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: false,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/com.operasoftware.OperaGX/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -570,6 +594,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: false,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/com.operasoftware.Opera/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
@@ -582,6 +607,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     executable_path: null,
     extension_enabled: false,
     native_host_registered: false,
+    is_connected: false,
     manifest_path: "~/Library/Application Support/Vivaldi/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
     status_message: "Detecting...",
