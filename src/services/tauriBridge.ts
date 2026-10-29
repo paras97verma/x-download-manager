@@ -231,6 +231,23 @@ export async function apiIsAutostartEnabled(): Promise<boolean> {
   }
 }
 
+export const DEFAULT_APP_VERSION: string =
+  typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__ ? __APP_VERSION__ : "1.0.2";
+
+export async function apiGetAppVersion(): Promise<string> {
+  if (isTauriRuntime()) {
+    try {
+      const ver = await invoke<string>("get_app_version");
+      if (ver && ver.trim().length > 0) {
+        return ver.trim();
+      }
+    } catch (err) {
+      console.warn("Failed to query get_app_version via Tauri:", err);
+    }
+  }
+  return DEFAULT_APP_VERSION;
+}
+
 export async function apiPromptNotificationPermission(): Promise<boolean> {
   if (!isTauriRuntime()) {
     if (typeof Notification !== "undefined") {

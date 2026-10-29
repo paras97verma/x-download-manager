@@ -1,6 +1,6 @@
 [package]
 name = "x-download-manager"
-version = "1.0.0"
+version = "1.0.2"
 description = "X Download Manager — High-Speed Cross-Platform Multi-Threaded, Torrent, and FTP Download Manager"
 authors = ["~peivee"]
 license = "MIT"

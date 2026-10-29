@@ -26,6 +26,8 @@ import {
   apiShowNotification,
   apiToggleBrowserExtension,
   apiUpdateSettings,
+  apiGetAppVersion,
+  DEFAULT_APP_VERSION,
   buildSegments,
   formatSpeed,
   isTauriRuntime,
@@ -56,6 +58,7 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
+  const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
 
   const previousStatusRef = useRef<Map<string, string>>(new Map());
 
@@ -123,6 +126,10 @@ export const App: React.FC = () => {
 
     apiGetSettings().then((s) => {
       if (s) setSettings(s);
+    });
+
+    apiGetAppVersion().then((v) => {
+      if (v) setAppVersion(v);
     });
 
     apiGetBrowserStatuses().then((b) => {
@@ -658,6 +665,7 @@ export const App: React.FC = () => {
       )}
 
       <Toolbar
+        appVersion={appVersion}
         onOpenAddModal={(mode) => setAddModalMode(mode)}
         onResumeSelected={handleResumeBatch}
         onPauseSelected={handlePauseBatch}
@@ -840,6 +848,7 @@ export const App: React.FC = () => {
 
       {settingsTab && (
         <SettingsModal
+          appVersion={appVersion}
           initialTab={settingsTab}
           settings={settings}
           browsers={browsers}
