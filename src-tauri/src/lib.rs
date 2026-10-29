@@ -239,6 +239,11 @@ fn open_browser_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 fn open_extension_folder(family: String) -> Result<String, String> {
     let dir = crate::browser::get_or_create_extension_dir(&family)?;
     #[cfg(target_os = "macos")]
@@ -576,6 +581,7 @@ pub fn run_app() {
             request_notification_permission,
             show_notification,
             parse_torrent_file,
+            get_app_version,
         ])
         .run(tauri::generate_context!())
         .expect("error while running X Download Manager");

@@ -45,6 +45,7 @@ interface SettingsModalProps {
   onReinstallAll?: () => void;
   onSave: (updated: AppSettings) => void;
   onClose: () => void;
+  appVersion?: string;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -55,6 +56,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onReinstallAll,
   onSave,
   onClose,
+  appVersion,
 }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [draft, setDraft] = useState<AppSettings>(JSON.parse(JSON.stringify(settings)));
@@ -1033,7 +1035,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-white">X Download Manager</h3>
-                    <p className="text-xs text-slate-400 mt-0.5">Version 1.0.0 (Production)</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Version {appVersion || "1.0.2"} (Production)</p>
                   </div>
                   <div>
                     <span className="inline-block px-4 py-2 rounded-xl bg-slate-800/90 border border-slate-700/60 text-sm font-semibold text-white shadow-sm tracking-wide">

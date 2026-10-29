@@ -1,7 +1,7 @@
 {
   "name": "x-download-manager",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "X Download Manager — Cross-Platform Multi-Threaded, Torrent & FTP Download Manager",
   "author": "~peivee",
   "license": "MIT",

@@ -32,6 +32,7 @@ interface ToolbarProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
   selectedCount?: number;
+  appVersion?: string;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -49,6 +50,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   searchQuery,
   onSearchChange,
   selectedCount = 0,
+  appVersion,
 }) => {
   const isMac = typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
   return (
@@ -64,7 +66,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               X Download Manager
             </span>
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 whitespace-nowrap">
-              v1.0.0
+              v{appVersion || "1.0.2"}
             </span>
           </div>
         </div>

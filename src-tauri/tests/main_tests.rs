@@ -3,7 +3,11 @@
 #[test]
 fn test_app_version_string() {
     let pkg_version = env!("CARGO_PKG_VERSION");
-    assert_eq!(pkg_version, "1.0.0");
+    assert!(!pkg_version.is_empty(), "Version must not be empty");
+    assert!(
+        pkg_version.contains('.'),
+        "Version must follow semantic version format"
+    );
 }
 
 #[test]

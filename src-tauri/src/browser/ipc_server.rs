@@ -102,7 +102,7 @@ async fn handle_status(
     let st = engine.settings.read();
     Json(IpcStatusResponse {
         app: "X Download Manager".to_string(),
-        version: "1.0.0".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
         intercept_enabled: st.browser.intercept_all_downloads,
         min_file_size_kb: st.browser.min_file_size_kb,
         intercepted_extensions: st.browser.intercepted_extensions.clone(),

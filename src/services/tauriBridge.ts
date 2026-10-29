@@ -231,6 +231,19 @@ export async function apiIsAutostartEnabled(): Promise<boolean> {
   }
 }
 
+export async function apiGetAppVersion(): Promise<string> {
+  if (!isTauriRuntime()) {
+    return "1.0.2";
+  }
+  try {
+    const ver = await invoke<string>("get_app_version");
+    return ver || "1.0.2";
+  } catch (err) {
+    console.error("Failed to get_app_version via Tauri:", err);
+    return "1.0.2";
+  }
+}
+
 export async function apiPromptNotificationPermission(): Promise<boolean> {
   if (!isTauriRuntime()) {
     if (typeof Notification !== "undefined") {
