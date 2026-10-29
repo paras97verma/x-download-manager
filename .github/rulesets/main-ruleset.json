@@ -34,7 +34,22 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "Run All Integration Tests, Linter, Typescript & Extension Checks"
+            "context": "Quality Gate (Tests, Code Coverage, Linter & Security Audit)"
+          },
+          {
+            "context": "CodeQL Security Scan (JavaScript/TypeScript)"
+          }
+        ]
+      }
+    },
+    {
+      "type": "code_scanning",
+      "parameters": {
+        "code_scanning_tools": [
+          {
+            "tool": "CodeQL",
+            "alerts_threshold": "errors",
+            "security_alerts_threshold": "high_or_higher"
           }
         ]
       }

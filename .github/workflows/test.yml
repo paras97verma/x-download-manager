@@ -21,7 +21,7 @@ env:
 
 jobs:
   verify:
-    name: Run All Integration Tests, Linter, Typescript & Extension Checks
+    name: Quality Gate (Tests, Code Coverage, Linter & Security Audit)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Codebase
