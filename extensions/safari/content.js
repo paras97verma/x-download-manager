@@ -7,23 +7,35 @@
   let bypassKeyPressed = false;
 
   // Track Alt / Option key to allow users to bypass XDM when desired
-  window.addEventListener("keydown", (e) => {
-    if (e.altKey) {
-      bypassKeyPressed = true;
-      try {
-        runtimeAPI.runtime.sendMessage({ type: "XDM_BYPASS_STATE", bypass: true }).catch(() => {});
-      } catch (_) {}
-    }
-  }, true);
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (e.altKey) {
+        bypassKeyPressed = true;
+        try {
+          runtimeAPI.runtime
+            .sendMessage({ type: "XDM_BYPASS_STATE", bypass: true })
+            .catch(() => {});
+        } catch (_) {}
+      }
+    },
+    true
+  );
 
-  window.addEventListener("keyup", (e) => {
-    if (!e.altKey && bypassKeyPressed) {
-      bypassKeyPressed = false;
-      try {
-        runtimeAPI.runtime.sendMessage({ type: "XDM_BYPASS_STATE", bypass: false }).catch(() => {});
-      } catch (_) {}
-    }
-  }, true);
+  window.addEventListener(
+    "keyup",
+    (e) => {
+      if (!e.altKey && bypassKeyPressed) {
+        bypassKeyPressed = false;
+        try {
+          runtimeAPI.runtime
+            .sendMessage({ type: "XDM_BYPASS_STATE", bypass: false })
+            .catch(() => {});
+        } catch (_) {}
+      }
+    },
+    true
+  );
 
   const INTERCEPTED_EXTENSIONS = new Set([
     // Compressed Archives
@@ -40,13 +52,21 @@
     "TORRENT", "APK", "IPA", "CRX", "XPI"
   ]);
 
+  function matchesDomainOrSubdomain(hostname, domain) {
+    if (!hostname || !domain) return false;
+    return hostname === domain || hostname.endsWith(`.${domain}`);
+  }
+
   function isDownloadableUrl(url, anchor) {
     if (!url || typeof url !== "string") return false;
     const cleanUrl = url.trim();
+
+    // Check scheme safely against non-http schemes
     if (
       cleanUrl.startsWith("blob:") ||
       cleanUrl.startsWith("data:") ||
       cleanUrl.startsWith("javascript:") ||
+      cleanUrl.startsWith("vbscript:") ||
       cleanUrl.startsWith("#") ||
       cleanUrl.startsWith("mailto:")
     ) {
@@ -60,6 +80,13 @@
 
     try {
       const parsed = new URL(cleanUrl, window.location.href);
+
+      // Verify protocol is HTTP, HTTPS, or FTP
+      const proto = parsed.protocol.toLowerCase();
+      if (proto !== "http:" && proto !== "https:" && proto !== "ftp:") {
+        return false;
+      }
+
       const pathname = parsed.pathname.toUpperCase();
       const lastDot = pathname.lastIndexOf(".");
       if (lastDot !== -1) {
@@ -80,13 +107,13 @@
         return true;
       }
 
-      // 3. Known file-sharing / release download endpoints
+      // 3. Known file-sharing / release download endpoints with exact domain or subdomain verification
       const host = parsed.hostname.toLowerCase();
       if (
-        (host.includes("github.com") && pathname.includes("/RELEASES/DOWNLOAD/")) ||
-        (host.includes("usersdrive.com") && pathname.includes("/D/")) ||
-        (host.includes("mediafire.com") && pathname.includes("/FILE/")) ||
-        (host.includes("1fichier.com") && !pathname.endsWith(".HTML") && !pathname.endsWith(".HTM"))
+        (matchesDomainOrSubdomain(host, "github.com") && pathname.includes("/RELEASES/DOWNLOAD/")) ||
+        (matchesDomainOrSubdomain(host, "usersdrive.com") && pathname.includes("/D/")) ||
+        (matchesDomainOrSubdomain(host, "mediafire.com") && pathname.includes("/FILE/")) ||
+        (matchesDomainOrSubdomain(host, "1fichier.com") && !pathname.endsWith(".HTML") && !pathname.endsWith(".HTM"))
       ) {
         return true;
       }
@@ -105,15 +132,33 @@
       const toast = document.createElement("div");
       toast.id = "xdm-capture-toast";
       const name = filename || url.split("/").pop().split("?")[0] || "Download";
-      toast.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:18px;height:18px;border-radius:4px;background:#3b82f6;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px;">X</div>
-          <div>
-            <div style="font-weight:bold;font-size:12px;color:#ffffff;">Captured by X Download Manager</div>
-            <div style="font-size:10px;color:#94a3b8;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${name}</div>
-          </div>
-        </div>
-      `;
+
+      // Build DOM structure securely without innerHTML to eliminate DOM XSS risk
+      const container = document.createElement("div");
+      container.style.cssText = "display:flex;align-items:center;gap:8px;";
+
+      const logo = document.createElement("div");
+      logo.style.cssText =
+        "width:18px;height:18px;border-radius:4px;background:#3b82f6;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px;";
+      logo.textContent = "X";
+
+      const textCol = document.createElement("div");
+
+      const titleEl = document.createElement("div");
+      titleEl.style.cssText = "font-weight:bold;font-size:12px;color:#ffffff;";
+      titleEl.textContent = "Captured by X Download Manager";
+
+      const nameEl = document.createElement("div");
+      nameEl.style.cssText =
+        "font-size:10px;color:#94a3b8;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      nameEl.textContent = name;
+
+      textCol.appendChild(titleEl);
+      textCol.appendChild(nameEl);
+      container.appendChild(logo);
+      container.appendChild(textCol);
+      toast.appendChild(container);
+
       toast.style.cssText = [
         "position: fixed",
         "bottom: 24px",
@@ -129,7 +174,7 @@
         "color: #ffffff",
         "transition: all 0.3s ease",
         "pointer-events: none",
-        "animation: xdmSlideIn 0.25s ease-out"
+        "animation: xdmSlideIn 0.25s ease-out",
       ].join(";");
 
       document.body.appendChild(toast);
