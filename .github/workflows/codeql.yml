@@ -1,4 +1,4 @@
-name: "CodeQL Security Analysis"
+name: "CodeQL Advanced"
 
 on:
   push:
@@ -8,22 +8,22 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 6 * * 1'
-
-permissions:
-  contents: read
-  security-events: write
+    - cron: '26 20 * * 3'
 
 concurrency:
   group: codeql-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   analyze:
     name: CodeQL Security Scan (JavaScript/TypeScript)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
@@ -35,4 +35,3 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:javascript-typescript"
-
