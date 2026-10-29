@@ -244,6 +244,22 @@ fn open_extension_folder(family: String) -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         let _ = std::process::Command::new("open").arg(&dir).spawn();
+        if family.eq_ignore_ascii_case("safari") {
+            let _ = std::process::Command::new("open")
+                .arg("-a")
+                .arg("Safari")
+                .spawn();
+        }
+        // Copy directory path to macOS pasteboard so user can easily paste into Safari "Add Temporary Extension..." dialog (⌘⇧G)
+        if let Ok(mut child) = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+        {
+            use std::io::Write;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(dir.to_string_lossy().as_bytes());
+            }
+        }
     }
     #[cfg(target_os = "windows")]
     {

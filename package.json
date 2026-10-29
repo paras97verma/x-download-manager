@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "package:extensions": "bash ./scripts/package-extensions.sh"
+    "package:extensions": "bash ./scripts/package-extensions.sh",
+    "package:pkg": "bash ./scripts/package-macos-pkg.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

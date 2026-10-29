@@ -1,10 +1,9 @@
-// X Download Manager (XDM) — Background Service Worker / WebExtension Script
-// Works across Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Mozilla Firefox, and Apple Safari.
+// X Download Manager (XDM) — Safari Background Service Worker & Script
 // Features:
-// 1. Intercepts browser downloads (`downloads.onCreated`) matching configured extensions or size threshold
-// 2. Captures site cookies (including `xfss` for Usersdrive, session tokens for FTP/private hosts), Referer, and User-Agent
-// 3. Dispatches payload to XDM Desktop App via Local IPC Bridge (`http://127.0.0.1:45678/api/v1/intercept`)
-//    with automatic fallback to Native Messaging (`com.peivee.xdm`).
+// 1. Receives intercepted link downloads and streaming media from content.js
+// 2. Captures full authentication cookies, Referer, and User-Agent headers
+// 3. Dispatches payload to XDM Desktop App via Local IPC Bridge (http://127.0.0.1:45678/api/v1/intercept)
+//    with automatic fallback to Native Messaging (com.peivee.xdm).
 
 const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
@@ -22,11 +21,10 @@ let state = {
   ignoredDomains: ["localhost", "127.0.0.1"],
 };
 
-// Periodically sync settings from running XDM Desktop App
+// Periodically sync settings from running XDM Desktop App and record heartbeat
 async function syncWithDesktopApp() {
   try {
-    const browser = detectBrowserFamily();
-    const res = await fetch(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`);
+    const res = await fetch(`${XDM_IPC_URL}/api/v1/status?browser=safari`);
     if (res.ok) {
       const cfg = await res.json();
       state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
@@ -44,11 +42,13 @@ setInterval(syncWithDesktopApp, 15000);
 // Create Context Menu Item ("Download with X Download Manager")
 runtimeAPI.runtime.onInstalled.addListener(() => {
   if (runtimeAPI.contextMenus) {
-    runtimeAPI.contextMenus.create({
-      id: "xdm-download-link",
-      title: "Download with X Download Manager",
-      contexts: ["link", "video", "audio"],
-    });
+    try {
+      runtimeAPI.contextMenus.create({
+        id: "xdm-download-link",
+        title: "Download with X Download Manager",
+        contexts: ["link", "video", "audio", "image"],
+      });
+    } catch (_) {}
   }
 });
 
@@ -68,63 +68,109 @@ if (runtimeAPI.contextMenus) {
 }
 
 // Listen for messages from content script or popup
-runtimeAPI.runtime.onMessage.addListener((msg, sender) => {
+runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "XDM_BYPASS_STATE") {
     state.bypassActive = Boolean(msg.bypass);
-  } else if (msg.type === "XDM_MANUAL_CAPTURE") {
-    dispatchToXdm({
-      url: msg.url,
-      referer: msg.referer || (sender.tab ? sender.tab.url : ""),
-      tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
-    });
-  }
-});
-
-function shouldInterceptDownload(downloadItem) {
-  if (!state.interceptEnabled || state.bypassActive) return false;
-  const url = downloadItem.finalUrl || downloadItem.url || "";
-  if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
-
-  try {
-    const parsed = new URL(url);
-    if (state.ignoredDomains.some((d) => parsed.hostname.endsWith(d))) {
-      return false;
-    }
-    const pathname = parsed.pathname.toUpperCase();
-    const extMatch = state.interceptedExtensions.some((ext) => pathname.endsWith(`.${ext}`));
-    const sizeMatch =
-      downloadItem.totalBytes && downloadItem.totalBytes >= state.minFileSizeKb * 1024;
-    return extMatch || Boolean(sizeMatch);
-  } catch (_) {
+    sendResponse({ received: true });
     return false;
   }
-}
 
-async function getCookieHeaderForUrl(url) {
-  if (!runtimeAPI.cookies) return "";
-  try {
-    const cookies = await runtimeAPI.cookies.getAll({ url });
-    return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-  } catch (_) {
-    return "";
+  if (msg.type === "XDM_MANUAL_CAPTURE") {
+    dispatchToXdm({
+      url: msg.url,
+      filename: msg.filename || null,
+      referer: msg.referer || (sender.tab ? sender.tab.url : ""),
+      cookies: msg.cookies || null,
+      tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
+    })
+      .then((ok) => {
+        sendResponse({ success: ok });
+      })
+      .catch(() => {
+        sendResponse({ success: false });
+      });
+    return true; // Keep message port open for async response
   }
+
+  return false;
+});
+
+async function getCookieHeaderForUrl(url, referer, clientCookies) {
+  const cookieMap = new Map();
+
+  // Merge cookies sent directly by content script (document.cookie)
+  if (clientCookies && typeof clientCookies === "string") {
+    clientCookies.split(";").forEach((pair) => {
+      const parts = pair.trim().split("=");
+      if (parts[0]) {
+        cookieMap.set(parts[0], parts.slice(1).join("="));
+      }
+    });
+  }
+
+  // Also query browser.cookies API if available
+  if (runtimeAPI.cookies) {
+    try {
+      const cookies = await runtimeAPI.cookies.getAll({ url });
+      if (Array.isArray(cookies)) {
+        cookies.forEach((c) => {
+          if (c && c.name) cookieMap.set(c.name, c.value);
+        });
+      }
+    } catch (_) {}
+
+    if (referer) {
+      try {
+        const refCookies = await runtimeAPI.cookies.getAll({ url: referer });
+        if (Array.isArray(refCookies)) {
+          refCookies.forEach((c) => {
+            if (c && c.name && !cookieMap.has(c.name)) {
+              cookieMap.set(c.name, c.value);
+            }
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (cookieMap.size === 0) return null;
+  return Array.from(cookieMap.entries())
+    .map(([name, val]) => `${name}=${val}`)
+    .join("; ");
 }
 
-async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
-  const cookies = await getCookieHeaderForUrl(url);
+async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cookies, tabTitle }) {
+  const resolvedCookies = await getCookieHeaderForUrl(url, referer, cookies);
+
+  let authUser = null;
+  let authPass = null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.username) authUser = decodeURIComponent(parsed.username);
+    if (parsed.password) authPass = decodeURIComponent(parsed.password);
+  } catch (_) {}
+
+  const isTorrent =
+    (filename && filename.toLowerCase().endsWith(".torrent")) ||
+    (url && url.toLowerCase().split("?")[0].endsWith(".torrent")) ||
+    mimeType === "application/x-bittorrent";
+
   const payload = {
     url,
     filename: filename || null,
     file_size: fileSize || null,
     mime_type: mimeType || null,
     referer: referer || null,
-    cookies: cookies || null,
+    cookies: resolvedCookies || null,
+    auth_username: authUser,
+    auth_password: authPass,
+    is_torrent: isTorrent,
     user_agent: navigator.userAgent,
-    browser: detectBrowserFamily(),
+    browser: "Safari",
     tab_title: tabTitle || null,
   };
 
-  // 1. Try fast Localhost HTTP Bridge (`127.0.0.1:45678`)
+  // 1. Try fast Localhost HTTP Bridge (http://127.0.0.1:45678)
   try {
     const resp = await fetch(`${XDM_IPC_URL}/api/v1/intercept`, {
       method: "POST",
@@ -134,11 +180,11 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     if (resp.ok) {
       return true;
     }
-  } catch (_) {
-    // Fallback to Native Messaging
+  } catch (err) {
+    console.warn("XDM Safari bridge HTTP fetch failed:", err);
   }
 
-  // 2. Fallback to Native Messaging Host (`com.peivee.xdm`) which launches XDM if closed
+  // 2. Fallback to Native Messaging Host (com.peivee.xdm)
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
@@ -147,39 +193,6 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
       return false;
     }
   }
+
   return false;
-}
-
-// Intercept browser downloads automatically
-if (runtimeAPI.downloads && runtimeAPI.downloads.onCreated) {
-  runtimeAPI.downloads.onCreated.addListener(async (downloadItem) => {
-    if (!shouldInterceptDownload(downloadItem)) return;
-
-    const url = downloadItem.finalUrl || downloadItem.url;
-    const accepted = await dispatchToXdm({
-      url,
-      filename: downloadItem.filename || null,
-      fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
-      mimeType: downloadItem.mime || null,
-      referer: downloadItem.referrer || null,
-    });
-
-    if (accepted) {
-      try {
-        runtimeAPI.downloads.cancel(downloadItem.id);
-        if (runtimeAPI.downloads.erase) {
-          runtimeAPI.downloads.erase({ id: downloadItem.id });
-        }
-      } catch (_) {}
-    }
-  });
-}
-
-function detectBrowserFamily() {
-  const ua = navigator.userAgent;
-  if (ua.includes("Firefox")) return "Firefox";
-  if (ua.includes("Edg/")) return "Edge";
-  if (ua.includes("OPR/")) return "Opera";
-  if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari";
-  return "Chrome";
 }

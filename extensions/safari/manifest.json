@@ -13,11 +13,15 @@
     "nativeMessaging"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "http://127.0.0.1/*",
+    "http://127.0.0.1:45678/*",
+    "http://localhost/*",
+    "http://localhost:45678/*"
   ],
   "background": {
     "service_worker": "background.js",
-    "persistent": false
+    "scripts": ["background.js"]
   },
   "action": {
     "default_title": "X Download Manager",
@@ -27,7 +31,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ]
 }

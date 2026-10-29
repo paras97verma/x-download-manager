@@ -128,7 +128,7 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 
 * **Stage 3 — Cross-Platform Native Matrix Build**:
 
-  * `macos-latest` (Universal `aarch64-apple-darwin` + `x86_64-apple-darwin`) -> `.dmg` and `.app.tar.gz`
+  * `macos-latest` (Universal `aarch64-apple-darwin` + `x86_64-apple-darwin`) -> `.dmg`, `.pkg`, and `.app.tar.gz`
 
   * `windows-latest` (`x86_64-pc-windows-msvc`) -> `.exe` (NSIS setup) and `.msi` (WiX installer)
 
@@ -142,7 +142,7 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 x-download-manager/
 ├── .github/
 │   └── workflows/
-│       └── release.yml                  # CI/CD verification + DMG/EXE/Linux + Extensions release
+│       └── release.yml                  # CI/CD verification + DMG/PKG/EXE/Linux + Extensions release
 ├── Cargo.toml                           # Workspace Cargo manifest
 ├── package.json                         # Frontend & Tauri CLI build configuration
 ├── tsconfig.json                        # TypeScript strict configuration
