@@ -1,0 +1,36 @@
+name: Auto-Delete Merged Feature Branches
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+jobs:
+  delete-merged-branch:
+    name: Auto-delete merged branch
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete Merged Head Branch
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const headRef = context.payload.pull_request.head.ref;
+            if (headRef === 'main') {
+              console.log('Skipping protected main branch');
+              return;
+            }
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${headRef}`
+              });
+              console.log(`Successfully deleted merged head branch: ${headRef}`);
+            } catch (error) {
+              console.log(`Branch already deleted or could not be removed: ${error.message}`);
+            }
