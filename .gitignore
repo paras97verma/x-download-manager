@@ -1,22 +1,49 @@
-# Logs
-logs
+# Build & Distribution Artifacts
+target/
+src-tauri/target/
+dist/
+dist-ssr/
+dist-extensions/
+node_modules/
+
+# Logs & Debugging
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-# Node dependencies
-node_modules/
-dist/
-dist-ssr/
+# Environment & Local Secrets
+.env
+.env.local
+.env.*.local
 *.local
+*.pem
+*.p12
 
-# Rust / Tauri build artifacts
-target/
-src-tauri/target/
+# IDE & Editor Files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
 
-# Operating System files
+# Operating System Files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# Temporary & Crash Dump Files
+*.orig
+*.bak
+*.tmp
+*.crash
