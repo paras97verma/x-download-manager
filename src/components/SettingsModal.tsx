@@ -791,16 +791,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="space-y-2">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    Installed Browsers & Extension Status ({browsers.filter((b) => b.detected_installed).length})
+                    Installed Browsers & Extension Status ({browsers.filter((b) => b.detected_installed && Boolean(b.extension_bundle_path)).length})
                   </div>
 
-                  {browsers.filter((b) => b.detected_installed).length === 0 ? (
+                  {browsers.filter((b) => b.detected_installed && Boolean(b.extension_bundle_path)).length === 0 ? (
                     <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 text-xs">
-                      No supported browsers detected automatically. Ensure Dia, Chrome, Safari, or Firefox is installed.
+                      No supported browsers detected automatically. Ensure a Chromium, Firefox, or Safari based browser is installed.
                     </div>
                   ) : (
                     browsers
-                      .filter((b) => b.detected_installed)
+                      .filter((b) => b.detected_installed && Boolean(b.extension_bundle_path))
                       .map((b) => (
                         <div
                           key={b.id}

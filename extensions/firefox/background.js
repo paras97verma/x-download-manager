@@ -312,6 +312,8 @@ if (runtimeAPI.downloads) {
 
 function detectBrowserFamily() {
   const ua = navigator.userAgent;
+  if (/TorBrowser|Tor Browser/i.test(ua)) return "Tor Browser";
+  if (/Mullvad/i.test(ua)) return "Mullvad Browser";
   if (ua.includes("Zen")) return "Zen";
   if (ua.includes("LibreWolf")) return "LibreWolf";
   if (ua.includes("Waterfox")) return "Waterfox";

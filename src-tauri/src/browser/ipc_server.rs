@@ -4,6 +4,7 @@
 
 use axum::{
     extract::{Json, Query, State},
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Router,
 };
@@ -19,6 +20,7 @@ use crate::browser::{detect_browsers, BrowserStatus, SUPPORTED_BROWSERS};
 use crate::engine::{DownloadEngine, NewDownloadRequest};
 
 static LAST_BROWSER_HEARTBEATS: OnceLock<RwLock<HashMap<String, Instant>>> = OnceLock::new();
+static UPDATE_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
 fn get_heartbeat_map() -> &'static RwLock<HashMap<String, Instant>> {
     LAST_BROWSER_HEARTBEATS.get_or_init(|| RwLock::new(HashMap::new()))
@@ -91,6 +93,17 @@ fn resolve_browser_name(hint: &str, settings: &crate::config::AppSettings) -> St
             .collect();
         return choose_chromium_name(hint, matching_hint.map(|(_, name, _)| *name), &candidates);
     }
+    if let Some((id, _, family)) = matching_hint {
+        if *family == "firefox" && *id == "firefox" {
+            let detected: Vec<BrowserStatus> = detect_browsers(settings)
+                .into_iter()
+                .filter(|b| b.family == "firefox" && b.detected_installed)
+                .collect();
+            if detected.len() == 1 {
+                return detected[0].display_name.clone();
+            }
+        }
+    }
     matching_hint
         .map(|(_, name, _)| (*name).to_string())
         .unwrap_or_else(|| hint.to_string())
@@ -134,10 +147,16 @@ fn same_download_url(normalized_candidate: &str, existing: &str) -> bool {
     normalized_download_url(existing) == normalized_candidate
 }
 
-pub async fn start_browser_ipc_server(engine: Arc<DownloadEngine>, port: u16) {
+pub async fn start_browser_ipc_server(
+    engine: Arc<DownloadEngine>,
+    port: u16,
+    app_handle: tauri::AppHandle,
+) {
+    let _ = UPDATE_APP_HANDLE.set(app_handle);
     let app = Router::new()
         .route("/api/v1/status", get(handle_status))
         .route("/api/v1/intercept", post(handle_intercept))
+        .route("/api/v1/prepare-update", post(handle_prepare_update))
         .route("/api/v1/downloads", get(handle_list_downloads))
         .layer(CorsLayer::permissive())
         .with_state(engine);
@@ -147,6 +166,34 @@ pub async fn start_browser_ipc_server(engine: Arc<DownloadEngine>, port: u16) {
 
     if let Ok(listener) = tokio::net::TcpListener::bind(addr).await {
         let _ = axum::serve(listener, app).await;
+    }
+}
+
+async fn handle_prepare_update(headers: HeaderMap) -> (StatusCode, Json<serde_json::Value>) {
+    // Only local installer/CLI requests are accepted. This prevents an arbitrary
+    // website from triggering a cross-origin quit through the loopback bridge.
+    if headers.contains_key(axum::http::header::ORIGIN) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "accepted": false, "reason": "origin not allowed" })),
+        );
+    }
+    if let Some(app) = UPDATE_APP_HANDLE.get() {
+        let app = app.clone();
+        tokio::spawn(async move {
+            // Give the installer request time to receive its response before quitting.
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            app.exit(0);
+        });
+        (
+            StatusCode::OK,
+            Json(serde_json::json!({ "accepted": true })),
+        )
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "accepted": false, "reason": "app is shutting down" })),
+        )
     }
 }
 

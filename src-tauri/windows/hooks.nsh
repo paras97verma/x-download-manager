@@ -1,3 +1,5 @@
+!include "FileFunc.nsh"
+
 !macro NSIS_HOOK_PREINSTALL
   ; Locate both the selected install directory and the previous product-name defaults.
   IfFileExists "$INSTDIR\uninstall.exe" 0 xdm_check_legacy_user_install
@@ -24,6 +26,16 @@
   StrCpy $0 "$PROGRAMFILES\X Download Manager\uninstall.exe"
 
   xdm_run_previous_uninstaller:
+  ; Ask the old app to quit before removing files. Its local IPC handler exits the
+  ; process after acknowledging this request, even when the window is in the tray.
+  ${GetParent} $2 "$0"
+  IfFileExists "$2\x-download-manager.exe" 0 xdm_run_uninstaller
+  Exec '"$2\x-download-manager.exe" --prepare-for-update'
+  Sleep 1000
+  ; Older releases do not have the IPC quit command. Close any remaining old
+  ; process before the uninstaller removes its executable and data files.
+  ExecWait 'taskkill /IM x-download-manager.exe /T'
+  xdm_run_uninstaller:
   DetailPrint "Removing the previous ByteX Download Manager installation..."
   ExecWait '"$0" /S' $1
   ; A failed uninstall should stop setup rather than overlay two versions.

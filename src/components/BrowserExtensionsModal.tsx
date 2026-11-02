@@ -38,10 +38,6 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
     () => browsers.filter((b) => b.detected_installed),
     [browsers]
   );
-  const uninstalledBrowsers = useMemo(
-    () => browsers.filter((b) => !b.detected_installed),
-    [browsers]
-  );
 
   const getBrowserExtensionsUrl = (id: string, family: string): string => {
     switch (id) {
@@ -309,46 +305,6 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
             )}
           </div>
 
-          {/* SECTION 2: OTHER SUPPORTED BROWSERS (NOT INSTALLED - GREYED OUT & UNCLICKABLE) */}
-          <div className="space-y-2 pt-2 border-t border-slate-800">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-slate-500" />
-              Other Supported Browsers (Not Installed) ({uninstalledBrowsers.length})
-            </div>
-
-            <div className="space-y-2">
-              {uninstalledBrowsers.map((b) => (
-                <div
-                  key={b.id}
-                  className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/60 opacity-40 select-none flex items-center justify-between gap-4 cursor-not-allowed"
-                >
-                  <div className="space-y-0.5 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-slate-400 text-sm">{b.display_name}</span>
-                      <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-500 font-medium">
-                        {b.family}
-                      </span>
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-500">
-                        Not Installed
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      Install {b.display_name} on your system to enable integration.
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      disabled
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800/40 text-slate-600 text-xs font-medium cursor-not-allowed border border-slate-800/60"
-                    >
-                      Unavailable
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         <div className="px-5 py-3 bg-slate-900 border-t border-slate-800 flex justify-between items-center text-[11px] text-slate-400 shrink-0">

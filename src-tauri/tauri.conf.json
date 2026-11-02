@@ -71,11 +71,13 @@
       "deb": {
         "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"],
         "conflicts": ["x-download-manager"],
-        "replaces": ["x-download-manager"]
+        "replaces": ["x-download-manager"],
+        "preInstallScript": "./linux/preinstall.sh"
       },
       "rpm": {
         "obsoletes": ["x-download-manager"],
-        "provides": ["x-download-manager"]
+        "provides": ["x-download-manager"],
+        "preInstallScript": "./linux/preinstall.sh"
       }
     }
   }

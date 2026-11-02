@@ -318,6 +318,10 @@ function detectBrowserFamily() {
     ? navigator.userAgentData.brands.map((b) => b.brand)
     : [];
   if (/dia/i.test(ua) || /dia/i.test(appVer) || brands.some((brand) => /dia/i.test(brand))) return "Dia";
+  if (/whale/i.test(ua) || brands.some((brand) => /whale/i.test(brand))) return "NAVER Whale";
+  if (/thorium/i.test(ua) || brands.some((brand) => /thorium/i.test(brand))) return "Thorium";
+  if (/helium/i.test(ua) || brands.some((brand) => /helium/i.test(brand))) return "Helium";
+  if (/ungoogled/i.test(ua) || brands.some((brand) => /ungoogled/i.test(brand))) return "Ungoogled Chromium";
   if (ua.includes("Arc/")) return "Arc";
   if (/OPRGX\//i.test(ua)) return "Opera GX";
   if (ua.includes("OPR/") || ua.includes("Opera")) return "Opera";

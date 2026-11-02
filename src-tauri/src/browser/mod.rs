@@ -1,6 +1,7 @@
 //! Cross-Platform Browser Detection, Native Messaging Host Registration & Auto-Extension Installer
-//! Supports Chromium family (Chrome, Brave, Edge, Arc, Dia, Opera, Opera GX, Vivaldi, Chromium, Thorium, Yandex),
-//! Mozilla Firefox family (Firefox, Zen Browser, LibreWolf, Waterfox, Floorp),
+//! Supports the major Chromium family (Chrome, Brave, Edge, Arc, Dia, Opera, Opera GX, Vivaldi,
+//! Chromium, Thorium, Ungoogled Chromium, Whale, Yandex),
+//! Mozilla Firefox family (Firefox, Zen Browser, LibreWolf, Waterfox, Floorp, Tor, Mullvad),
 //! and Safari/WebKit family (Apple Safari, Orion Browser) across macOS, Windows, and Linux.
 
 pub mod ipc_server;
@@ -26,13 +27,19 @@ pub const SUPPORTED_BROWSERS: &[(&str, &str, &str)] = &[
     ("opera", "Opera", "chromium"),
     ("operagx", "Opera GX", "chromium"),
     ("vivaldi", "Vivaldi", "chromium"),
-    ("chromium", "Chromium / Thorium", "chromium"),
+    ("chromium", "Chromium", "chromium"),
+    ("thorium", "Thorium Browser", "chromium"),
+    ("ungoogled", "Ungoogled Chromium", "chromium"),
+    ("whale", "NAVER Whale", "chromium"),
+    ("helium", "Helium Browser", "chromium"),
     ("yandex", "Yandex Browser", "chromium"),
     ("firefox", "Mozilla Firefox", "firefox"),
     ("zen", "Zen Browser", "firefox"),
     ("librewolf", "LibreWolf", "firefox"),
     ("waterfox", "Waterfox", "firefox"),
     ("floorp", "Floorp", "firefox"),
+    ("tor", "Tor Browser", "firefox"),
+    ("mullvad", "Mullvad Browser", "firefox"),
     ("safari", "Apple Safari", "safari"),
     ("orion", "Orion Browser", "safari"),
 ];
@@ -186,10 +193,23 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
             ],
             "chromium" => vec![
                 PathBuf::from("/Applications/Chromium.app/Contents/MacOS/Chromium"),
-                PathBuf::from("/Applications/Thorium.app/Contents/MacOS/Thorium"),
                 PathBuf::from("/Applications/Chromium.app"),
-                PathBuf::from("/Applications/Thorium.app"),
                 home.join("Applications/Chromium.app/Contents/MacOS/Chromium"),
+            ],
+            "thorium" => vec![
+                PathBuf::from("/Applications/Thorium.app/Contents/MacOS/Thorium"),
+                home.join("Applications/Thorium.app/Contents/MacOS/Thorium"),
+            ],
+            "ungoogled" => vec![PathBuf::from(
+                "/Applications/Ungoogled Chromium.app/Contents/MacOS/Chromium",
+            )],
+            "whale" => vec![
+                PathBuf::from("/Applications/Whale.app/Contents/MacOS/Whale"),
+                PathBuf::from("/Applications/Naver Whale.app/Contents/MacOS/Whale"),
+            ],
+            "helium" => vec![
+                PathBuf::from("/Applications/Helium.app/Contents/MacOS/Helium"),
+                home.join("Applications/Helium.app/Contents/MacOS/Helium"),
             ],
             "yandex" => vec![
                 PathBuf::from("/Applications/Yandex.app/Contents/MacOS/Yandex"),
@@ -223,6 +243,14 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
                 PathBuf::from("/Applications/Floorp.app/Contents/MacOS/floorp"),
                 PathBuf::from("/Applications/Floorp.app"),
                 home.join("Applications/Floorp.app/Contents/MacOS/floorp"),
+            ],
+            "tor" => vec![
+                PathBuf::from("/Applications/Tor Browser.app/Contents/MacOS/firefox"),
+                PathBuf::from("/Applications/Tor Browser.app"),
+            ],
+            "mullvad" => vec![
+                PathBuf::from("/Applications/Mullvad Browser.app/Contents/MacOS/mullvad-browser"),
+                PathBuf::from("/Applications/Mullvad Browser.app"),
             ],
             "safari" => vec![
                 PathBuf::from("/Applications/Safari.app/Contents/MacOS/Safari"),
@@ -291,9 +319,21 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
                 PathBuf::from(&prog_files).join(r"Vivaldi\Application\vivaldi.exe"),
                 PathBuf::from(&local_app_data).join(r"Vivaldi\Application\vivaldi.exe"),
             ],
-            "chromium" => vec![
-                PathBuf::from(&local_app_data).join(r"Chromium\Application\chrome.exe"),
+            "chromium" => {
+                vec![PathBuf::from(&local_app_data).join(r"Chromium\Application\chrome.exe")]
+            }
+            "thorium" => vec![
+                PathBuf::from(&local_app_data).join(r"Thorium\Application\thorium.exe"),
                 PathBuf::from(&prog_files).join(r"Thorium\thorium.exe"),
+            ],
+            "ungoogled" => vec![PathBuf::from(&prog_files).join(r"Ungoogled Chromium\chrome.exe")],
+            "whale" => vec![
+                PathBuf::from(&local_app_data).join(r"Naver\Naver Whale\Application\whale.exe"),
+                PathBuf::from(&prog_files).join(r"Naver\Naver Whale\Application\whale.exe"),
+            ],
+            "helium" => vec![
+                PathBuf::from(&local_app_data).join(r"Programs\Helium\helium.exe"),
+                PathBuf::from(&prog_files).join(r"Helium\helium.exe"),
             ],
             "yandex" => vec![PathBuf::from(&local_app_data)
                 .join(r"Yandex\YandexBrowser\Application\browser.exe")],
@@ -312,6 +352,14 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
             ],
             "waterfox" => vec![PathBuf::from(&prog_files).join(r"Waterfox\waterfox.exe")],
             "floorp" => vec![PathBuf::from(&prog_files).join(r"Floorp\floorp.exe")],
+            "tor" => vec![
+                PathBuf::from(&prog_files).join(r"Tor Browser\Browser\firefox.exe"),
+                PathBuf::from(&local_app_data).join(r"Tor Browser\Browser\firefox.exe"),
+            ],
+            "mullvad" => vec![
+                PathBuf::from(&prog_files).join(r"Mullvad Browser\browser\firefox.exe"),
+                PathBuf::from(&local_app_data).join(r"Mullvad Browser\browser\firefox.exe"),
+            ],
             _ => vec![],
         };
 
@@ -334,11 +382,11 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
             "opera" => vec!["/usr/bin/opera"],
             "operagx" => vec!["/usr/bin/opera-gx"],
             "vivaldi" => vec!["/usr/bin/vivaldi", "/usr/bin/vivaldi-stable"],
-            "chromium" => vec![
-                "/usr/bin/chromium",
-                "/usr/bin/chromium-browser",
-                "/usr/bin/thorium-browser",
-            ],
+            "chromium" => vec!["/usr/bin/chromium", "/usr/bin/chromium-browser"],
+            "thorium" => vec!["/usr/bin/thorium-browser", "/usr/bin/thorium"],
+            "ungoogled" => vec!["/usr/bin/ungoogled-chromium", "/usr/bin/chromium-ungoogled"],
+            "whale" => vec!["/usr/bin/whale", "/usr/bin/naver-whale"],
+            "helium" => vec!["/usr/bin/helium", "/opt/helium/helium"],
             "yandex" => vec!["/usr/bin/yandex-browser", "/usr/bin/yandex-browser-stable"],
             "firefox" => vec![
                 "/usr/bin/firefox",
@@ -356,6 +404,15 @@ fn probe_browser_executable(browser_id: &str) -> Option<String> {
             ],
             "waterfox" => vec!["/usr/bin/waterfox"],
             "floorp" => vec!["/usr/bin/floorp"],
+            "tor" => vec![
+                "/usr/bin/torbrowser-launcher",
+                "/usr/bin/tor-browser",
+                "/var/lib/flatpak/exports/bin/org.torproject.torbrowser-launcher",
+            ],
+            "mullvad" => vec![
+                "/usr/bin/mullvad-browser",
+                "/opt/mullvad-browser/Browser/mullvad-browser",
+            ],
             _ => vec![],
         };
 
@@ -409,10 +466,11 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
                 app_support.join("Opera GX/NativeMessagingHosts"),
             ],
             "vivaldi" => vec![app_support.join("Vivaldi/NativeMessagingHosts")],
-            "chromium" => vec![
-                app_support.join("Chromium/NativeMessagingHosts"),
-                app_support.join("Thorium/NativeMessagingHosts"),
-            ],
+            "chromium" => vec![app_support.join("Chromium/NativeMessagingHosts")],
+            "thorium" => vec![app_support.join("Thorium/NativeMessagingHosts")],
+            "ungoogled" => vec![app_support.join("Chromium/NativeMessagingHosts")],
+            "whale" => vec![app_support.join("Naver/Whale/NativeMessagingHosts")],
+            "helium" => vec![app_support.join("Helium/NativeMessagingHosts")],
             "yandex" => vec![app_support.join("Yandex/YandexBrowser/NativeMessagingHosts")],
             "firefox" => vec![app_support.join("Mozilla/NativeMessagingHosts")],
             "zen" => vec![
@@ -429,6 +487,14 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
             ],
             "floorp" => vec![
                 app_support.join("Floorp/NativeMessagingHosts"),
+                app_support.join("Mozilla/NativeMessagingHosts"),
+            ],
+            "tor" => vec![
+                app_support.join("TorBrowser/NativeMessagingHosts"),
+                app_support.join("Mozilla/NativeMessagingHosts"),
+            ],
+            "mullvad" => vec![
+                app_support.join("Mullvad Browser/NativeMessagingHosts"),
                 app_support.join("Mozilla/NativeMessagingHosts"),
             ],
             "safari" => vec![app_support.join("XDownloadManager/SafariExtension")],
@@ -453,6 +519,16 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
             "operagx" => vec![config.join("opera-gx/NativeMessagingHosts")],
             "vivaldi" => vec![config.join("vivaldi/NativeMessagingHosts")],
             "chromium" => vec![config.join("chromium/NativeMessagingHosts")],
+            "thorium" => vec![config.join("thorium/NativeMessagingHosts")],
+            "ungoogled" => vec![
+                config.join("ungoogled-chromium/NativeMessagingHosts"),
+                config.join("chromium/NativeMessagingHosts"),
+            ],
+            "whale" => vec![
+                config.join("naver-whale/NativeMessagingHosts"),
+                config.join("whale/NativeMessagingHosts"),
+            ],
+            "helium" => vec![config.join("helium/NativeMessagingHosts")],
             "yandex" => vec![config.join("yandex-browser/NativeMessagingHosts")],
             "firefox" => vec![home.join(".mozilla/native-messaging-hosts")],
             "zen" => vec![
@@ -469,6 +545,14 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
             ],
             "floorp" => vec![
                 home.join(".floorp/native-messaging-hosts"),
+                home.join(".mozilla/native-messaging-hosts"),
+            ],
+            "tor" => vec![
+                home.join(".tor-browser/native-messaging-hosts"),
+                home.join(".mozilla/native-messaging-hosts"),
+            ],
+            "mullvad" => vec![
+                home.join(".mullvad-browser/native-messaging-hosts"),
                 home.join(".mozilla/native-messaging-hosts"),
             ],
             _ => vec![config.join("xdm/NativeMessagingHosts")],
@@ -505,7 +589,7 @@ pub fn configure_browser_integration(
 
     let is_firefox_family = matches!(
         browser_id,
-        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp"
+        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp" | "tor" | "mullvad"
     );
 
     for dir in &all_dirs {
@@ -601,6 +685,10 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
             "operagx" => vec![app_support.join("com.operasoftware.OperaGX/External Extensions")],
             "vivaldi" => vec![app_support.join("Vivaldi/External Extensions")],
             "chromium" => vec![app_support.join("Chromium/External Extensions")],
+            "thorium" => vec![app_support.join("Thorium/External Extensions")],
+            "ungoogled" => vec![app_support.join("Chromium/External Extensions")],
+            "whale" => vec![app_support.join("Naver/Whale/External Extensions")],
+            "helium" => vec![app_support.join("Helium/External Extensions")],
             "yandex" => vec![app_support.join("Yandex/YandexBrowser/External Extensions")],
             "firefox" => {
                 vec![app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")]
@@ -621,6 +709,15 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
                 app_support.join("Floorp/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
                 app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
             ],
+            "tor" => vec![
+                app_support.join("TorBrowser/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+                app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+            ],
+            "mullvad" => vec![
+                app_support
+                    .join("Mullvad Browser/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+                app_support.join("Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+            ],
             _ => vec![],
         }
     };
@@ -638,6 +735,16 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
             "operagx" => vec![config.join("opera-gx/External Extensions")],
             "vivaldi" => vec![config.join("vivaldi/External Extensions")],
             "chromium" => vec![config.join("chromium/External Extensions")],
+            "thorium" => vec![config.join("thorium/External Extensions")],
+            "ungoogled" => vec![
+                config.join("ungoogled-chromium/External Extensions"),
+                config.join("chromium/External Extensions"),
+            ],
+            "whale" => vec![
+                config.join("naver-whale/External Extensions"),
+                config.join("whale/External Extensions"),
+            ],
+            "helium" => vec![config.join("helium/External Extensions")],
             "yandex" => vec![config.join("yandex-browser/External Extensions")],
             "firefox" => {
                 vec![home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")]
@@ -658,6 +765,14 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
                 home.join(".floorp/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
                 home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
             ],
+            "tor" => vec![
+                home.join(".tor-browser/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+                home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+            ],
+            "mullvad" => vec![
+                home.join(".mullvad-browser/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+                home.join(".mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"),
+            ],
             _ => vec![],
         }
     };
@@ -667,7 +782,7 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
 
     let is_firefox_family = matches!(
         browser_id,
-        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp"
+        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp" | "tor" | "mullvad"
     );
 
     for dir in ext_dirs {
@@ -816,11 +931,42 @@ fn register_windows_registry_native_host(
             r"Software\Chromium\NativeMessagingHosts\{}",
             NATIVE_HOST_NAME
         )],
+        "thorium" => vec![
+            format!(
+                r"Software\Thorium\NativeMessagingHosts\{}",
+                NATIVE_HOST_NAME
+            ),
+            format!(
+                r"Software\Chromium\NativeMessagingHosts\{}",
+                NATIVE_HOST_NAME
+            ),
+        ],
+        "ungoogled" => vec![format!(
+            r"Software\Chromium\NativeMessagingHosts\{}",
+            NATIVE_HOST_NAME
+        )],
+        "whale" => vec![
+            format!(
+                r"Software\Naver\Naver Whale\NativeMessagingHosts\{}",
+                NATIVE_HOST_NAME
+            ),
+            format!(
+                r"Software\Google\Chrome\NativeMessagingHosts\{}",
+                NATIVE_HOST_NAME
+            ),
+        ],
+        "helium" => vec![
+            format!(r"Software\Helium\NativeMessagingHosts\{}", NATIVE_HOST_NAME),
+            format!(
+                r"Software\Chromium\NativeMessagingHosts\{}",
+                NATIVE_HOST_NAME
+            ),
+        ],
         "yandex" => vec![format!(
             r"Software\Yandex\YandexBrowser\NativeMessagingHosts\{}",
             NATIVE_HOST_NAME
         )],
-        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp" => vec![
+        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp" | "tor" | "mullvad" => vec![
             format!(
                 r"Software\Mozilla\NativeMessagingHosts\{}",
                 NATIVE_HOST_NAME
@@ -844,7 +990,7 @@ fn register_windows_registry_native_host(
 
     let is_firefox_family = matches!(
         browser_id,
-        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp"
+        "firefox" | "zen" | "librewolf" | "waterfox" | "floorp" | "tor" | "mullvad"
     );
 
     if is_firefox_family {

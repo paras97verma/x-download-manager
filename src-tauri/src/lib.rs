@@ -873,8 +873,10 @@ pub fn run_app() {
                 });
             }
 
+            let update_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                browser::ipc_server::start_browser_ipc_server(ipc_engine, ipc_port).await;
+                browser::ipc_server::start_browser_ipc_server(ipc_engine, ipc_port, update_handle)
+                    .await;
             });
             tauri::async_runtime::spawn(async move {
                 scheduler::run_scheduler_loop(sched_engine).await;
