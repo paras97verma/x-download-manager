@@ -433,6 +433,17 @@ fn move_to_queue(
     Ok(())
 }
 
+/// Format bytes-per-second into a human-readable speed string shown in the tray.
+fn format_speed_bps(bps: u64) -> String {
+    if bps >= 1_000_000 {
+        format!("{:.1} MB/s", bps as f64 / 1_000_000.0)
+    } else if bps >= 1_000 {
+        format!("{:.0} KB/s", bps as f64 / 1_000.0)
+    } else {
+        format!("{} B/s", bps)
+    }
+}
+
 pub fn run_app() {
     let engine = Arc::new(DownloadEngine::new());
 
@@ -520,6 +531,62 @@ pub fn run_app() {
                         let _ = builder.build(app);
                     }
                 }
+            }
+
+            // ---------------------------------------------------------------
+            // Tray speed updater: every second, compute total download speed
+            // across all active downloads and update the tray tooltip/title.
+            // ---------------------------------------------------------------
+            {
+                use tauri::Manager;
+                let tray_engine = app
+                    .try_state::<Arc<DownloadEngine>>()
+                    .map(|s| Arc::clone(&s))
+                    .expect("DownloadEngine state not found");
+                let app_handle = app.app_handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut ticker =
+                        tokio::time::interval(std::time::Duration::from_secs(1));
+                    loop {
+                        ticker.tick().await;
+
+                        let (active_count, total_speed_bps): (usize, u64) = {
+                            let dls = tray_engine.downloads.read();
+                            let active: Vec<_> = dls
+                                .iter()
+                                .filter(|d| {
+                                    d.status == crate::engine::DownloadStatus::Downloading
+                                })
+                                .collect();
+                            (
+                                active.len(),
+                                active.iter().map(|d| d.speed_bps).sum(),
+                            )
+                        };
+
+                        let tooltip = if active_count > 0 {
+                            format!(
+                                "X Download Manager — {} active — ↓ {}",
+                                active_count,
+                                format_speed_bps(total_speed_bps)
+                            )
+                        } else {
+                            "X Download Manager — Idle".to_string()
+                        };
+
+                        let short_title = if active_count > 0 {
+                            format!("↓ {}", format_speed_bps(total_speed_bps))
+                        } else {
+                            String::new()
+                        };
+
+                        // Update default tray icon (id = "" in Tauri 2)
+                        if let Some(tray) = app_handle.tray_by_id("") {
+                            let _ = tray.set_tooltip(Some(&tooltip));
+                            let _ = tray.set_title(Some(&short_title));
+                        }
+                    }
+                });
             }
 
             tauri::async_runtime::spawn(async move {

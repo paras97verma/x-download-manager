@@ -350,8 +350,12 @@ impl DownloadEngine {
             tauri::async_runtime::spawn(async move {
                 if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
                     let _ = ftp_auth::execute_ftp_download(id_clone, dls_arc, st_arc, rx).await;
-                } else if proto != DownloadProtocol::BitTorrent && proto != DownloadProtocol::Magnet
+                } else if proto == DownloadProtocol::BitTorrent
+                    || proto == DownloadProtocol::Magnet
                 {
+                    let _ =
+                        torrent::execute_torrent_download(id_clone, dls_arc, st_arc, rx).await;
+                } else {
                     let _ =
                         http::execute_segmented_http_download(id_clone, dls_arc, st_arc, rx).await;
                 }
