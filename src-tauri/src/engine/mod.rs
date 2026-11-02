@@ -213,7 +213,7 @@ fn restored_output_exists(download: &DownloadItem) -> bool {
         .filter(|file| {
             selected
                 .as_ref()
-                .map_or(true, |indices| indices.contains(&file.index))
+                .is_none_or(|indices| indices.contains(&file.index))
         })
         .collect::<Vec<_>>();
     if files.is_empty() {
