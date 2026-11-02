@@ -84,8 +84,8 @@ if (runtimeAPI.contextMenus) {
           url: targetUrl,
           referer: info.pageUrl || (tab ? tab.url : ""),
           tabTitle: tab ? tab.title : "",
-        }).then((result) => notifyCaptureResult(tab && tab.id, Boolean(result), targetUrl, result?.duplicate))
-          .catch(() => notifyCaptureResult(tab && tab.id, false, targetUrl));
+        }).then((result) => recordTransferResult(Boolean(result), targetUrl, result?.duplicate))
+          .catch(() => recordTransferResult(false, targetUrl));
       }
     }
   });
@@ -106,10 +106,10 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
     }).then(async (result) => {
       const ok = Boolean(result);
-      notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url, result?.duplicate);
+      recordTransferResult(ok, msg.filename || msg.url, result?.duplicate);
       sendResponse({ success: ok, duplicate: Boolean(result?.duplicate) });
     }).catch(async () => {
-      notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
+      recordTransferResult(false, msg.filename || msg.url);
       sendResponse({ success: false });
     });
     return true;
@@ -270,14 +270,6 @@ async function handleDownloadInterception(downloadItem) {
     }
   }
 
-  // Stage 2 (Headers received): Immediately pause the browser download to freeze
-  // socket transmission before Stage 3 (Body streaming) can consume network bandwidth!
-  if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.pause) {
-    try {
-      await runtimeAPI.downloads.pause(downloadItem.id);
-    } catch (_) {}
-  }
-
   const url = downloadItem.finalUrl || downloadItem.url;
   const result = await dispatchToXdm({
     url,
@@ -288,22 +280,16 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (result) {
-    notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename, result.duplicate);
-    try {
-      await runtimeAPI.downloads.cancel(downloadItem.id);
-      if (runtimeAPI.downloads.erase) {
-        await runtimeAPI.downloads.erase({ id: downloadItem.id });
-      }
-    } catch (_) {}
+    recordTransferResult(true, downloadItem.filename, result.duplicate);
+    // Cancel only after ByteX confirms acceptance, and avoid extra browser
+    // download state transitions during the handoff.
+    if (downloadItem.id && downloadItem.state === "in_progress" && runtimeAPI.downloads.cancel) {
+      try { await runtimeAPI.downloads.cancel(downloadItem.id); } catch (_) {}
+    }
     return true;
   } else {
-    // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
-    notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
-    if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
-      try {
-        await runtimeAPI.downloads.resume(downloadItem.id);
-      } catch (_) {}
-    }
+    // On failed handoff the original browser download remains untouched.
+    recordTransferResult(false, downloadItem.filename);
   }
   return false;
 }
@@ -313,10 +299,7 @@ if (runtimeAPI.downloads) {
   if (runtimeAPI.downloads.onCreated) {
     runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
       handleDownloadInterception(downloadItem).catch(() => {
-        notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
-        if (downloadItem.id && runtimeAPI.downloads.resume) {
-          runtimeAPI.downloads.resume(downloadItem.id).catch(() => {});
-        }
+        recordTransferResult(false, downloadItem.filename);
       });
     });
   }
@@ -337,7 +320,7 @@ function detectBrowserFamily() {
   return "Chromium";
 }
 
-function notifyCaptureResult(tabId, success, filename, duplicate = false) {
+function recordTransferResult(success, filename, duplicate = false) {
   const transfer = {
     status: success ? (duplicate ? "duplicate" : "sent") : "failed",
     filename: filename || "Download",
@@ -348,24 +331,4 @@ function notifyCaptureResult(tabId, success, filename, duplicate = false) {
     saved?.catch?.(() => {});
   } catch (_) {}
 
-  const actionApi = runtimeAPI.action || runtimeAPI.browserAction;
-  if (!actionApi?.setBadgeText) return;
-  const badgeOptions = { text: success ? "OK" : "!" };
-  const titleOptions = {
-    title: success
-      ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
-      : `ByteX handoff failed: ${transfer.filename}`,
-  };
-  if (Number.isInteger(tabId) && tabId >= 0) {
-    badgeOptions.tabId = tabId;
-    titleOptions.tabId = tabId;
-  }
-  try {
-    actionApi.setBadgeText(badgeOptions)?.catch?.(() => {});
-    actionApi.setBadgeBackgroundColor?.({
-      color: success ? "#059669" : "#dc2626",
-      ...(Number.isInteger(tabId) && tabId >= 0 ? { tabId } : {}),
-    })?.catch?.(() => {});
-    actionApi.setTitle?.(titleOptions)?.catch?.(() => {});
-  } catch (_) {}
 }

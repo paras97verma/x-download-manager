@@ -67,9 +67,9 @@ if (runtimeAPI.contextMenus) {
           referer: info.pageUrl || (tab ? tab.url : ""),
           tabTitle: tab ? tab.title : "",
         }).then((result) => {
-          notifyCaptureResult(tab && tab.id, Boolean(result), targetUrl, result?.duplicate);
+          recordTransferResult(Boolean(result), targetUrl, result?.duplicate);
         }).catch(() => {
-          notifyCaptureResult(tab && tab.id, false, targetUrl);
+          recordTransferResult(false, targetUrl);
         });
       }
     }
@@ -93,11 +93,11 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })
       .then((result) => {
         const success = Boolean(result);
-        notifyCaptureResult(sender.tab && sender.tab.id, success, msg.filename || msg.url, result?.duplicate);
+        recordTransferResult(success, msg.filename || msg.url, result?.duplicate);
         sendResponse({ success, duplicate: Boolean(result?.duplicate) });
       })
       .catch(() => {
-        notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
+        recordTransferResult(false, msg.filename || msg.url);
         sendResponse({ success: false });
       });
     return true; // Keep message port open for async response
@@ -213,7 +213,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   return false;
 }
 
-function notifyCaptureResult(tabId, success, filename, duplicate = false) {
+function recordTransferResult(success, filename, duplicate = false) {
   const transfer = {
     status: success ? (duplicate ? "duplicate" : "sent") : "failed",
     filename: filename || "Download",
@@ -224,24 +224,4 @@ function notifyCaptureResult(tabId, success, filename, duplicate = false) {
     saved?.catch?.(() => {});
   } catch (_) {}
 
-  const actionApi = runtimeAPI.action || runtimeAPI.browserAction;
-  if (!actionApi?.setBadgeText) return;
-  const badgeOptions = { text: success ? "OK" : "!" };
-  const titleOptions = {
-    title: success
-      ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
-      : `ByteX handoff failed: ${transfer.filename}`,
-  };
-  if (Number.isInteger(tabId) && tabId >= 0) {
-    badgeOptions.tabId = tabId;
-    titleOptions.tabId = tabId;
-  }
-  try {
-    actionApi.setBadgeText(badgeOptions)?.catch?.(() => {});
-    actionApi.setBadgeBackgroundColor?.({
-      color: success ? "#059669" : "#dc2626",
-      ...(badgeOptions.tabId ? { tabId: badgeOptions.tabId } : {}),
-    })?.catch?.(() => {});
-    actionApi.setTitle?.(titleOptions)?.catch?.(() => {});
-  } catch (_) {}
 }

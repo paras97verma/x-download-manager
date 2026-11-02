@@ -72,8 +72,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       tabTitle: "Popup Manual Submit",
     }, (response) => {
       sendBtn.disabled = false;
-      sendBtn.textContent = runtimeAPI.runtime.lastError || !response?.success ? "Failed" : "Sent!";
-      setTimeout(() => (sendBtn.textContent = "Download"), 1200);
+      sendBtn.textContent = "Download";
     });
     inputEl.value = "";
   });
