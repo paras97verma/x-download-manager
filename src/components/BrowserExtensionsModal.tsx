@@ -129,6 +129,9 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
               <div className="text-[11px] text-slate-300">
                 Intercepts every file download (documents, archives, software, media) directly from your browser.
               </div>
+              <div className="text-[11px] text-slate-400">
+                Restart ByteX after an app update before loading an extension so its manual-install folder is refreshed.
+              </div>
             </div>
             <button
               onClick={onReinstallAll}
