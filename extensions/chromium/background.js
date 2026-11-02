@@ -24,9 +24,14 @@ let state = {
   ignoredDomains: ["localhost", "127.0.0.1"],
   detectedBrowser: null,
 };
-runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
+const interceptSettingsReady = new Promise((resolve) => runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
   state.interceptEnabled = settings.interceptEnabled !== false;
-});
+  resolve();
+}));
+try {
+  const cleanup = runtimeAPI.storage.local.remove?.("lastHandoff");
+  cleanup?.catch?.(() => {});
+} catch (_) {}
 runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
   if (areaName === "local" && changes.interceptEnabled) {
     state.interceptEnabled = changes.interceptEnabled.newValue !== false;
@@ -66,17 +71,17 @@ setInterval(syncWithDesktopApp, 5000);
 
 // Make a successful handoff visible in Dia and other Chromium browsers. The
 // badge and title work even if the browser suppresses desktop notifications.
+function displayFilename(filename) {
+  const normalized = String(filename || "Download").replace(/\\/g, "/");
+  return normalized.split("/").pop() || "Download";
+}
+
 function showHandoffIndicator(filename) {
-  const label = filename || "Download";
+  const label = displayFilename(filename);
   const action = runtimeAPI.action || runtimeAPI.browserAction;
   try { action?.setBadgeBackgroundColor?.({ color: "#0ea5e9" }); } catch (_) {}
   try { action?.setBadgeText?.({ text: "BX" }); } catch (_) {}
   try { action?.setTitle?.({ title: `${label} is downloading in ByteX` }); } catch (_) {}
-
-  try {
-    const stored = runtimeAPI.storage.local.set({ lastHandoff: { filename: label, at: Date.now() } });
-    stored?.catch?.(() => {});
-  } catch (_) {}
 
   try {
     const notification = runtimeAPI.notifications?.create?.(`bytex-handoff-${Date.now()}`, {
@@ -121,6 +126,59 @@ function shouldInterceptDownload(downloadItem) {
   } catch (_) {
     return false;
   }
+}
+
+async function pauseBrowserDownload(id) {
+  if (!Number.isInteger(id) || !runtimeAPI.downloads?.pause || !runtimeAPI.downloads?.search) return null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try { await runtimeAPI.downloads.pause(id); } catch (_) {}
+    try {
+      const matches = await runtimeAPI.downloads.search({ id });
+      const current = matches?.[0];
+      if (!current) return null;
+      if (current.state === "paused" || current.state === "complete") return current.state;
+      if (current.state === "interrupted") return null;
+    } catch (_) {
+      return null;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+  return null;
+}
+
+async function stopBrowserDownload(id) {
+  if (!Number.isInteger(id) || !runtimeAPI.downloads?.search) return false;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let current;
+    try {
+      current = (await runtimeAPI.downloads.search({ id }))?.[0];
+    } catch (_) {
+      return false;
+    }
+    if (!current) return true;
+    if (current.state === "complete") {
+      try {
+        if (!runtimeAPI.downloads.removeFile) return false;
+        await runtimeAPI.downloads.removeFile(id);
+      } catch (_) {
+        return false;
+      }
+      try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
+      return true;
+    }
+    if (current.state === "interrupted") {
+      try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
+      return true;
+    }
+    try { await runtimeAPI.downloads.cancel?.(id); } catch (_) {}
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+  return false;
+}
+
+async function resumeBrowserDownload(id) {
+  if (!Number.isInteger(id) || !runtimeAPI.downloads?.resume) return;
+  try { await runtimeAPI.downloads.resume(id); } catch (_) {}
 }
 
 async function getCookieHeaderForUrl(url, referer) {
@@ -219,9 +277,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
 const interceptedDownloadIds = new Set();
 
 async function handleDownloadInterception(downloadItem) {
+  await interceptSettingsReady;
   if (downloadItem.id && interceptedDownloadIds.has(downloadItem.id)) return false;
-  // Pause immediately onCreated; syncing first left time for the browser to
-  // create a second transfer while ByteX was being contacted.
   if (!shouldInterceptDownload(downloadItem)) {
     await syncWithDesktopApp();
     if (!shouldInterceptDownload(downloadItem)) return false;
@@ -235,42 +292,96 @@ async function handleDownloadInterception(downloadItem) {
     }
   }
 
-  // Freeze the browser transfer while ByteX confirms the handoff. If ByteX is
-  // disabled or unreachable, resume it so the browser still completes it.
-  if (downloadItem.id && runtimeAPI.downloads.pause) {
-    try { await runtimeAPI.downloads.pause(downloadItem.id); } catch (_) {}
-  }
-
-  const url = downloadItem.finalUrl || downloadItem.url;
-  const result = await dispatchToXdm({
-    url,
-    filename: downloadItem.filename || null,
-    fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
-    mimeType: downloadItem.mime || null,
-    referer: downloadItem.referrer || null,
-  });
-
-  if (result) {
-    const filename = downloadItem.filename || "Download";
-    showHandoffIndicator(filename);
-    showHandoffInTab(downloadItem.tabId, filename);
-    if (downloadItem.id && runtimeAPI.downloads.cancel) {
-      try { await runtimeAPI.downloads.cancel(downloadItem.id); } catch (_) {}
-      try {
-        const matches = await runtimeAPI.downloads.search({ id: downloadItem.id });
-        if (matches?.[0]?.state === "complete") {
-          await runtimeAPI.downloads.removeFile?.(downloadItem.id);
-        }
-      } catch (_) {}
-      try { await runtimeAPI.downloads.erase?.({ id: downloadItem.id }); } catch (_) {}
+  let paused = false;
+  let appAccepted = false;
+  try {
+    // Never start a second transfer in ByteX unless Dia confirms its own
+    // transfer is paused. If pause fails, the browser remains the sole source.
+    const browserState = await pauseBrowserDownload(downloadItem.id);
+    if (!browserState) {
+      showHandoffFailure(
+        downloadItem.filename,
+        "ByteX could not pause this browser download, so it is continuing in the browser.",
+      );
+      return false;
     }
-    return true;
-  } else {
-    if (downloadItem.id && runtimeAPI.downloads.resume) {
-      try { await runtimeAPI.downloads.resume(downloadItem.id); } catch (_) {}
+    if (browserState === "complete") {
+      showHandoffFailure(
+        downloadItem.filename,
+        "This download finished in the browser before ByteX could take over. It was not started again in ByteX.",
+      );
+      return false;
     }
+    paused = browserState === "paused";
+
+    await syncWithDesktopApp();
+    if (!shouldInterceptDownload(downloadItem)) {
+      if (paused) await resumeBrowserDownload(downloadItem.id);
+      return false;
+    }
+
+    const result = await dispatchToXdm({
+      url: downloadItem.finalUrl || downloadItem.url,
+      filename: displayFilename(downloadItem.filename),
+      fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
+      mimeType: downloadItem.mime || null,
+      referer: downloadItem.referrer || null,
+    });
+
+    if (!result) {
+      if (paused) await resumeBrowserDownload(downloadItem.id);
+      return false;
+    }
+    appAccepted = true;
+
+    const browserStopped = await stopBrowserDownload(downloadItem.id);
+    const filename = displayFilename(downloadItem.filename);
+    if (browserStopped) {
+      showHandoffIndicator(filename);
+      showHandoffInTab(downloadItem.tabId, filename);
+      return true;
+    }
+
+    // Keep the browser copy paused instead of resuming it beside ByteX.
+    showHandoffWarning(filename);
+    return false;
+  } catch (_) {
+    if (paused && !appAccepted) await resumeBrowserDownload(downloadItem.id);
+    return false;
   }
-  return false;
+}
+
+function showHandoffFailure(filename, message) {
+  const label = displayFilename(filename);
+  const action = runtimeAPI.action || runtimeAPI.browserAction;
+  try { action?.setBadgeBackgroundColor?.({ color: "#f59e0b" }); } catch (_) {}
+  try { action?.setBadgeText?.({ text: "!" }); } catch (_) {}
+  try { action?.setTitle?.({ title: message }); } catch (_) {}
+  try {
+    const notification = runtimeAPI.notifications?.create?.(`bytex-handoff-failure-${Date.now()}`, {
+      type: "basic",
+      iconUrl: runtimeAPI.runtime.getURL("icons/128x128.png"),
+      title: "ByteX did not take over this download",
+      message: `${label}: ${message}`,
+    });
+    notification?.catch?.(() => {});
+  } catch (_) {}
+}
+
+function showHandoffWarning(filename) {
+  const action = runtimeAPI.action || runtimeAPI.browserAction;
+  try { action?.setBadgeBackgroundColor?.({ color: "#f59e0b" }); } catch (_) {}
+  try { action?.setBadgeText?.({ text: "!" }); } catch (_) {}
+  try { action?.setTitle?.({ title: "ByteX accepted this download; the browser copy is paused" }); } catch (_) {}
+  try {
+    const notification = runtimeAPI.notifications?.create?.(`bytex-handoff-warning-${Date.now()}`, {
+      type: "basic",
+      iconUrl: runtimeAPI.runtime.getURL("icons/128x128.png"),
+      title: "ByteX accepted the download",
+      message: `The browser copy of ${filename} is paused and could not be removed.`,
+    });
+    notification?.catch?.(() => {});
+  } catch (_) {}
 }
 
 // "Intercept late, not early":
@@ -279,11 +390,7 @@ async function handleDownloadInterception(downloadItem) {
 if (runtimeAPI.downloads) {
   if (runtimeAPI.downloads.onCreated) {
     runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
-      handleDownloadInterception(downloadItem).catch(() => {
-        if (downloadItem.id && runtimeAPI.downloads.resume) {
-          runtimeAPI.downloads.resume(downloadItem.id).catch(() => {});
-        }
-      });
+      handleDownloadInterception(downloadItem).catch(() => {});
     });
   }
 }

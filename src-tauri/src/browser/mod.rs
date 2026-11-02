@@ -997,6 +997,23 @@ mod extension_bundle_tests {
 
             assert!(directory.join("background.js").is_file());
             assert!(directory.join("content.js").is_file());
+            let has_content_script = manifest
+                .get("content_scripts")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|scripts| {
+                    scripts.iter().any(|script| {
+                        script
+                            .get("js")
+                            .and_then(serde_json::Value::as_array)
+                            .is_some_and(|files| {
+                                files.iter().any(|file| file.as_str() == Some("content.js"))
+                            })
+                    })
+                });
+            assert!(
+                has_content_script,
+                "{family} manifest must load the in-page notification script"
+            );
             let icon_path = directory.join("icons/16x16.png");
             fs::write(&icon_path, b"stale icon").expect("stale icon should be replaceable");
             materialize_extension_bundle(&base, family)
