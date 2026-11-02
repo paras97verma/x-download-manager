@@ -122,6 +122,33 @@ function shouldInterceptDownload(downloadItem) {
   }
 }
 
+function fallbackGetRequestContext(downloadItem) {
+  // Some Chromium forks do not expose webRequest details to extensions. The
+  // downloads API still gives us the resolved URL, so replay only a GET against
+  // that URL and let ByteX validate the response before it acknowledges takeover.
+  const resolvedUrl = downloadItem.finalUrl || downloadItem.url || "";
+  let protocol = "";
+  try { protocol = new URL(resolvedUrl).protocol; } catch (_) {}
+  const replayable = ["http:", "https:", "ftp:"].includes(protocol);
+  return {
+    originalUrl: resolvedUrl,
+    finalUrl: resolvedUrl,
+    method: "GET",
+    replayable,
+    unavailableReason: replayable ? null : "The browser did not expose a replayable download URL.",
+    headers: {},
+    redirects: [],
+  };
+}
+
+function resolveDownloadRequestContext(downloadItem) {
+  const captured = globalThis.ByteXRequestCapture?.find(downloadItem);
+  if (captured && captured.replayable !== false) return captured;
+  const method = String(captured?.method || "GET").toUpperCase();
+  if (captured && ["POST", "PUT", "PATCH"].includes(method)) return captured;
+  return fallbackGetRequestContext(downloadItem);
+}
+
 async function pauseBrowserDownload(id) {
   if (!Number.isInteger(id) || !runtimeAPI.downloads?.pause || !runtimeAPI.downloads?.search) return null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -186,6 +213,65 @@ async function getCookieHeaderForUrl(url) {
   } catch (_) {
     return "";
   }
+}
+
+function sendNativeMessage(host, payload) {
+  const send = runtimeAPI.runtime.sendNativeMessage;
+  if (typeof browser !== "undefined") {
+    return send.call(runtimeAPI.runtime, host, payload);
+  }
+
+  // Chromium-family browsers differ in whether this API returns a Promise.
+  // Supplying a callback works with older callback-only implementations, and
+  // the Promise branch keeps newer Chromium builds compatible as well.
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => finish(new Error("Timed out waiting for the ByteX native host.")), 55000);
+    const finish = (error, response) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      const runtimeError = runtimeAPI.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message || "Native Messaging failed."));
+      } else if (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      } else if (response === undefined || response === null) {
+        reject(new Error("The ByteX native host returned no acknowledgement."));
+      } else {
+        resolve(response);
+      }
+    };
+
+    try {
+      const pending = send.call(runtimeAPI.runtime, host, payload, (response) => finish(null, response));
+      if (pending && typeof pending.then === "function") {
+        pending.then((response) => finish(null, response), (error) => finish(error));
+      } else if (pending !== undefined) {
+        finish(null, pending);
+      }
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
+function nativeMessagingFailureMessage(error) {
+  const message = String(error?.message || error || "Native Messaging failed.").trim();
+  const normalized = message.toLowerCase();
+  if (normalized.includes("native messaging host") && (normalized.includes("not found") || normalized.includes("does not exist"))) {
+    return "ByteX's native handoff is not registered in this browser. Enable this browser in ByteX Settings → Browser Integration, then restart the browser.";
+  }
+  if (normalized.includes("forbidden") || normalized.includes("not allowed")) {
+    return "This extension is not authorized by ByteX's native host. Re-enable this browser in ByteX Settings → Browser Integration, then reload the extension.";
+  }
+  if (normalized.includes("timed out") || normalized.includes("timeout")) {
+    return "ByteX's native host did not respond. Start or restart ByteX, then retry the download.";
+  }
+  if (normalized.includes("disconnected") || normalized.includes("exited")) {
+    return "ByteX's native host exited before accepting the download. Restart ByteX, then retry.";
+  }
+  return `ByteX handoff failed: ${message.slice(0, 220)}`;
 }
 
 async function dispatchToXdm({
@@ -270,12 +356,12 @@ async function dispatchToXdm({
   // Native Messaging keeps request credentials off the browser's loopback CORS surface.
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
-      const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
+      const result = await sendNativeMessage(NATIVE_HOST_NAME, payload);
       return result?.accepted === true
         ? { accepted: true, duplicate: Boolean(result.duplicate), reason: null }
         : { accepted: false, reason: result?.reason || result?.error || "ByteX could not safely take over this request." };
-    } catch (_) {
-      return { accepted: false, reason: "Native Messaging could not reach ByteX." };
+    } catch (error) {
+      return { accepted: false, reason: nativeMessagingFailureMessage(error) };
     }
   }
   return { accepted: false, reason: "Native Messaging is unavailable; the browser download will continue." };
@@ -302,15 +388,7 @@ async function handleDownloadInterception(downloadItem) {
   // Resolve request metadata before any pause/IPC await. Other downloads can
   // complete while those operations are pending and otherwise steal the
   // newest same-URL capture from this event.
-  const requestContext = globalThis.ByteXRequestCapture?.find(downloadItem) || {
-    originalUrl: downloadItem.url,
-    finalUrl: downloadItem.finalUrl || downloadItem.url,
-    method: "GET",
-    replayable: new URL(downloadItem.finalUrl || downloadItem.url).protocol === "ftp:",
-    unavailableReason: "ByteX could not capture the browser's original HTTP request context, so it left the browser download in control.",
-    headers: {},
-    redirects: [],
-  };
+  const requestContext = resolveDownloadRequestContext(downloadItem);
 
   let paused = false;
   let appAccepted = false;

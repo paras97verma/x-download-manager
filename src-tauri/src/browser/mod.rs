@@ -69,6 +69,40 @@ struct ChromiumNativeHostManifest {
     allowed_origins: Vec<String>,
 }
 
+fn chromium_manifest_extension_id() -> Option<String> {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+
+    let manifest: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../../../extensions/chromium/manifest.json"))
+            .ok()?;
+    let encoded_key = manifest.get("key")?.as_str()?;
+    let public_key = base64::engine::general_purpose::STANDARD
+        .decode(encoded_key)
+        .ok()?;
+    let digest = sha2::Sha256::digest(public_key);
+    let mut extension_id = String::with_capacity(32);
+    for byte in &digest[..16] {
+        extension_id.push(char::from(b'a' + (*byte >> 4)));
+        extension_id.push(char::from(b'a' + (*byte & 0x0f)));
+    }
+    Some(extension_id)
+}
+
+fn chromium_native_host_allowed_origins() -> Vec<String> {
+    let mut origins = vec![
+        format!("chrome-extension://{}/", CHROMIUM_EXTENSION_ID),
+        format!("chrome-extension://{}/", CHROMIUM_UNPACKED_ID),
+    ];
+    if let Some(extension_id) = chromium_manifest_extension_id() {
+        let origin = format!("chrome-extension://{extension_id}/");
+        if !origins.contains(&origin) {
+            origins.push(origin);
+        }
+    }
+    origins
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct FirefoxNativeHostManifest {
     name: String,
@@ -623,10 +657,7 @@ pub fn configure_browser_integration(
                     description: "ByteX Download Manager Native Messaging Host".to_string(),
                     path: current_exe.clone(),
                     host_type: "stdio".to_string(),
-                    allowed_origins: vec![
-                        format!("chrome-extension://{}/", CHROMIUM_EXTENSION_ID),
-                        format!("chrome-extension://{}/", CHROMIUM_UNPACKED_ID),
-                    ],
+                    allowed_origins: chromium_native_host_allowed_origins(),
                 };
                 if let Ok(json) = serde_json::to_string_pretty(&cr_manifest) {
                     let _ = fs::write(&manifest_file, json);
@@ -909,6 +940,17 @@ fn materialize_extension_bundle(base: &Path, family: &str) -> Result<PathBuf, St
             embedded_web_extension_files!("chromium").to_vec(),
         )
     };
+    if name == "chromium" {
+        files.push((
+            "request-capture.js",
+            include_bytes!("../../../extensions/chromium/request-capture.js").as_slice(),
+        ));
+    } else if name == "firefox" {
+        files.push((
+            "request-capture.js",
+            include_bytes!("../../../extensions/firefox/request-capture.js").as_slice(),
+        ));
+    }
     if name == "safari" {
         files.extend_from_slice(&[
             (
@@ -958,8 +1000,19 @@ fn materialize_extension_bundle(base: &Path, family: &str) -> Result<PathBuf, St
 
 #[cfg(test)]
 mod extension_bundle_tests {
-    use super::materialize_extension_bundle;
+    use super::{
+        chromium_manifest_extension_id, chromium_native_host_allowed_origins,
+        materialize_extension_bundle,
+    };
     use std::fs;
+
+    #[test]
+    fn chromium_native_host_allows_the_packaged_extension_key_id() {
+        let extension_id = chromium_manifest_extension_id()
+            .expect("the Chromium manifest should contain a valid public key");
+        let expected_origin = format!("chrome-extension://{extension_id}/");
+        assert!(chromium_native_host_allowed_origins().contains(&expected_origin));
+    }
 
     #[test]
     fn bundled_manual_install_folders_include_every_manifest_icon() {
