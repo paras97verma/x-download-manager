@@ -37,7 +37,7 @@ function makeCapture(extensionDirectory) {
 }
 
 for (const extensionDirectory of ["chromium", "firefox"]) {
-  test(`${extensionDirectory} leaves HTTP downloads in the browser when request context was unavailable`, () => {
+  test(`${extensionDirectory} reports missing HTTP context for the final-URL GET fallback`, () => {
     const { capture } = makeCapture(extensionDirectory);
     const missing = capture.find({
       id: 2,

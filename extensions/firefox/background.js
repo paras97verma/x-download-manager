@@ -115,6 +115,33 @@ function shouldInterceptDownload(downloadItem) {
   }
 }
 
+function fallbackGetRequestContext(downloadItem) {
+  // Some browser builds do not expose webRequest details to extensions.
+  // Replay only the resolved GET URL and let ByteX validate the response
+  // before it acknowledges takeover.
+  const resolvedUrl = downloadItem.finalUrl || downloadItem.url || "";
+  let protocol = "";
+  try { protocol = new URL(resolvedUrl).protocol; } catch (_) {}
+  const replayable = ["http:", "https:", "ftp:"].includes(protocol);
+  return {
+    originalUrl: resolvedUrl,
+    finalUrl: resolvedUrl,
+    method: "GET",
+    replayable,
+    unavailableReason: replayable ? null : "The browser did not expose a replayable download URL.",
+    headers: {},
+    redirects: [],
+  };
+}
+
+function resolveDownloadRequestContext(downloadItem) {
+  const captured = globalThis.ByteXRequestCapture?.find(downloadItem);
+  if (captured && captured.replayable !== false) return captured;
+  const method = String(captured?.method || "GET").toUpperCase();
+  if (captured && ["POST", "PUT", "PATCH"].includes(method)) return captured;
+  return fallbackGetRequestContext(downloadItem);
+}
+
 async function pauseBrowserDownload(id) {
   if (!Number.isInteger(id) || !runtimeAPI.downloads?.pause || !runtimeAPI.downloads?.search) return null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -296,15 +323,7 @@ async function handleDownloadInterception(downloadItem) {
   // Resolve request metadata before any pause/IPC await. Other downloads can
   // complete while those operations are pending and otherwise steal the
   // newest same-URL capture from this event.
-  const requestContext = globalThis.ByteXRequestCapture?.find(downloadItem) || {
-    originalUrl: downloadItem.url,
-    finalUrl: downloadItem.finalUrl || downloadItem.url,
-    method: "GET",
-    replayable: new URL(downloadItem.finalUrl || downloadItem.url).protocol === "ftp:",
-    unavailableReason: "ByteX could not capture the browser's original HTTP request context, so it left the browser download in control.",
-    headers: {},
-    redirects: [],
-  };
+  const requestContext = resolveDownloadRequestContext(downloadItem);
 
   let paused = false;
   let appAccepted = false;
