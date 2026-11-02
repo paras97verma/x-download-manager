@@ -306,12 +306,21 @@ if (runtimeAPI.downloads) {
 function detectBrowserFamily() {
   const ua = navigator.userAgent || "";
   const appVer = navigator.appVersion || "";
-  if (/dia/i.test(ua) || /dia/i.test(appVer) || (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.some(b => /dia/i.test(b.brand)))) return "Dia";
+  const brands = navigator.userAgentData && Array.isArray(navigator.userAgentData.brands)
+    ? navigator.userAgentData.brands.map((b) => b.brand)
+    : [];
+  if (/dia/i.test(ua) || /dia/i.test(appVer) || brands.some((brand) => /dia/i.test(brand))) return "Dia";
   if (ua.includes("Arc/")) return "Arc";
+  if (/OPRGX\//i.test(ua)) return "Opera GX";
   if (ua.includes("OPR/") || ua.includes("Opera")) return "Opera";
   if (ua.includes("Brave") || navigator.brave) return "Brave";
   if (ua.includes("Vivaldi")) return "Vivaldi";
   if (ua.includes("Edg/")) return "Edge";
+  if (ua.includes("YaBrowser")) return "Yandex";
+  if (brands.some((brand) => /google chrome/i.test(brand))) return "Chrome";
+  if (brands.some((brand) => /^chromium$/i.test(brand))) return "Chromium";
+  if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) return "Chrome";
+  if (/Chromium\//.test(ua)) return "Chromium";
   if (ua.includes("Firefox")) return "Firefox";
   if (ua.includes("Zen")) return "Zen";
   if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari";

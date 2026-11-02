@@ -166,7 +166,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
     auth_password: authPass,
     is_torrent: isTorrent,
     user_agent: navigator.userAgent,
-    browser: "Safari",
+    browser: /orion/i.test(navigator.userAgent || "") ? "Orion" : "Safari",
     tab_title: tabTitle || null,
   };
 

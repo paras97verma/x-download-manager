@@ -78,8 +78,10 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
         .iter()
         .filter(|(id, _, family)| *family == "chromium" && probe_browser_executable(id).is_some())
         .count();
-    let generic_chromium_connected =
-        crate::browser::ipc_server::is_browser_connected("chromium", "chromium");
+    let chromium_engine_connected = SUPPORTED_BROWSERS
+        .iter()
+        .filter(|(_, _, family)| *family == "chromium")
+        .any(|(id, name, _)| crate::browser::ipc_server::is_browser_connected(id, name));
     SUPPORTED_BROWSERS
         .iter()
         .map(|(id, name, family)| {
@@ -100,7 +102,7 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
                 || (*family == "chromium"
                     && detected
                     && detected_chromium_count == 1
-                    && generic_chromium_connected);
+                    && chromium_engine_connected);
             let status_message = if !detected {
                 "Browser not detected on this system".to_string()
             } else if is_connected {

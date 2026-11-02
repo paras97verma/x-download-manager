@@ -225,7 +225,7 @@
           referer: payload.referer,
           cookies: payload.cookies,
           user_agent: navigator.userAgent,
-          browser: "Safari",
+          browser: /orion/i.test(navigator.userAgent || "") ? "Orion" : "Safari",
           tab_title: payload.tabTitle,
         }),
       }).then((response) => response.json()).then((result) => result && result.accepted === true && Boolean(result.download_id)).catch(() => false);
