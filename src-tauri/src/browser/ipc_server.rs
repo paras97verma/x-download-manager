@@ -169,7 +169,10 @@ pub async fn start_browser_ipc_server(
     }
 }
 
-async fn handle_prepare_update(headers: HeaderMap) -> (StatusCode, Json<serde_json::Value>) {
+async fn handle_prepare_update(
+    State(engine): State<Arc<DownloadEngine>>,
+    headers: HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
     // Only local installer/CLI requests are accepted. This prevents an arbitrary
     // website from triggering a cross-origin quit through the loopback bridge.
     if headers.contains_key(axum::http::header::ORIGIN) {
@@ -179,6 +182,12 @@ async fn handle_prepare_update(headers: HeaderMap) -> (StatusCode, Json<serde_js
         );
     }
     if let Some(app) = UPDATE_APP_HANDLE.get() {
+        if let Err(error) = engine.persist_downloads() {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "accepted": false, "reason": error })),
+            );
+        }
         let app = app.clone();
         tokio::spawn(async move {
             // Give the installer request time to receive its response before quitting.

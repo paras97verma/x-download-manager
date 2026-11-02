@@ -106,6 +106,10 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
     loop {
         interval.tick().await;
 
+        if let Err(error) = engine.persist_downloads() {
+            tracing::warn!(%error, "Could not persist download history");
+        }
+
         // 1. Maintain active OS sleep inhibitor while transfers are running
         let is_downloading = {
             let dls = engine.downloads.read();

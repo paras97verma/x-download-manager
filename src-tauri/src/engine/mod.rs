@@ -6,6 +6,9 @@ use chrono::Utc;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -144,18 +147,123 @@ pub struct DownloadEngine {
     pub config_manager: ConfigManager,
     pub downloads: Arc<RwLock<Vec<DownloadItem>>>,
     pub active_cancellations: Arc<RwLock<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
+    history_path: PathBuf,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DownloadHistory {
+    format_version: u32,
+    downloads: Vec<DownloadItem>,
+}
+
+fn restore_downloads(path: &Path) -> Vec<DownloadItem> {
+    let backup = path.with_extension("json.bak");
+    for candidate in [path, backup.as_path()] {
+        let Ok(raw) = fs::read_to_string(candidate) else {
+            continue;
+        };
+        let Ok(history) = serde_json::from_str::<DownloadHistory>(&raw) else {
+            continue;
+        };
+        if history.format_version != 1 {
+            continue;
+        }
+        return normalize_restored_downloads(history.downloads);
+    }
+    Vec::new()
+}
+
+fn normalize_restored_downloads(mut downloads: Vec<DownloadItem>) -> Vec<DownloadItem> {
+    for download in &mut downloads {
+        if matches!(
+            download.status,
+            DownloadStatus::Connecting
+                | DownloadStatus::Authenticating
+                | DownloadStatus::Downloading
+                | DownloadStatus::Merging
+                | DownloadStatus::Seeding
+        ) {
+            download.status = DownloadStatus::Paused;
+            download
+                .transfer_log
+                .push("Paused while ByteX was updated; resume is available.".to_string());
+        }
+        download.speed_bps = 0;
+        download.upload_speed_bps = 0;
+        download.eta_seconds = None;
+        for segment in &mut download.segments {
+            segment.speed_bps = 0;
+            if matches!(segment.status.as_str(), "receiving" | "connecting") {
+                segment.status = "paused".to_string();
+            }
+        }
+        if let Some(meta) = download.torrent_meta.as_mut() {
+            meta.peers.clear();
+            meta.peers_connected = 0;
+            meta.seeds_connected = 0;
+        }
+    }
+    downloads
+}
+
+fn write_download_history(path: &Path, downloads: &[DownloadItem]) -> Result<(), String> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Could not create download history directory: {e}"))?;
+
+    let history = DownloadHistory {
+        format_version: 1,
+        downloads: downloads.to_vec(),
+    };
+    let bytes = serde_json::to_vec(&history).map_err(|e| e.to_string())?;
+    let temporary = path.with_extension("json.tmp");
+    let backup = path.with_extension("json.bak");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|e| format!("Could not create download history snapshot: {e}"))?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|e| format!("Could not write download history snapshot: {e}"))?;
+    drop(file);
+
+    if path.exists() {
+        let _ = fs::remove_file(&backup);
+        fs::rename(path, &backup)
+            .map_err(|e| format!("Could not back up download history: {e}"))?;
+    }
+    if let Err(error) = fs::rename(&temporary, path) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, path);
+        }
+        return Err(format!("Could not replace download history: {error}"));
+    }
+    let _ = fs::remove_file(backup);
+    Ok(())
 }
 
 impl DownloadEngine {
     pub fn new() -> Self {
         let config_manager = ConfigManager::new();
         let settings = config_manager.load();
+        let history_path = config_manager.download_history_path();
+        let downloads = restore_downloads(&history_path);
         Self {
             settings: Arc::new(RwLock::new(settings)),
             config_manager,
-            downloads: Arc::new(RwLock::new(Vec::new())),
+            downloads: Arc::new(RwLock::new(downloads)),
             active_cancellations: Arc::new(RwLock::new(HashMap::new())),
+            history_path,
         }
+    }
+
+    /// Save an atomic snapshot of the download list. The history file and
+    /// torrent resume data are stored outside the install directory.
+    pub fn persist_downloads(&self) -> Result<(), String> {
+        let downloads = self.downloads.read().clone();
+        write_download_history(&self.history_path, &downloads)
     }
 
     pub fn detect_protocol(url: &str) -> DownloadProtocol {
@@ -622,5 +730,72 @@ impl DownloadEngine {
 impl Default for DownloadEngine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+
+    #[test]
+    fn history_restores_active_downloads_as_resumable_paused_items() {
+        let engine = DownloadEngine::new();
+        let mut item = engine.add_download(NewDownloadRequest {
+            url: "magnet:?xt=urn:btih:0123456789012345678901234567890123456789&dn=resume-test"
+                .into(),
+            filename: Some("resume-test".into()),
+            category: Some("Torrents".into()),
+            save_path: Some("/downloads/resume-test".into()),
+            threads_count: None,
+            queue_id: Some("main-queue".into()),
+            start_immediately: false,
+            source_browser: None,
+            referer: None,
+            cookies: Some("session=kept".into()),
+            user_agent: None,
+            custom_headers: None,
+            auth_username: None,
+            auth_password: None,
+            sequential_torrent: None,
+            torrent_file_data: None,
+            torrent_selected_files: Some(vec![0]),
+        });
+        item.status = DownloadStatus::Downloading;
+        item.downloaded_bytes = 786_432;
+        item.total_bytes = 2_000_000;
+        item.torrent_file_path = Some("/config/torrent-meta/resume-test.torrent".into());
+        item.torrent_meta = Some(torrent::create_initial_torrent_metadata(
+            &item.url,
+            &[],
+            false,
+        ));
+        item.segments = vec![ThreadSegment {
+            id: 0,
+            start_byte: 0,
+            end_byte: 1_000,
+            downloaded_bytes: 600,
+            speed_bps: 900,
+            status: "receiving".into(),
+        }];
+        let path = std::env::temp_dir().join(format!("bytex-history-{}.json", Uuid::new_v4()));
+
+        write_download_history(&path, &[item]).expect("history should save");
+        let restored = restore_downloads(&path);
+        let restored = restored.first().expect("download should restore");
+
+        assert_eq!(restored.status, DownloadStatus::Paused);
+        assert_eq!(restored.downloaded_bytes, 786_432);
+        assert_eq!(restored.segments[0].downloaded_bytes, 600);
+        assert_eq!(restored.segments[0].status, "paused");
+        assert_eq!(restored.cookies.as_deref(), Some("session=kept"));
+        assert_eq!(restored.torrent_selected_files, Some(vec![0]));
+        assert_eq!(
+            restored.torrent_file_path.as_deref(),
+            Some("/config/torrent-meta/resume-test.torrent")
+        );
+        assert!(restored.torrent_meta.is_some());
+
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("json.bak"));
     }
 }

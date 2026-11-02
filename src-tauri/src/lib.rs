@@ -596,7 +596,7 @@ fn compact_speed_bps(bps: u64) -> String {
 fn build_speed_tray_icon(download_bps: u64, upload_bps: u64) -> tauri::image::Image<'static> {
     const SIZE: usize = 64;
     let mut rgba = vec![0u8; SIZE * SIZE * 4];
-    for pixel in rgba.chunks_exact_mut(4) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
         pixel.copy_from_slice(&[10, 17, 30, 255]);
     }
 
@@ -692,8 +692,9 @@ pub fn run_app() {
     let ipc_port = engine.settings.read().browser.ipc_port;
 
     let sched_engine = Arc::clone(&engine);
+    let shutdown_engine = Arc::clone(&engine);
 
-    tauri::Builder::default()
+    let app_result = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -943,6 +944,23 @@ pub fn run_app() {
             parse_torrent_file,
             get_app_version,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running ByteX Download Manager");
+        .build(tauri::generate_context!());
+    match app_result {
+        Ok(app) => app.run(|_app_handle, event| match event {
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                use tauri::Manager;
+                if let Some(window) = _app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+            _ => {}
+        }),
+        Err(error) => tracing::error!(%error, "Could not start ByteX Download Manager"),
+    }
+    if let Err(error) = shutdown_engine.persist_downloads() {
+        tracing::error!(%error, "Could not persist download history during shutdown");
+    }
 }

@@ -352,6 +352,22 @@ impl ConfigManager {
         Self { config_path }
     }
 
+    /// Persistent download history lives beside settings so an app upgrade can
+    /// replace binaries without touching the user's transfers or resume state.
+    pub fn download_history_path(&self) -> PathBuf {
+        self.config_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("downloads.json")
+    }
+
+    pub fn torrent_state_dir(&self) -> PathBuf {
+        self.config_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("torrent-state")
+    }
+
     pub fn load(&self) -> AppSettings {
         let mut settings = if let Ok(raw) = fs::read_to_string(&self.config_path) {
             if let Ok(parsed) = serde_json::from_str::<AppSettings>(&raw) {

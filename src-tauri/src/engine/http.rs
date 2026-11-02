@@ -281,6 +281,32 @@ pub fn compute_initial_segments(
     segments
 }
 
+fn restore_segment_progress(previous: &[ThreadSegment], current: &mut [ThreadSegment]) -> bool {
+    for segment in current.iter_mut() {
+        let Some(saved) = previous.iter().find(|saved| {
+            saved.id == segment.id
+                && saved.start_byte == segment.start_byte
+                && saved.end_byte == segment.end_byte
+        }) else {
+            return false;
+        };
+        let segment_size = segment.end_byte - segment.start_byte + 1;
+        if saved.downloaded_bytes > segment_size {
+            return false;
+        }
+        segment.downloaded_bytes = saved.downloaded_bytes;
+        segment.status = if saved.downloaded_bytes == segment_size {
+            "completed".to_string()
+        } else if saved.downloaded_bytes > 0 {
+            "paused".to_string()
+        } else {
+            "waiting".to_string()
+        };
+        segment.speed_bps = 0;
+    }
+    true
+}
+
 /// Executes a multi-threaded segmented download using independent Tokio workers writing to pre-allocated file offsets
 pub async fn execute_segmented_http_download(
     item_id: String,
@@ -365,13 +391,39 @@ pub async fn execute_segmented_http_download(
     };
 
     let min_seg_bytes = current_settings.min_segment_size_kb * 1024;
-    let segments = compute_initial_segments(probe.total_bytes, threads, min_seg_bytes);
+    let mut segments = compute_initial_segments(probe.total_bytes, threads, min_seg_bytes);
+
+    // Keep verified byte ranges when resuming an interrupted ranged download.
+    // A changed file size, lost destination file, or server without Range support
+    // safely falls back to a fresh download.
+    let previous_file_is_intact = std::fs::metadata(&final_save_path)
+        .map(|metadata| metadata.is_file() && metadata.len() == probe.total_bytes)
+        .unwrap_or(false);
+    let can_resume = item_snapshot.resumable
+        && probe.accepts_ranges
+        && probe.total_bytes > 0
+        && item_snapshot.total_bytes == probe.total_bytes
+        && previous_file_is_intact
+        && restore_segment_progress(&item_snapshot.segments, &mut segments);
+    if !can_resume {
+        for segment in &mut segments {
+            segment.downloaded_bytes = 0;
+            segment.speed_bps = 0;
+            segment.status = "waiting".to_string();
+        }
+    }
 
     // Pre-allocate destination file on disk
     if let Some(parent) = Path::new(&final_save_path).parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    {
+    if can_resume {
+        let existing_file = OpenOptions::new()
+            .write(true)
+            .open(&final_save_path)
+            .map_err(|e| format!("Failed to reopen partial file {}: {}", final_save_path, e))?;
+        drop(existing_file);
+    } else {
         let file = File::create(&final_save_path)
             .map_err(|e| format!("Failed to create target file {}: {}", final_save_path, e))?;
         if probe.total_bytes > 0 {
@@ -394,6 +446,10 @@ pub async fn execute_segmented_http_download(
             }
             d.status = DownloadStatus::Downloading;
             d.segments = segments.clone();
+            d.downloaded_bytes = segments
+                .iter()
+                .map(|segment| segment.downloaded_bytes)
+                .sum();
             d.transfer_log.push(format!(
                 "Server supports Range={} | Total Size={} bytes | Spawning {} concurrent worker threads",
                 probe.accepts_ranges,
@@ -406,6 +462,9 @@ pub async fn execute_segmented_http_download(
     // Spawn worker tasks for each segment
     let mut handles = Vec::new();
     for seg in segments {
+        if seg.downloaded_bytes > seg.end_byte - seg.start_byte {
+            continue;
+        }
         let client_clone = client.clone();
         let url_clone = probe.resolved_url.clone();
         let save_path_clone = final_save_path.clone();
@@ -556,4 +615,54 @@ pub async fn execute_segmented_http_download(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod resume_tests {
+    use super::{compute_initial_segments, restore_segment_progress};
+    use crate::engine::ThreadSegment;
+
+    #[test]
+    fn restores_saved_http_segment_offsets_when_layout_matches() {
+        let mut current = compute_initial_segments(4_000_000, 2, 512);
+        let previous = vec![
+            ThreadSegment {
+                id: current[0].id,
+                start_byte: current[0].start_byte,
+                end_byte: current[0].end_byte,
+                downloaded_bytes: 700_000,
+                speed_bps: 10,
+                status: "receiving".into(),
+            },
+            ThreadSegment {
+                id: current[1].id,
+                start_byte: current[1].start_byte,
+                end_byte: current[1].end_byte,
+                downloaded_bytes: current[1].end_byte - current[1].start_byte + 1,
+                speed_bps: 0,
+                status: "completed".into(),
+            },
+        ];
+
+        assert!(restore_segment_progress(&previous, &mut current));
+        assert_eq!(current[0].downloaded_bytes, 700_000);
+        assert_eq!(current[0].status, "paused");
+        assert_eq!(current[1].status, "completed");
+        assert!(current.iter().all(|segment| segment.speed_bps == 0));
+    }
+
+    #[test]
+    fn rejects_saved_offsets_when_remote_segment_layout_changes() {
+        let mut current = compute_initial_segments(4_000_000, 1, 512);
+        let previous = [ThreadSegment {
+            id: 1,
+            start_byte: 0,
+            end_byte: 1_999_999,
+            downloaded_bytes: 700_000,
+            speed_bps: 0,
+            status: "paused".into(),
+        }];
+
+        assert!(!restore_segment_progress(&previous, &mut current));
+    }
 }
