@@ -445,7 +445,7 @@ pub async fn execute_torrent_download(
     let mut state_key = Sha256::new();
     state_key.update(save_dir.as_bytes());
     let state_key = hex::encode(state_key.finalize());
-    let persistence_root = directories::ProjectDirs::from("com", "peivee", "XDownloadManager")
+    let persistence_root = directories::ProjectDirs::from("com", "peivee", "ByteXDownloadManager")
         .map(|project| project.config_dir().join("torrent-state"))
         .unwrap_or_else(|| std::path::PathBuf::from(".xdm-torrent-state"));
     let session_state_dir = persistence_root.join(format!("{}-{}", &state_key[..16], item_id));

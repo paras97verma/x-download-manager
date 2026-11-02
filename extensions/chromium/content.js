@@ -60,7 +60,7 @@
           tabTitle: document.title,
         }, (response) => {
           badge.innerText = runtimeAPI.runtime.lastError || !response?.success
-            ? "Browser download continues"
+            ? "ByteX handoff failed"
             : response.duplicate ? "✓ Already in ByteX" : "✓ Sent to ByteX";
         });
       });

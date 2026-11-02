@@ -53,9 +53,9 @@ fs.writeFileSync(cargoTomlPath, updatedCargoToml);
 
 const cargoLockPath = path.join(rootDir, "Cargo.lock");
 const cargoLock = fs.readFileSync(cargoLockPath, "utf8");
-const cargoLockVersionPattern = /(\[\[package\]\]\nname = "x-download-manager"\nversion = ")[^"]+(")/;
+const cargoLockVersionPattern = /(\[\[package\]\]\nname = "bytex-download-manager"\nversion = ")[^"]+(")/;
 if (!cargoLockVersionPattern.test(cargoLock)) {
-  throw new Error('Could not find the "x-download-manager" package version in Cargo.lock');
+  throw new Error('Could not find the "bytex-download-manager" package version in Cargo.lock');
 }
 const updatedCargoLock = cargoLock.replace(
   cargoLockVersionPattern,

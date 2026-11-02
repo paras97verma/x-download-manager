@@ -10,9 +10,14 @@ const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
 const NATIVE_HOST_NAME = "com.peivee.xdm";
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 let state = {
   interceptEnabled: true,
-  bypassActive: false,
   minFileSizeKb: 256,
   interceptedExtensions: [
     "ZIP", "RAR", "7Z", "TAR", "GZ", "XZ", "EXE", "MSI", "DMG", "PKG",
@@ -22,12 +27,23 @@ let state = {
   ignoredDomains: ["localhost", "127.0.0.1"],
   detectedBrowser: null,
 };
+const bypassTabs = new Set();
+
+runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
+  state.interceptEnabled = settings.interceptEnabled !== false;
+});
+runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.interceptEnabled) {
+    state.interceptEnabled = changes.interceptEnabled.newValue !== false;
+  }
+});
+runtimeAPI.tabs?.onRemoved?.addListener((tabId) => bypassTabs.delete(tabId));
 
 // Periodically sync settings from running XDM Desktop App
 async function syncWithDesktopApp() {
   try {
     const browser = detectBrowserFamily();
-    const res = await fetch(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`);
+    const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`, {}, 2000);
     if (res.ok) {
       const cfg = await res.json();
       state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
@@ -46,10 +62,16 @@ setInterval(syncWithDesktopApp, 15000);
 // Create Context Menu Item ("Download with ByteX")
 runtimeAPI.runtime.onInstalled.addListener(() => {
   if (runtimeAPI.contextMenus) {
-    runtimeAPI.contextMenus.create({
-      id: "xdm-download-link",
-      title: "Download with ByteX",
-      contexts: ["link", "video", "audio"],
+    runtimeAPI.contextMenus.removeAll(() => {
+      if (runtimeAPI.runtime.lastError) return;
+      runtimeAPI.contextMenus.create({
+        id: "xdm-download-link",
+        title: "Download with ByteX",
+        contexts: ["link", "video", "audio"],
+      }, () => {
+        // Read lastError in the callback so an unsupported context is harmless.
+        void runtimeAPI.runtime.lastError;
+      });
     });
   }
 });
@@ -73,7 +95,11 @@ if (runtimeAPI.contextMenus) {
 // Listen for messages from content script or popup
 runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "XDM_BYPASS_STATE") {
-    state.bypassActive = Boolean(msg.bypass);
+    const tabId = sender.tab && sender.tab.id;
+    if (Number.isInteger(tabId)) {
+      if (msg.bypass) bypassTabs.add(tabId);
+      else bypassTabs.delete(tabId);
+    }
   } else if (msg.type === "XDM_MANUAL_CAPTURE") {
     dispatchToXdm({
       url: msg.url,
@@ -92,7 +118,7 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 function shouldInterceptDownload(downloadItem) {
-  if (!state.interceptEnabled || state.bypassActive) return false;
+  if (!state.interceptEnabled || bypassTabs.has(downloadItem.tabId)) return false;
   const url = downloadItem.finalUrl || downloadItem.url || "";
   if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
 
@@ -110,7 +136,7 @@ function shouldInterceptDownload(downloadItem) {
 
   try {
     const parsed = new URL(url);
-    if (state.ignoredDomains.some((d) => parsed.hostname.endsWith(d))) {
+    if (state.ignoredDomains.some((d) => parsed.hostname === d || parsed.hostname.endsWith(`.${d}`))) {
       return false;
     }
 
@@ -128,7 +154,10 @@ function shouldInterceptDownload(downloadItem) {
       return false;
     }
 
-    return true;
+    const extension = filename.split(".").pop().toUpperCase();
+    const extensionMatch = state.interceptedExtensions.some((value) => value.toUpperCase() === extension);
+    const sizeMatch = Number(downloadItem.totalBytes) >= state.minFileSizeKb * 1024;
+    return extensionMatch || sizeMatch;
   } catch (_) {
     return false;
   }
@@ -145,23 +174,6 @@ async function getCookieHeaderForUrl(url, referer) {
       if (direct && Array.isArray(direct)) {
         for (const c of direct) {
           if (c && c.name) cookieMap.set(c.name, c.value);
-        }
-      }
-    } catch (_) {}
-
-    try {
-      const u = new URL(targetUrl);
-      const parts = u.hostname.split(".");
-      if (parts.length >= 2) {
-        // Collect domain-wide cookies (e.g. ".mediafire.com", ".1fichier.com", ".usersdrive.com")
-        const rootDomain = parts.slice(-2).join(".");
-        const domainCookies = await runtimeAPI.cookies.getAll({ domain: rootDomain });
-        if (domainCookies && Array.isArray(domainCookies)) {
-          for (const c of domainCookies) {
-            if (c && c.name && !cookieMap.has(c.name)) {
-              cookieMap.set(c.name, c.value);
-            }
-          }
         }
       }
     } catch (_) {}
@@ -216,11 +228,11 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
 
   // 1. Try fast Localhost HTTP Bridge (`127.0.0.1:45678`)
   try {
-    const resp = await fetch(`${XDM_IPC_URL}/api/v1/intercept`, {
+    const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/intercept`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    });
+    }, 5000);
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
       return result?.accepted === true && result?.download_id
@@ -358,7 +370,7 @@ function notifyCaptureResult(tabId, success, filename, duplicate = false) {
   const titleOptions = {
     title: success
       ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
-      : `ByteX handoff failed; browser download continues: ${transfer.filename}`,
+      : `ByteX handoff failed: ${transfer.filename}`,
   };
   if (Number.isInteger(tabId) && tabId >= 0) {
     badgeOptions.tabId = tabId;

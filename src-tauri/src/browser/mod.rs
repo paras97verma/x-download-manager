@@ -442,6 +442,9 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {
         let app_support = home.join("Library/Application Support");
+        let legacy_bytex_support = app_support.join("XDownloadManager");
+        let bytex_support = app_support.join("ByteXDownloadManager");
+        crate::config::migrate_legacy_data_dir(&legacy_bytex_support, &bytex_support);
         match browser_id {
             "chrome" => vec![app_support.join("Google/Chrome/NativeMessagingHosts")],
             "brave" => vec![app_support.join("BraveSoftware/Brave-Browser/NativeMessagingHosts")],
@@ -497,12 +500,12 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
                 app_support.join("Mullvad Browser/NativeMessagingHosts"),
                 app_support.join("Mozilla/NativeMessagingHosts"),
             ],
-            "safari" => vec![app_support.join("XDownloadManager/SafariExtension")],
+            "safari" => vec![bytex_support.join("SafariExtension")],
             "orion" => vec![
                 app_support.join("Orion/NativeMessagingHosts"),
                 app_support.join("Orion/User Data/NativeMessagingHosts"),
             ],
-            _ => vec![app_support.join("XDownloadManager/NativeMessagingHosts")],
+            _ => vec![bytex_support.join("NativeMessagingHosts")],
         }
     }
 
@@ -555,15 +558,22 @@ pub fn get_all_native_messaging_dirs(browser_id: &str) -> Vec<PathBuf> {
                 home.join(".mullvad-browser/native-messaging-hosts"),
                 home.join(".mozilla/native-messaging-hosts"),
             ],
-            _ => vec![config.join("xdm/NativeMessagingHosts")],
+            _ => {
+                let legacy = config.join("xdm");
+                let current = config.join("bytex");
+                crate::config::migrate_legacy_data_dir(&legacy, &current);
+                vec![current.join("NativeMessagingHosts")]
+            }
         }
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        vec![home
-            .join("AppData/Local/XDownloadManager/NativeMessagingHosts")
-            .join(browser_id)]
+        let app_local = home.join("AppData/Local");
+        let legacy = app_local.join("XDownloadManager");
+        let current = app_local.join("ByteXDownloadManager");
+        crate::config::migrate_legacy_data_dir(&legacy, &current);
+        vec![current.join("NativeMessagingHosts").join(browser_id)]
     }
 }
 
@@ -583,7 +593,7 @@ pub fn configure_browser_integration(
     let _primary_manifest_file = primary_dir.join(format!("{}.json", NATIVE_HOST_NAME));
 
     let current_exe = std::env::current_exe()
-        .unwrap_or_else(|_| PathBuf::from("/usr/local/bin/x-download-manager"))
+        .unwrap_or_else(|_| PathBuf::from("/usr/local/bin/bytex-download-manager"))
         .to_string_lossy()
         .to_string();
 
@@ -816,12 +826,13 @@ pub fn write_external_extension_descriptor(browser_id: &str, enable: bool) -> Re
 }
 
 pub fn get_or_create_extension_dir(family: &str) -> Result<PathBuf, String> {
-    let base =
-        if let Some(proj) = directories::ProjectDirs::from("com", "peivee", "XDownloadManager") {
-            proj.config_dir().join("extensions")
-        } else {
-            PathBuf::from("extensions")
-        };
+    let base = if let Some(proj) =
+        directories::ProjectDirs::from("com", "peivee", "ByteXDownloadManager")
+    {
+        proj.config_dir().join("extensions")
+    } else {
+        PathBuf::from("extensions")
+    };
 
     materialize_extension_bundle(&base, family)
 }

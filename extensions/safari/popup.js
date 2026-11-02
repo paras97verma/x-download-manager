@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       transferStatusEl.textContent = `Already in ByteX: ${filename}`;
       transferStatusEl.style.color = "#10b981";
     } else {
-      transferStatusEl.textContent = `Not transferred; browser kept the download: ${filename}`;
+      transferStatusEl.textContent = `ByteX handoff failed: ${filename}`;
       transferStatusEl.style.color = "#f87171";
     }
   };
@@ -63,14 +63,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   sendBtn.addEventListener("click", () => {
     const url = inputEl.value.trim();
     if (!url) return;
+    sendBtn.disabled = true;
+    sendBtn.textContent = "Sending…";
     runtimeAPI.runtime.sendMessage({
       type: "XDM_MANUAL_CAPTURE",
       url,
       referer: "",
       tabTitle: "Popup Manual Submit",
+    }, (response) => {
+      sendBtn.disabled = false;
+      sendBtn.textContent = runtimeAPI.runtime.lastError || !response?.success ? "Failed" : "Sent!";
+      setTimeout(() => (sendBtn.textContent = "Download"), 1200);
     });
     inputEl.value = "";
-    sendBtn.textContent = "Sent!";
-    setTimeout(() => (sendBtn.textContent = "Download"), 1200);
   });
 });

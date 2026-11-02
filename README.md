@@ -124,8 +124,8 @@ If you own an Apple Developer Program subscription or Windows Authenticode Certi
 2. **BitTorrent & Magnet Protocol Engine**
    - Full `.torrent` and `magnet:?xt=urn:btih:...` support with Mainline DHT, Peer Exchange (PEX), Local Peer Discovery (LPD), and UDP/HTTP trackers.
    - Selective file priority (`High`, `Normal`, `Skip`), Sequential Piece downloading (stream video while downloading), and automatic seeding ratio limits.
-3. **FTP / FTPS / SFTP & Authenticated File-Sharing Sites (`Usersdrive`, `1fichier`, `MediaFire`)**
-   - Built-in **Site Logins & Auth Vault** supporting wildcard host patterns (`*.usersdrive.com`, `*.1fichier.com`, `ftp.myserver.org`).
+3. **FTP / FTPS & Authenticated File-Sharing Sites (`Usersdrive`, `1fichier`, `MediaFire`)**
+   - Built-in **Site Logins & Auth** supporting wildcard host patterns for FTP/FTPS, HTTP Basic, Bearer tokens, and cookies. Usersdrive, 1fichier, and MediaFire entries use session cookies; ByteX does not perform account sign-in or captcha solving for those sites. Credentials are stored in the local app settings file.
    - Automatic 2-step form/cookie resolution for **Usersdrive** links (`https://usersdrive.com/<id>.html`) and seamless browser session cookie passthrough.
 4. **Automatic Cross-Browser Extension Suite (Chromium, Firefox, Safari)**
    - Ships with bundled WebExtensions for **Google Chrome, Brave, Microsoft Edge, Opera, Vivaldi, Mozilla Firefox, and Apple Safari**.

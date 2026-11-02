@@ -398,6 +398,13 @@ impl DownloadEngine {
         if let Some(ua) = req.user_agent {
             headers.insert("User-Agent".to_string(), ua);
         }
+        let mut cookies = req.cookies;
+        let site_credential_id = ftp_auth::apply_site_credential(
+            &req.url,
+            &settings.site_credentials,
+            &mut headers,
+            &mut cookies,
+        );
 
         let item = DownloadItem {
             id: id.clone(),
@@ -424,9 +431,9 @@ impl DownloadEngine {
             torrent_meta: None,
             source_browser: req.source_browser,
             referer: req.referer,
-            cookies: req.cookies,
+            cookies,
             custom_headers: headers,
-            site_credential_id: None,
+            site_credential_id,
             checksum_sha256: None,
             created_at: Utc::now().to_rfc3339(),
             completed_at: None,

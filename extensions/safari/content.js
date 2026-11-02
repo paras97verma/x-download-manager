@@ -4,6 +4,16 @@
 (function () {
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
   let bypassKeyPressed = false;
+  let interceptEnabled = true;
+
+  runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
+    interceptEnabled = settings.interceptEnabled !== false;
+  });
+  runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.interceptEnabled) {
+      interceptEnabled = changes.interceptEnabled.newValue !== false;
+    }
+  });
 
   // Track Alt / Option key to allow users to bypass XDM when desired
   window.addEventListener(
@@ -154,6 +164,7 @@
 
       const anchor = event.target.closest("a");
       if (!anchor || !anchor.href) return;
+      if (!interceptEnabled) return;
 
       if (isDownloadableUrl(anchor.href, anchor)) {
         event.preventDefault();
@@ -168,6 +179,7 @@
   // 2. Intercept programmatic anchor .click() triggers
   const originalAnchorClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () {
+    if (!interceptEnabled) return originalAnchorClick.apply(this, arguments);
     if (!bypassKeyPressed && this.href && isDownloadableUrl(this.href, this)) {
       const downloadFilename = this.getAttribute("download") || null;
       const anchor = this;
@@ -180,6 +192,7 @@
   // 3. Intercept window.open calls pointing to downloadable resources
   const originalWindowOpen = window.open;
   window.open = function (url, ...args) {
+    if (!interceptEnabled) return originalWindowOpen.call(this, url, ...args);
     if (!bypassKeyPressed && typeof url === "string" && isDownloadableUrl(url, null)) {
       captureDownload(url, null, null, () => originalWindowOpen.call(window, url, ...args));
       return null;
@@ -218,9 +231,13 @@
       badge.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
+        if (!interceptEnabled) {
+          badge.innerText = "Enable ByteX interception";
+          return;
+        }
         badge.innerText = "Sending to ByteX…";
         captureDownload(src, null, null, () => {
-          badge.innerText = "Browser download continues";
+          badge.innerText = "ByteX handoff failed";
         }, (response) => {
           badge.innerText = response.duplicate ? "✓ Already in ByteX" : "✓ Sent to ByteX";
         });

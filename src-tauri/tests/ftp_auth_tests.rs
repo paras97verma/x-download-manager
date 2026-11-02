@@ -61,6 +61,88 @@ fn test_match_site_credential_disabled_ignored() {
 }
 
 #[test]
+fn test_saved_http_auth_is_applied_to_matching_downloads() {
+    let credentials = vec![SiteCredential {
+        id: "basic-login".into(),
+        host_pattern: "*.example.com".into(),
+        site_type: "http_basic".into(),
+        username: "alice".into(),
+        password_or_token: "secret".into(),
+        cookies: None,
+        custom_headers: HashMap::new(),
+        enabled: true,
+    }];
+    let mut headers = HashMap::new();
+    let mut cookies = None;
+
+    let credential_id = apply_site_credential(
+        "https://downloads.example.com/archive.zip",
+        &credentials,
+        &mut headers,
+        &mut cookies,
+    );
+
+    assert_eq!(credential_id.as_deref(), Some("basic-login"));
+    assert_eq!(
+        headers.get("Authorization").map(String::as_str),
+        Some("Basic YWxpY2U6c2VjcmV0")
+    );
+}
+
+#[test]
+fn test_saved_bearer_and_cookie_auth_preserve_explicit_values() {
+    let credentials = vec![
+        SiteCredential {
+            id: "bearer-login".into(),
+            host_pattern: "api.example.com".into(),
+            site_type: "bearer".into(),
+            username: String::new(),
+            password_or_token: "token-123".into(),
+            cookies: None,
+            custom_headers: HashMap::new(),
+            enabled: true,
+        },
+        SiteCredential {
+            id: "cookie-login".into(),
+            host_pattern: "files.example.com".into(),
+            site_type: "cookie".into(),
+            username: String::new(),
+            password_or_token: String::new(),
+            cookies: Some("session=saved".into()),
+            custom_headers: HashMap::new(),
+            enabled: true,
+        },
+    ];
+    let mut bearer_headers = HashMap::new();
+    let mut no_cookies = None;
+    apply_site_credential(
+        "https://api.example.com/v1/file",
+        &credentials,
+        &mut bearer_headers,
+        &mut no_cookies,
+    );
+    assert_eq!(
+        bearer_headers.get("Authorization").map(String::as_str),
+        Some("Bearer token-123")
+    );
+
+    let mut explicit_headers =
+        HashMap::from([("authorization".to_string(), "Bearer explicit".to_string())]);
+    let mut explicit_cookies = Some("session=browser".to_string());
+    apply_site_credential(
+        "https://files.example.com/archive.zip",
+        &credentials,
+        &mut explicit_headers,
+        &mut explicit_cookies,
+    );
+    assert_eq!(
+        explicit_headers.get("authorization").map(String::as_str),
+        Some("Bearer explicit")
+    );
+    assert_eq!(explicit_cookies.as_deref(), Some("session=browser"));
+}
+
+#[test]
 fn test_ftp_url_embedded_credentials() {
     let url_str = "ftp://customuser:mysecretpass@ftp.example.com:2121/data/archive.zip";
     let parsed = url::Url::parse(url_str).expect("Valid FTP URL");

@@ -49,6 +49,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [referer, setReferer] = useState("");
   const [userAgent, setUserAgent] = useState("");
   const [headersText, setHeadersText] = useState("");
+  const [validationError, setValidationError] = useState("");
   const [sequentialTorrent, setSequentialTorrent] = useState(true);
 
   // Torrent file metadata state (uTorrent / Vuze parity)
@@ -70,8 +71,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
             trimmed.startsWith("https://") ||
             trimmed.startsWith("magnet:?") ||
             trimmed.startsWith("ftp://") ||
-            trimmed.startsWith("ftps://") ||
-            trimmed.startsWith("sftp://")
+            trimmed.startsWith("ftps://")
           ) {
             setUrl(trimmed);
             if (trimmed.startsWith("magnet:?")) {
@@ -237,6 +237,11 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const handleSubmit = (startImmediately: boolean) => {
     const finalUrl = url.trim() || (torrentMeta ? `magnet:?xt=urn:btih:${torrentMeta.info_hash}` : "");
     if (!finalUrl && !torrentMeta) return;
+    if (finalUrl.toLowerCase().startsWith("sftp://")) {
+      setValidationError("SFTP is not supported yet. Use an FTP/FTPS, HTTP(S), or magnet link.");
+      return;
+    }
+    setValidationError("");
 
     const customHeaders = Object.fromEntries(
       headersText
@@ -481,10 +486,14 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                 <input
                   type="text"
                   value={url}
-                  onChange={(e) => setUrl(e.target.value)}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    setValidationError("");
+                  }}
                   placeholder="https://... or ftp://username:password@host/file.zip or magnet:?xt=..."
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-xs focus:border-cyan-400 focus:outline-none"
                 />
+                {validationError && <p className="mt-1 text-xs text-rose-300">{validationError}</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

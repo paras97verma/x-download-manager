@@ -1,4 +1,4 @@
-//! Multi-Threaded Segmented HTTP/HTTPS Download Engine (XDM Architecture)
+//! Multi-Threaded Segmented HTTP/HTTPS Download Engine (ByteX Architecture)
 //! Supports:
 //! - Capability probe (`HEAD` & `GET Range: bytes=0-0`)
 //! - Concurrent N-thread byte range chunking (up to 32 simultaneous threads)

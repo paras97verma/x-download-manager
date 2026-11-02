@@ -1,7 +1,7 @@
-//! FTP / FTPS / SFTP & Authenticated File-Sharing Resolver (Usersdrive, 1fichier, MediaFire, etc.)
+//! FTP / FTPS & Authenticated File-Sharing Resolver (Usersdrive, 1fichier, MediaFire, etc.)
 //! Supports:
 //! - Anonymous & Authenticated FTP/FTPS transfers with `REST` byte-offset resumption
-//! - Automatic Site Credential matching from XDM's Site Logins Vault (`*.usersdrive.com`, etc.)
+//! - Automatic Site Credential matching from ByteX's saved site logins (`*.usersdrive.com`, etc.)
 //! - Usersdrive (`https://usersdrive.com/<id>.html`) 2-step form/cookie resolution and direct CDN extraction
 //! - Cookie, Bearer Token, and Basic Auth injection
 
@@ -42,6 +42,71 @@ pub fn match_site_credential<'a>(
             host == pat
         }
     })
+}
+
+/// Applies a matching saved site login to a new download. Browser-provided
+/// cookies and explicitly supplied headers take precedence over saved values.
+pub fn apply_site_credential(
+    url: &str,
+    credentials: &[SiteCredential],
+    headers: &mut std::collections::HashMap<String, String>,
+    cookies: &mut Option<String>,
+) -> Option<String> {
+    let credential = match_site_credential(url, credentials)?;
+
+    for (name, value) in &credential.custom_headers {
+        if !headers.keys().any(|key| key.eq_ignore_ascii_case(name)) {
+            headers.insert(name.clone(), value.clone());
+        }
+    }
+
+    if cookies.is_none() {
+        *cookies = credential.cookies.clone();
+        if cookies.is_none()
+            && credential.site_type == "cookie"
+            && !credential.password_or_token.is_empty()
+        {
+            *cookies = Some(credential.password_or_token.clone());
+        }
+    }
+
+    match credential.site_type.as_str() {
+        "http_basic"
+            if !headers
+                .keys()
+                .any(|key| key.eq_ignore_ascii_case("Authorization")) =>
+        {
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(format!(
+                "{}:{}",
+                credential.username, credential.password_or_token
+            ));
+            headers.insert("Authorization".to_string(), format!("Basic {encoded}"));
+        }
+        "bearer"
+            if !headers
+                .keys()
+                .any(|key| key.eq_ignore_ascii_case("Authorization")) =>
+        {
+            let token = credential.password_or_token.trim();
+            let value = if token
+                .get(..7)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Bearer "))
+            {
+                token.to_string()
+            } else {
+                format!("Bearer {token}")
+            };
+            headers.insert("Authorization".to_string(), value);
+        }
+        "ftp" => {
+            // FTP credentials are resolved directly by the FTP worker from the
+            // same saved entry, so they never need to be copied into HTTP headers.
+        }
+        _ => {}
+    }
+
+    Some(credential.id.clone())
 }
 
 /// Resolves Usersdrive (`https://usersdrive.com/<code>.html`) or other XFileSharing-based file hosts
@@ -245,7 +310,7 @@ pub async fn download_via_ftp(
     } else if let Some(c) = matched_cred {
         c.password_or_token.clone()
     } else {
-        "anonymous@xdm.local".to_string()
+        "anonymous@bytex.local".to_string()
     };
 
     let mut ftp_stream = AsyncRustlsFtpStream::connect(format!("{}:{}", host, port))
@@ -348,7 +413,7 @@ pub async fn execute_ftp_download(
     } else if let Some(c) = matched_cred {
         c.password_or_token.clone()
     } else {
-        "anonymous@xdm.local".to_string()
+        "anonymous@bytex.local".to_string()
     };
 
     // Attempt connection

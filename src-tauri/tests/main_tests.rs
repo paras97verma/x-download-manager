@@ -13,5 +13,5 @@ fn test_app_version_string() {
 #[test]
 fn test_app_binary_name() {
     let pkg_name = env!("CARGO_PKG_NAME");
-    assert_eq!(pkg_name, "x-download-manager");
+    assert_eq!(pkg_name, "bytex-download-manager");
 }

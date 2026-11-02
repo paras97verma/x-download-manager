@@ -75,6 +75,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newCookies, setNewCookies] = useState("");
+  const usesFileHostCookies = ["usersdrive", "1fichier", "mediafire"].includes(newSiteType);
 
   const isMac =
     typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
@@ -194,8 +195,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       id: `cred-${Date.now()}`,
       host_pattern: newHostPattern.trim(),
       site_type: newSiteType,
-      username: newUsername.trim(),
-      password_or_token: newPassword,
+      username: usesFileHostCookies ? "" : newUsername.trim(),
+      password_or_token: usesFileHostCookies ? "" : newPassword,
       cookies: newCookies.trim() || null,
       custom_headers: {},
       enabled: true,
@@ -576,15 +577,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
 
-            {/* Site Logins & Auth Vault */}
+            {/* Site Logins & Auth */}
             {activeTab === "logins" && (
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-white">
-                  Site Logins Vault (Usersdrive, 1fichier, MediaFire, FTP/SFTP, Basic & Bearer Auth)
+                  Saved Site Logins (Usersdrive, 1fichier, MediaFire, FTP/FTPS, HTTP Basic, Bearer & Cookie Auth)
                 </h3>
                 <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
                   <div className="text-xs font-semibold text-slate-200">Add New Site Authentication:</div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="text-[11px] text-slate-400">Entries are applied automatically when a download URL matches this host. Save Preferences to keep changes.</div>
+                  <div className="text-[11px] text-amber-300">Credentials are stored in the local app settings file and are not encrypted by this feature.</div>
+                  {usesFileHostCookies && <div className="text-[11px] text-slate-300">These file hosts use saved or browser session cookies. ByteX does not sign in to file-host accounts or solve captchas.</div>}
+                  <div className={`grid ${usesFileHostCookies ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
                     <input
                       type="text"
                       value={newHostPattern}
@@ -599,28 +603,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       <option value="usersdrive">Usersdrive Resolver</option>
                       <option value="ftp">FTP / FTPS Stream</option>
-                      <option value="sftp">SFTP (SSH)</option>
                       <option value="1fichier">1fichier</option>
                       <option value="mediafire">MediaFire</option>
                       <option value="http_basic">HTTP Basic Auth</option>
                       <option value="bearer">Bearer Token</option>
                     </select>
-                    <input
+                    {!usesFileHostCookies && <input
                       type="text"
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
                       placeholder="Username / Account"
                       className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200"
-                    />
+                    />}
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <input
+                  <div className={`grid ${usesFileHostCookies ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
+                    {!usesFileHostCookies && <input
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Password or Token"
+                      placeholder={newSiteType === "bearer" ? "Bearer Token" : "Password"}
                       className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200"
-                    />
+                    />}
                     <input
                       type="text"
                       value={newCookies}
@@ -1044,7 +1047,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                    Native multi-threaded download accelerator, BitTorrent swarm client, FTP/SFTP stream worker, and automated cross-browser interceptor.
+                    Native multi-threaded download accelerator, BitTorrent swarm client, FTP/FTPS worker, and automated cross-browser interceptor.
                   </p>
                 </div>
               </div>

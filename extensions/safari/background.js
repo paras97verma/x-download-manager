@@ -9,9 +9,14 @@ const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
 const NATIVE_HOST_NAME = "com.peivee.xdm";
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 let state = {
   interceptEnabled: true,
-  bypassActive: false,
   minFileSizeKb: 256,
   interceptedExtensions: [
     "ZIP", "RAR", "7Z", "TAR", "GZ", "XZ", "EXE", "MSI", "DMG", "PKG",
@@ -24,7 +29,7 @@ let state = {
 // Periodically sync settings from running XDM Desktop App and record heartbeat
 async function syncWithDesktopApp() {
   try {
-    const res = await fetch(`${XDM_IPC_URL}/api/v1/status?browser=safari`);
+    const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=safari`, {}, 2000);
     if (res.ok) {
       const cfg = await res.json();
       state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
@@ -74,7 +79,6 @@ if (runtimeAPI.contextMenus) {
 // Listen for messages from content script or popup
 runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "XDM_BYPASS_STATE") {
-    state.bypassActive = Boolean(msg.bypass);
     sendResponse({ received: true });
     return false;
   }
@@ -179,11 +183,11 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
 
   // 1. Try fast Localhost HTTP Bridge (http://127.0.0.1:45678)
   try {
-    const resp = await fetch(`${XDM_IPC_URL}/api/v1/intercept`, {
+    const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/intercept`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    });
+    }, 5000);
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
       return result?.accepted === true && result?.download_id
@@ -226,7 +230,7 @@ function notifyCaptureResult(tabId, success, filename, duplicate = false) {
   const titleOptions = {
     title: success
       ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
-      : `ByteX handoff failed; browser download continues: ${transfer.filename}`,
+      : `ByteX handoff failed: ${transfer.filename}`,
   };
   if (Number.isInteger(tabId) && tabId >= 0) {
     badgeOptions.tabId = tabId;

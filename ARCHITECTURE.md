@@ -2,7 +2,7 @@
 
 ## 1. Executive Overview
 
-**ByteX Download Manager** is a native, cross-platform desktop download accelerator and manager for **macOS, Windows, and Linux**, built in **Rust** (using **Tauri v2**, **Tokio**, **Reqwest**, **Librqbit / Custom BitTorrent Engine**, and **SuppaFTP / Async SSH2**) paired with a high-performance **React 18 + TypeScript + Tailwind CSS** desktop interface inspired by **Internet Download Manager (IDM)** and **Free Download Manager (FDM)**.
+**ByteX Download Manager** is a native, cross-platform desktop download accelerator and manager for **macOS, Windows, and Linux**, built in **Rust** (using **Tauri v2**, **Tokio**, **Reqwest**, **Librqbit / Custom BitTorrent Engine**, and **SuppaFTP**) paired with a high-performance **React 18 + TypeScript + Tailwind CSS** desktop interface inspired by **Internet Download Manager (IDM)** and **Free Download Manager (FDM)**.
 
 The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Firefox, and Safari**, a **Native Messaging Host binary (`xdm-native-host`)**, and an embedded **Local IPC/HTTP Bridge (`127.0.0.1:45678`)**. Upon installation or first launch, ByteX detects installed browsers and registers the Native Messaging manifests and browser extension policies. Users can manage browser integration directly from the app.
 
@@ -25,7 +25,7 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
                                           |
                                           v
 +-----------------------------------------------------------------------------------+
-|                     X DOWNLOAD MANAGER — RUST CORE (`src-tauri`)                  |
+|                      BYTEX DOWNLOAD MANAGER — RUST CORE (`src-tauri`)             |
 |                                                                                   |
 |  +-----------------------------------------------------------------------------+  |
 |  | IPC & Native Bridge Layer (`src-tauri/src/browser/`)                        |  |
@@ -35,9 +35,9 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 |  +-----------------------------------------------------------------------------+  |
 |                                                                                   |
 |  +------------------------+ +------------------------+ +-----------------------+  |
-|  | Multi-Thread HTTP/S    | | BitTorrent & Magnet    | | FTP/SFTP & File Host  |  |
+|  | Multi-Thread HTTP/S    | | BitTorrent & Magnet    | | FTP/FTPS & File Host  |  |
 |  | Engine (`engine/http`) | | Engine (`engine/bt`)   | | Auth (`engine/ftp`)   |  |
-|  | - Dynamic Range Chunks | | - .torrent & magnet:?  | | - FTP / FTPS / SFTP   |  |
+|  | - Dynamic Range Chunks | | - .torrent & magnet:?  | | - FTP / FTPS   |  |
 |  | - Up to 32 Threads     | | - DHT, PEX, Trackers   | | - Usersdrive, Mega,   |  |
 |  | - Dynamic Work Stealing| | - Sequential Streaming | |   1fichier, MediaFire |  |
 |  | - Pause/Resume State   | | - Seed Ratio Limits    | | - Cookie & Session    |  |
@@ -86,19 +86,19 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 
 * **Granular Control**: Selective file priority within multi-file torrents, sequential piece downloading (for media previewing), configurable listening port, UPnP/NAT-PMP port mapping, encryption mode, and automatic seeding cutoff at target share ratio or seeding time.
 
-### 3.3 FTP/FTPS/SFTP & Authenticated File-Sharing Resolver (`src-tauri/src/engine/ftp_auth.rs`)
+### 3.3 FTP/FTPS & Authenticated File-Sharing Resolver (`src-tauri/src/engine/ftp_auth.rs`)
 
-* **FTP & SFTP Protocol Handler**: Supports passive/active FTP, explicit/implicit FTPS (TLS), and SSH2 SFTP transfers with directory traversal and `REST` byte-offset resumption.
+* **FTP Protocol Handler**: Supports FTP/FTPS transfers with byte-offset resumption. SFTP is not supported by this build.
 
 * **Authenticated File-Sharing Resolver**:
 
-  * **Usersdrive (`usersdrive.com`)**, **1fichier**, **MediaFire**, **Pixeldrain**, **GoFile**, and **Generic Form/Cookie/Basic/Bearer Auth** sites.
+  * **Usersdrive (`usersdrive.com`)**, **1fichier**, **MediaFire**, and generic HTTP Basic/Bearer/Cookie authentication.
 
   * Works in two ways:
 
-    1. **Browser Session Passthrough**: When a user initiates a download in Chrome/Firefox/Safari after logging into Usersdrive or solving a gate, the ByteX browser extension captures the exact `Cookie`, `Referer`, `User-Agent`, and `Authorization` headers and hands them directly to ByteX's worker threads.
+    1. **Browser Session Passthrough**: When a user initiates a download in Chromium, Firefox, or Safari after logging into a site or solving a gate, the ByteX browser extension captures the applicable browser cookies, `Referer`, and `User-Agent` and hands them to ByteX's worker threads.
 
-    2. **Built-in Site Login Vault (`SiteCredential`)**: Users can store site patterns (e.g., `*.usersdrive.com`, `ftp.myserver.org`) with username/password, session cookies, or API tokens in ByteX's Site Logins manager. For Usersdrive links (`https://usersdrive.com/<id>.html`), the resolver parses form parameters (`op=download2`, `id`, `rand`, `referer`, `method_free`/`method_premium`) and extracts the direct CDN stream URL automatically.
+    2. **Built-in Saved Site Logins (`SiteCredential`)**: Users can store host patterns with HTTP Basic credentials, Bearer tokens, cookies, or FTP/FTPS credentials. Matching entries are applied automatically when a download is added. For Usersdrive links (`https://usersdrive.com/<id>.html`), the resolver can use saved or browser-forwarded cookies and parse the available XFileSharing form fields to extract a direct CDN URL.
 
 ### 3.4 Cross-Browser Extension Suite & Automatic Installer (`src-tauri/src/browser/mod.rs` & `extensions/`)
 
@@ -178,7 +178,7 @@ x-download-manager/
 │       │   ├── mod.rs                   # Unified DownloadManager orchestrator
 │       │   ├── http.rs                  # Multi-threaded HTTP/S segmented downloader
 │       │   ├── torrent.rs               # BitTorrent & Magnet protocol engine
-│       │   └── ftp_auth.rs              # FTP/FTPS/SFTP & Usersdrive/File-host resolver
+│       │   └── ftp_auth.rs              # FTP/FTPS & Usersdrive/File-host resolver
 │       ├── browser/
 │       │   ├── mod.rs                   # Browser detection, extension installer, Native Host
 │       │   └── ipc_server.rs            # Localhost 127.0.0.1:45678 HTTP/WS server

@@ -207,7 +207,7 @@ export async function apiStartQueueNow(queueId: string): Promise<number> {
 
 export async function apiPickDirectory(): Promise<string | null> {
   if (!isTauriRuntime()) {
-    return "~/Downloads/XDM";
+    return "~/Downloads/ByteX";
   }
   try {
     return await invoke<string | null>("pick_directory");
@@ -333,8 +333,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   show_detailed_segment_dialog: true,
   play_sound_on_complete: true,
   prevent_system_sleep: true,
-  default_download_dir: "~/Downloads/XDM",
-  temp_segment_dir: "~/Downloads/XDM/.xdm_temp",
+  default_download_dir: "~/Downloads/ByteX",
+  temp_segment_dir: "~/Downloads/ByteX/.bytex_temp",
   duplicate_file_action: "auto_rename",
   auto_verify_checksum: true,
   antivirus_command: "",
@@ -348,7 +348,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   retry_delay_seconds: 5,
   connection_timeout_seconds: 30,
   custom_user_agent:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 XDM/1.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 ByteX/1.0",
 
   speed_limiter_enabled: false,
   global_max_download_kbps: 20480,
@@ -464,7 +464,7 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     extension_enabled: true,
     native_host_registered: false,
     is_connected: false,
-    manifest_path: "~/Library/Application Support/XDownloadManager/SafariExtension/com.peivee.xdm.json",
+    manifest_path: "~/Library/Application Support/ByteXDownloadManager/SafariExtension/com.peivee.xdm.json",
     extension_bundle_path: "extensions/safari (Safari Web Extension)",
     status_message: "Detecting...",
   },
