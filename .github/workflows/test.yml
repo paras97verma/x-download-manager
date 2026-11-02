@@ -4,6 +4,22 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - '.github/workflows/**'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'extensions/**'
+      - 'scripts/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'vite.config.*'
+      - 'tsconfig*.json'
+      - 'postcss.config.*'
+      - 'tailwind.config.*'
   workflow_dispatch:
 
 concurrency:
