@@ -361,6 +361,35 @@ pub fn dirs_default_download_path() -> String {
     "~/Downloads/ByteX".to_string()
 }
 
+fn dirs_legacy_default_download_path() -> Option<PathBuf> {
+    if let Some(user_dirs) = directories::UserDirs::new() {
+        if let Some(downloads) = user_dirs.download_dir() {
+            return Some(downloads.join("XDM"));
+        }
+    }
+    directories::BaseDirs::new().map(|base_dirs| base_dirs.home_dir().join("Downloads/XDM"))
+}
+
+pub fn migrate_legacy_default_download_path(
+    settings: &mut AppSettings,
+    legacy: &std::path::Path,
+    current: &std::path::Path,
+) -> bool {
+    let legacy = resolve_path(&legacy.to_string_lossy());
+    if resolve_path(&settings.default_download_dir) != legacy {
+        return false;
+    }
+
+    let old_temp_dir = legacy.join(".xdm_temp");
+    let current = resolve_path(&current.to_string_lossy());
+    let old_temp = resolve_path(&settings.temp_segment_dir);
+    settings.default_download_dir = current.to_string_lossy().to_string();
+    if old_temp == old_temp_dir {
+        settings.temp_segment_dir = current.join(".bytex_temp").to_string_lossy().to_string();
+    }
+    true
+}
+
 pub fn ensure_directories_exist(settings: &AppSettings) {
     let dl_dir = resolve_path(&settings.default_download_dir);
     if let Err(e) = fs::create_dir_all(&dl_dir) {
@@ -552,27 +581,38 @@ impl ConfigManager {
             let _ = self.save(&settings);
         }
 
-        // If settings had a default_download_dir ending with pure "Downloads"
-        // (like on initial runs where dirs_default_download_path returned ~/Downloads without /ByteX),
-        // migrate it to the current branded default while preserving all other saved paths.
-        let resolved = resolve_path(&settings.default_download_dir);
-        let path_str = resolved.to_string_lossy();
-        if path_str.ends_with("/Downloads") || path_str.ends_with("\\Downloads") {
-            settings.default_download_dir = resolved.join("ByteX").to_string_lossy().to_string();
-            settings.temp_segment_dir = format!("{}/.bytex_temp", settings.default_download_dir);
+        let legacy_default = dirs_legacy_default_download_path();
+        let current_default = PathBuf::from(dirs_default_download_path());
+        let migrated_legacy_default = legacy_default.as_ref().is_some_and(|legacy| {
+            migrate_legacy_default_download_path(&mut settings, legacy, &current_default)
+        });
+
+        // Migrate old installations that stored Downloads directly, while
+        // leaving any explicitly selected custom download path untouched.
+        if migrated_legacy_default {
             let _ = self.save(&settings);
-        } else if settings.default_download_dir.starts_with("~/") {
-            settings.default_download_dir = resolved.to_string_lossy().to_string();
-            let temp_dir_name = if settings.default_download_dir.ends_with("/XDM")
-                || settings.default_download_dir.ends_with("\\XDM")
-            {
-                ".xdm_temp"
-            } else {
-                ".bytex_temp"
-            };
-            settings.temp_segment_dir =
-                format!("{}/{}", settings.default_download_dir, temp_dir_name);
-            let _ = self.save(&settings);
+        } else {
+            let resolved = resolve_path(&settings.default_download_dir);
+            let path_str = resolved.to_string_lossy();
+            if path_str.ends_with("/Downloads") || path_str.ends_with("\\Downloads") {
+                settings.default_download_dir =
+                    resolved.join("ByteX").to_string_lossy().to_string();
+                settings.temp_segment_dir =
+                    format!("{}/.bytex_temp", settings.default_download_dir);
+                let _ = self.save(&settings);
+            } else if settings.default_download_dir.starts_with("~/") {
+                settings.default_download_dir = resolved.to_string_lossy().to_string();
+                let temp_dir_name = if settings.default_download_dir.ends_with("/XDM")
+                    || settings.default_download_dir.ends_with("\\XDM")
+                {
+                    ".xdm_temp"
+                } else {
+                    ".bytex_temp"
+                };
+                settings.temp_segment_dir =
+                    format!("{}/{}", settings.default_download_dir, temp_dir_name);
+                let _ = self.save(&settings);
+            }
         }
 
         // Guarantee that the download folder and all subfolders exist immediately

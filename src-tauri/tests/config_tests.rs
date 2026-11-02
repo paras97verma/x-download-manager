@@ -17,6 +17,46 @@ fn test_dirs_default_download_path_has_bytex() {
 }
 
 #[test]
+fn test_legacy_xdm_default_download_path_migrates_to_bytex() {
+    let root = std::env::temp_dir().join("bytex_default_path_migration");
+    let legacy = root.join("Downloads/XDM");
+    let current = root.join("Downloads/ByteX");
+    let mut settings = AppSettings {
+        default_download_dir: legacy.to_string_lossy().to_string(),
+        temp_segment_dir: legacy.join(".xdm_temp").to_string_lossy().to_string(),
+        ..Default::default()
+    };
+
+    assert!(migrate_legacy_default_download_path(
+        &mut settings,
+        &legacy,
+        &current
+    ));
+    assert_eq!(settings.default_download_dir, current.to_string_lossy());
+    assert_eq!(
+        settings.temp_segment_dir,
+        current.join(".bytex_temp").to_string_lossy()
+    );
+}
+
+#[test]
+fn test_custom_download_path_with_xdm_name_is_not_migrated() {
+    let root = std::env::temp_dir().join("custom_XDM_folder");
+    let current = std::env::temp_dir().join("ByteX");
+    let mut settings = AppSettings {
+        default_download_dir: root.to_string_lossy().to_string(),
+        ..Default::default()
+    };
+
+    assert!(!migrate_legacy_default_download_path(
+        &mut settings,
+        &root.join("Downloads/XDM"),
+        &current
+    ));
+    assert_eq!(settings.default_download_dir, root.to_string_lossy());
+}
+
+#[test]
 fn test_ensure_directories_exist() {
     let temp_dir = std::env::temp_dir().join("xdm_test_config");
     let settings = AppSettings {
