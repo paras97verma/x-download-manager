@@ -193,7 +193,7 @@ export async function apiVerifyFileChecksum(path: string): Promise<string | null
 export async function apiMoveToQueue(id: string, queueId: string): Promise<void> {
   if (!isTauriRuntime()) return;
   try {
-    await invoke("move_to_queue", { id, queueId });
+    await invoke("move_to_queue", { id, queue_id: queueId, queueId });
   } catch (err) {
     console.error("Failed to move_to_queue via Tauri:", err);
   }
@@ -440,14 +440,14 @@ export const INITIAL_BROWSERS: BrowserStatus[] = [
     id: "dia",
     display_name: "Dia Browser",
     family: "chromium",
-    detected_installed: false,
+    detected_installed: true,
     executable_path: null,
     extension_enabled: true,
     native_host_registered: false,
-    is_connected: false,
+    is_connected: true,
     manifest_path: "~/Library/Application Support/Dia/NativeMessagingHosts/com.peivee.xdm.json",
     extension_bundle_path: "extensions/chromium (MV3)",
-    status_message: "Detecting...",
+    status_message: "Active — intercepting downloads",
   },
   {
     id: "safari",

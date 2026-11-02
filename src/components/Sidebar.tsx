@@ -163,19 +163,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Native Bridge Telemetry Card */}
-      <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-400 font-medium">Native Bridge</span>
-          <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            127.0.0.1:45678
-          </span>
-        </div>
-        <div className="text-[10px] text-slate-400 leading-relaxed">
-          Intercepting Chromium, Firefox & Safari downloads + Usersdrive/FTP Auth.
-        </div>
-      </div>
     </aside>
   );
 };

@@ -294,15 +294,16 @@ if (runtimeAPI.downloads) {
 }
 
 function detectBrowserFamily() {
-  const ua = navigator.userAgent;
-  if (ua.includes("Dia/")) return "Dia";
+  const ua = navigator.userAgent || "";
+  const appVer = navigator.appVersion || "";
+  if (/dia/i.test(ua) || /dia/i.test(appVer) || (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.some(b => /dia/i.test(b.brand)))) return "Dia";
   if (ua.includes("Arc/")) return "Arc";
   if (ua.includes("OPR/") || ua.includes("Opera")) return "Opera";
-  if (ua.includes("Brave")) return "Brave";
+  if (ua.includes("Brave") || navigator.brave) return "Brave";
   if (ua.includes("Vivaldi")) return "Vivaldi";
   if (ua.includes("Edg/")) return "Edge";
   if (ua.includes("Firefox")) return "Firefox";
   if (ua.includes("Zen")) return "Zen";
   if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari";
-  return "Chrome";
+  return "Dia";
 }

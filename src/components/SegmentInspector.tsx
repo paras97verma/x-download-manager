@@ -1,25 +1,25 @@
 import React, { useState } from "react";
-import { Cpu, Magnet, Terminal, ShieldCheck } from "lucide-react";
+import { Cpu, Magnet, Terminal, ShieldCheck, Activity, FileSearch } from "lucide-react";
 import { DownloadItem } from "../types/xdm";
-import { formatBytes, formatSpeed } from "../services/tauriBridge";
+import { formatBytes, formatSpeed, formatEta } from "../services/tauriBridge";
 
 interface SegmentInspectorProps {
   item: DownloadItem | null;
 }
 
 export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
-  const [activeTab, setActiveTab] = useState<"segments" | "torrent" | "log">("segments");
+  const [activeTab, setActiveTab] = useState<"segments" | "torrent" | "log" | "network" | "fileinfo">("segments");
 
   if (!item) {
     return (
-      <div className="h-60 bg-[#111827] border-t border-slate-800 flex items-center justify-center text-xs text-slate-500">
+      <div className="h-80 bg-[#111827] border-t border-slate-800 flex items-center justify-center text-xs text-slate-500">
         Select a download above to inspect multi-threaded segments, BitTorrent peers, or FTP/Auth handshake logs.
       </div>
     );
   }
 
   return (
-    <section className="h-64 bg-[#111827] border-t border-slate-800 flex flex-col shrink-0 select-none">
+    <section className="h-80 bg-[#111827] border-t border-slate-800 flex flex-col shrink-0 select-none">
       {/* Header Bar */}
       <div className="px-4 py-2 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
         <div className="flex items-center gap-2">
@@ -59,6 +59,30 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
           >
             <Terminal className="w-3.5 h-3.5" />
             Protocol & Auth Log ({item.transfer_log.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab("network")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition ${
+              activeTab === "network"
+                ? "bg-teal-600 text-white"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            Network & Speed
+          </button>
+
+          <button
+            onClick={() => setActiveTab("fileinfo")}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition ${
+              activeTab === "fileinfo"
+                ? "bg-purple-600 text-white"
+                : "text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            <FileSearch className="w-3.5 h-3.5" />
+            File Info
           </button>
         </div>
 
@@ -211,6 +235,121 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
                 {line}
               </div>
             ))}
+          </div>
+        )}
+
+        {activeTab === "network" && (() => {
+          const pct = item.total_bytes > 0 ? Math.min(100, (item.downloaded_bytes / item.total_bytes) * 100) : 0;
+          const maxSpeed = item.segments.length > 0
+            ? Math.max(...item.segments.map((s) => s.speed_bps))
+            : item.speed_bps;
+          return (
+            <div className="space-y-3">
+              {/* Per-segment speed bars */}
+              {item.segments.length > 0 && (
+                <div>
+                  <div className="text-[11px] text-slate-400 mb-1.5">Download Speed per Segment</div>
+                  <div className="space-y-1">
+                    {item.segments.map((seg) => {
+                      const barPct = maxSpeed > 0 ? Math.min(100, (seg.speed_bps / maxSpeed) * 100) : 0;
+                      return (
+                        <div key={seg.id} className="flex items-center gap-2 text-[11px]">
+                          <span className="text-slate-400 w-14 shrink-0">Thread #{seg.id}</span>
+                          <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-teal-500 rounded-full transition-all"
+                              style={{ width: `${barPct}%` }}
+                            />
+                          </div>
+                          <span className="text-teal-400 font-mono w-20 text-right shrink-0">
+                            {seg.speed_bps > 0 ? formatSpeed(seg.speed_bps) : seg.status}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                  <div className="text-slate-400 mb-0.5">Downloaded</div>
+                  <div className="text-slate-100 font-semibold">{formatBytes(item.downloaded_bytes)}</div>
+                  <div className="text-slate-500 text-[10px]">of {formatBytes(item.total_bytes)} ({pct.toFixed(1)}%)</div>
+                </div>
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                  <div className="text-slate-400 mb-0.5">ETA</div>
+                  <div className="text-emerald-400 font-semibold font-mono">{formatEta(item.eta_seconds)}</div>
+                </div>
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                  <div className="text-slate-400 mb-0.5">Resumable</div>
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${item.resumable ? "bg-emerald-500/20 text-emerald-400" : "bg-rose-500/20 text-rose-400"}`}>
+                    {item.resumable ? "Yes" : "No"}
+                  </span>
+                </div>
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                  <div className="text-slate-400 mb-0.5">Cookies</div>
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${item.cookies ? "bg-amber-500/20 text-amber-400" : "bg-slate-700 text-slate-400"}`}>
+                    {item.cookies ? "Yes" : "No"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                  <div className="text-slate-400 mb-0.5">Source Browser / Referer</div>
+                  <div className="text-slate-200 font-mono truncate">{item.source_browser || "—"}</div>
+                </div>
+                <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                  <div className="text-slate-400 mb-0.5">Custom Headers</div>
+                  <div className="text-slate-200">{Object.keys(item.custom_headers || {}).length} header(s)</div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {activeTab === "fileinfo" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+            {[
+              { label: "Filename", value: item.filename },
+              { label: "Category", value: item.category },
+              { label: "Queue ID", value: item.queue_id },
+              { label: "Protocol", value: (
+                <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-semibold uppercase">
+                  {item.protocol}
+                </span>
+              )},
+              { label: "Threads", value: `${item.threads_count}` },
+              { label: "Total Segments", value: `${item.segments.length}` },
+              { label: "Created At", value: item.created_at ? new Date(item.created_at).toLocaleString() : "—" },
+              { label: "Completed At", value: (item as any).completed_at ? new Date((item as any).completed_at).toLocaleString() : "—" },
+            ].map(({ label, value }) => (
+              <div key={label} className="bg-slate-900/80 border border-slate-800 rounded-lg p-2">
+                <div className="text-slate-400 mb-0.5">{label}</div>
+                <div className="text-slate-200 truncate">{value}</div>
+              </div>
+            ))}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2 md:col-span-2">
+              <div className="text-slate-400 mb-0.5 flex items-center gap-1">
+                Save Path
+                <button
+                  onClick={() => navigator.clipboard?.writeText(item.save_path)}
+                  className="ml-1 px-1 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px]"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="text-slate-200 font-mono truncate">{item.save_path}</div>
+            </div>
+            {item.checksum_sha256 && (
+              <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2 md:col-span-2">
+                <div className="text-slate-400 mb-0.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" /> SHA-256 Checksum
+                </div>
+                <div className="text-emerald-400 font-mono text-[10px] break-all">{item.checksum_sha256}</div>
+              </div>
+            )}
           </div>
         )}
       </div>

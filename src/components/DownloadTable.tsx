@@ -19,8 +19,9 @@ import {
   CalendarClock,
   Info,
   ChevronRight,
+  Gauge,
 } from "lucide-react";
-import { DownloadItem } from "../types/xdm";
+import { DownloadItem, AppSettings } from "../types/xdm";
 import { formatBytes, formatEta, formatSpeed } from "../services/tauriBridge";
 
 interface DownloadTableProps {
@@ -36,6 +37,8 @@ interface DownloadTableProps {
   onOpenFile: (path: string) => void;
   onShowInFolder: (path: string) => void;
   onDeleteDownload: (id: string, deleteFile: boolean) => void;
+  settings?: AppSettings;
+  onToggleSpeedLimiter?: () => void;
 }
 
 interface ContextMenuState {
@@ -57,6 +60,8 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   onOpenFile,
   onShowInFolder,
   onDeleteDownload,
+  settings,
+  onToggleSpeedLimiter,
 }) => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showQueueSubmenu, setShowQueueSubmenu] = useState(false);
@@ -412,49 +417,69 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
 
           <div className="h-px bg-slate-700/60 my-1" />
 
-          {/* Move to Queue submenu trigger */}
-          <div
-            className="relative"
-            onMouseEnter={() => setShowQueueSubmenu(true)}
-            onMouseLeave={() => setShowQueueSubmenu(false)}
-          >
+          {/* Speed Limit / Uncapped Toggle */}
+          {onToggleSpeedLimiter && (
             <button
-              type="button"
+              onClick={() => {
+                onToggleSpeedLimiter();
+                setContextMenu(null);
+              }}
               className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              title="Toggle Speed Limit"
             >
               <span className="flex items-center gap-2">
-                <Server className="w-3.5 h-3.5 text-purple-400" />
-                Move to Queue
+                <Gauge className="w-3.5 h-3.5 text-amber-400" />
+                Speed Limit
               </span>
-              <ChevronRight className="w-3 h-3 text-slate-400" />
+              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${
+                settings?.speed_limiter_enabled
+                  ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                  : "bg-slate-800 border-slate-700 text-slate-300"
+              }`}>
+                {settings?.speed_limiter_enabled
+                  ? `${((settings?.global_max_download_kbps || 10240) / 1024).toFixed(0)} MB/s`
+                  : "Uncapped"}
+              </span>
             </button>
+          )}
 
-            {showQueueSubmenu && (
-              <div className="absolute left-full top-0 ml-1 w-48 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs">
-                <button
-                  onClick={() => {
-                    onMoveToQueue(contextMenu.item.id, "main-queue");
-                    setContextMenu(null);
-                  }}
-                  className={`w-full px-3 py-1.5 text-left hover:bg-blue-600 hover:text-white ${
-                    contextMenu.item.queue_id === "main-queue" ? "text-indigo-400 font-semibold" : ""
-                  }`}
-                >
-                  Main Download Queue
-                </button>
-                <button
-                  onClick={() => {
-                    onMoveToQueue(contextMenu.item.id, "night-queue");
-                    setContextMenu(null);
-                  }}
-                  className={`w-full px-3 py-1.5 text-left hover:bg-blue-600 hover:text-white ${
-                    contextMenu.item.queue_id === "night-queue" ? "text-indigo-400 font-semibold" : ""
-                  }`}
-                >
-                  Night Off-Peak Queue
-                </button>
-              </div>
-            )}
+          <div className="h-px bg-slate-700/60 my-1" />
+
+          {/* Move to Queue - Direct & Simplified */}
+          <div className="px-3 py-1.5 bg-slate-900/60 border-y border-slate-700/50">
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <Server className="w-3 h-3 text-purple-400" /> Move to Queue
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onMoveToQueue(contextMenu.item.id, "main-queue");
+                  setContextMenu(null);
+                }}
+                className={`flex-1 px-2 py-1 rounded text-[11px] font-medium text-center transition ${
+                  contextMenu.item.queue_id === "main-queue"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                {contextMenu.item.queue_id === "main-queue" ? "✓ Main Queue" : "Main Queue"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onMoveToQueue(contextMenu.item.id, "night-queue");
+                  setContextMenu(null);
+                }}
+                className={`flex-1 px-2 py-1 rounded text-[11px] font-medium text-center transition ${
+                  contextMenu.item.queue_id === "night-queue"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                }`}
+              >
+                {contextMenu.item.queue_id === "night-queue" ? "✓ Night Queue" : "Night Queue"}
+              </button>
+            </div>
           </div>
 
           {/* Schedule Download */}
