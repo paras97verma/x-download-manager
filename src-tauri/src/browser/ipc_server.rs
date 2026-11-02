@@ -79,45 +79,29 @@ fn resolve_browser_name(hint: &str, settings: &crate::config::AppSettings) -> St
     let matching_hint = SUPPORTED_BROWSERS
         .iter()
         .find(|(id, name, _)| id.eq_ignore_ascii_case(hint) || name.eq_ignore_ascii_case(hint));
-    let chromium_hint = matching_hint
-        .map(|(_, _, family)| *family == "chromium")
-        .unwrap_or_else(|| hint.to_lowercase().contains("chrom"));
-    if chromium_hint {
-        let detected: Vec<BrowserStatus> = detect_browsers(settings)
-            .into_iter()
-            .filter(|b| b.family == "chromium" && b.detected_installed)
-            .collect();
-        let candidates: Vec<(&str, &str)> = detected
-            .iter()
-            .map(|b| (b.id.as_str(), b.display_name.as_str()))
-            .collect();
-        return choose_chromium_name(hint, matching_hint.map(|(_, name, _)| *name), &candidates);
-    }
-    if let Some((id, _, family)) = matching_hint {
-        if *family == "firefox" && *id == "firefox" {
+    if let Some((id, name, family)) = matching_hint {
+        // The family engine IDs (chromium, firefox, safari) identify generic
+        // WebExtension builds. Resolve those to the installed browser when the
+        // family is unambiguous, while preserving explicit browser names.
+        if *id == *family {
             let detected: Vec<BrowserStatus> = detect_browsers(settings)
                 .into_iter()
-                .filter(|b| b.family == "firefox" && b.detected_installed)
+                .filter(|browser| browser.family == *family && browser.detected_installed)
                 .collect();
-            if detected.len() == 1 {
-                return detected[0].display_name.clone();
+            if let Some(name) = unique_installed_browser_name(true, &detected) {
+                return name;
             }
         }
+        return (*name).to_string();
     }
-    matching_hint
-        .map(|(_, name, _)| (*name).to_string())
-        .unwrap_or_else(|| hint.to_string())
+    hint.to_string()
 }
 
-fn choose_chromium_name(
-    hint: &str,
-    canonical_hint: Option<&str>,
-    installed: &[(&str, &str)],
-) -> String {
-    if installed.len() == 1 {
-        return installed[0].1.to_string();
-    }
-    canonical_hint.unwrap_or(hint).to_string()
+fn unique_installed_browser_name(
+    generic_engine: bool,
+    installed: &[BrowserStatus],
+) -> Option<String> {
+    (generic_engine && installed.len() == 1).then(|| installed[0].display_name.clone())
 }
 
 fn normalized_download_url(value: &str) -> String {
@@ -301,7 +285,7 @@ async fn handle_list_downloads(
 
 #[cfg(test)]
 mod tests {
-    use super::{choose_chromium_name, normalized_download_url, same_download_url};
+    use super::{normalized_download_url, same_download_url, unique_installed_browser_name};
 
     #[test]
     fn normalizes_equivalent_download_urls() {
@@ -329,18 +313,30 @@ mod tests {
     }
 
     #[test]
-    fn identifies_unique_installed_chromium_browser() {
-        assert_eq!(
-            choose_chromium_name("Chromium", None, &[("dia", "Dia Browser")]),
-            "Dia Browser"
-        );
-        assert_eq!(
-            choose_chromium_name(
-                "Chromium",
-                Some("Google Chrome"),
-                &[("chrome", "Google Chrome"), ("dia", "Dia Browser")]
-            ),
-            "Google Chrome"
-        );
+    fn generic_engine_names_resolve_to_a_unique_installed_browser_in_each_family() {
+        for (family, browser_name) in [
+            ("chromium", "Dia Browser"),
+            ("firefox", "Zen Browser"),
+            ("safari", "Orion Browser"),
+        ] {
+            let installed = [super::BrowserStatus {
+                id: "detected-browser".into(),
+                display_name: browser_name.into(),
+                family: family.into(),
+                detected_installed: true,
+                executable_path: None,
+                extension_enabled: true,
+                native_host_registered: true,
+                is_connected: false,
+                manifest_path: String::new(),
+                extension_bundle_path: String::new(),
+                status_message: String::new(),
+            }];
+            assert_eq!(
+                unique_installed_browser_name(true, &installed).as_deref(),
+                Some(browser_name)
+            );
+            assert_eq!(unique_installed_browser_name(false, &installed), None);
+        }
     }
 }
