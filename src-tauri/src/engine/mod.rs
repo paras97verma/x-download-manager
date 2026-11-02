@@ -184,7 +184,66 @@ fn restore_downloads(path: &Path) -> Vec<DownloadItem> {
     Vec::new()
 }
 
+fn restored_output_exists(download: &DownloadItem) -> bool {
+    let output = crate::config::resolve_path(&download.save_path);
+    if !output.exists() {
+        return false;
+    }
+
+    let Some(metadata) = download.torrent_meta.as_ref() else {
+        return true;
+    };
+    if !matches!(
+        &download.protocol,
+        DownloadProtocol::BitTorrent | DownloadProtocol::Magnet
+    ) {
+        return true;
+    }
+
+    let selected = download
+        .torrent_selected_files
+        .as_ref()
+        .map(|indices| indices.iter().copied().collect::<std::collections::HashSet<_>>());
+    let files = metadata
+        .files
+        .iter()
+        .filter(|file| file.priority != "skip")
+        .filter(|file| {
+            selected
+                .as_ref()
+                .map_or(true, |indices| indices.contains(&file.index))
+        })
+        .collect::<Vec<_>>();
+    if files.is_empty() {
+        return true;
+    }
+
+    if download.status == DownloadStatus::Completed {
+        return files.iter().all(|file| output.join(&file.path).exists());
+    }
+
+    let progressed_files = files
+        .iter()
+        .filter(|file| file.downloaded_bytes > 0)
+        .collect::<Vec<_>>();
+    if progressed_files.is_empty() {
+        files.iter().any(|file| output.join(&file.path).exists())
+    } else {
+        progressed_files
+            .iter()
+            .all(|file| output.join(&file.path).exists())
+    }
+}
+
 fn normalize_restored_downloads(mut downloads: Vec<DownloadItem>) -> Vec<DownloadItem> {
+    // Download history intentionally lives outside the app bundle so upgrades
+    // preserve valid transfers. Drop entries whose output has since been
+    // removed, otherwise a stale active record can be resumed after reinstall.
+    downloads.retain(|download| {
+        restored_output_exists(download)
+            || (download.status == DownloadStatus::Queued && download.downloaded_bytes == 0)
+    });
+
     for download in &mut downloads {
         if matches!(
             download.status,
@@ -795,12 +854,15 @@ mod persistence_tests {
     #[test]
     fn history_restores_active_downloads_as_resumable_paused_items() {
         let engine = DownloadEngine::new();
+        let output_dir = std::env::temp_dir()
+            .join(format!("bytex-history-output-{}", Uuid::new_v4()));
+        fs::create_dir_all(&output_dir).expect("output directory should be created");
         let mut item = engine.add_download(NewDownloadRequest {
             url: "magnet:?xt=urn:btih:0123456789012345678901234567890123456789&dn=resume-test"
                 .into(),
             filename: Some("resume-test".into()),
             category: Some("Torrents".into()),
-            save_path: Some("/downloads/resume-test".into()),
+            save_path: Some(output_dir.to_string_lossy().to_string()),
             threads_count: None,
             queue_id: Some("main-queue".into()),
             start_immediately: false,
@@ -815,6 +877,8 @@ mod persistence_tests {
             torrent_file_data: None,
             torrent_selected_files: Some(vec![0]),
         });
+        fs::write(&item.save_path, b"partial download")
+            .expect("partial output should be present for resume");
         item.status = DownloadStatus::Downloading;
         item.downloaded_bytes = 786_432;
         item.total_bytes = 2_000_000;
@@ -865,6 +929,7 @@ mod persistence_tests {
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("json.bak"));
+        let _ = fs::remove_dir_all(output_dir);
     }
 
     #[test]

@@ -66,17 +66,38 @@ setInterval(syncWithDesktopApp, 5000);
 
 function showHandoffIndicator(filename) {
   const action = runtimeAPI.action || runtimeAPI.browserAction;
-  if (!action) return;
   const label = filename || "Download";
-  try { action.setBadgeBackgroundColor?.({ color: "#0ea5e9" }); } catch (_) {}
-  try { action.setBadgeText?.({ text: "BX" }); } catch (_) {}
-  try { action.setTitle?.({ title: `${label} is downloading in ByteX` }); } catch (_) {}
-  const stored = runtimeAPI.storage.local.set({ lastHandoff: { filename: label, at: Date.now() } });
-  stored?.catch?.(() => {});
+  try { action?.setBadgeBackgroundColor?.({ color: "#0ea5e9" }); } catch (_) {}
+  try { action?.setBadgeText?.({ text: "BX" }); } catch (_) {}
+  try { action?.setTitle?.({ title: `${label} is downloading in ByteX` }); } catch (_) {}
+  try {
+    const stored = runtimeAPI.storage.local.set({ lastHandoff: { filename: label, at: Date.now() } });
+    stored?.catch?.(() => {});
+  } catch (_) {}
+  try {
+    const notification = runtimeAPI.notifications?.create?.(`bytex-handoff-${Date.now()}`, {
+      type: "basic",
+      iconUrl: runtimeAPI.runtime.getURL("icons/128x128.png"),
+      title: "Download intercepted by ByteX",
+      message: `${label} is downloading in ByteX.`,
+    });
+    notification?.catch?.(() => {});
+  } catch (_) {}
   setTimeout(() => {
-    try { action.setBadgeText?.({ text: "" }); } catch (_) {}
-    try { action.setTitle?.({ title: "ByteX Download Manager" }); } catch (_) {}
-  }, 8000);
+    try { action?.setBadgeText?.({ text: "" }); } catch (_) {}
+    try { action?.setTitle?.({ title: "ByteX Download Manager" }); } catch (_) {}
+  }, 15000);
+}
+
+function showHandoffInTab(tabId, filename) {
+  if (!Number.isInteger(tabId) || tabId < 0) return;
+  try {
+    const result = runtimeAPI.tabs?.sendMessage?.(tabId, {
+      type: "XDM_HANDOFF_CONFIRMED",
+      filename: filename || "Download",
+    });
+    result?.catch?.(() => {});
+  } catch (_) {}
 }
 
 function shouldInterceptDownload(downloadItem) {
@@ -221,7 +242,9 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (result) {
-    showHandoffIndicator(downloadItem.filename || "Download");
+    const filename = downloadItem.filename || "Download";
+    showHandoffIndicator(filename);
+    showHandoffInTab(downloadItem.tabId, filename);
     if (downloadItem.id && runtimeAPI.downloads.cancel) {
       try { await runtimeAPI.downloads.cancel(downloadItem.id); } catch (_) {}
       try {

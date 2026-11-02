@@ -9,6 +9,7 @@
   "permissions": [
     "downloads",
     "cookies",
+    "notifications",
     "storage",
     "nativeMessaging"
   ],
