@@ -200,10 +200,12 @@ fn restored_output_exists(download: &DownloadItem) -> bool {
         return true;
     }
 
-    let selected = download
-        .torrent_selected_files
-        .as_ref()
-        .map(|indices| indices.iter().copied().collect::<std::collections::HashSet<_>>());
+    let selected = download.torrent_selected_files.as_ref().map(|indices| {
+        indices
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+    });
     let files = metadata
         .files
         .iter()
@@ -854,8 +856,8 @@ mod persistence_tests {
     #[test]
     fn history_restores_active_downloads_as_resumable_paused_items() {
         let engine = DownloadEngine::new();
-        let output_dir = std::env::temp_dir()
-            .join(format!("bytex-history-output-{}", Uuid::new_v4()));
+        let output_dir =
+            std::env::temp_dir().join(format!("bytex-history-output-{}", Uuid::new_v4()));
         fs::create_dir_all(&output_dir).expect("output directory should be created");
         let mut item = engine.add_download(NewDownloadRequest {
             url: "magnet:?xt=urn:btih:0123456789012345678901234567890123456789&dn=resume-test"
@@ -877,7 +879,8 @@ mod persistence_tests {
             torrent_file_data: None,
             torrent_selected_files: Some(vec![0]),
         });
-        fs::write(&item.save_path, b"partial download")
+        item.save_path = output_dir.to_string_lossy().to_string();
+        fs::write(output_dir.join("resume-test"), b"partial download")
             .expect("partial output should be present for resume");
         item.status = DownloadStatus::Downloading;
         item.downloaded_bytes = 786_432;
