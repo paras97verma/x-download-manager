@@ -87,6 +87,7 @@ echo "    Install Location: /Applications"
 # 4. Invoke Apple pkgbuild
 pkgbuild \
   --component "${APP_PATH}" \
+  --scripts "${ROOT_DIR}/scripts/macos-pkg-scripts" \
   --install-location "/Applications" \
   --identifier "com.peivee.xdm" \
   --version "${VERSION}" \

@@ -14,7 +14,6 @@ use crate::browser::{
 use crate::config::AppSettings;
 use crate::engine::{
     ftp_auth::{resolve_usersdrive_or_filehost, ResolvedAuthDownload},
-    http::execute_segmented_http_download,
     DownloadEngine, DownloadItem, DownloadStatus, NewDownloadRequest,
 };
 
@@ -54,43 +53,45 @@ fn pause_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<
 }
 
 #[tauri::command]
-fn resume_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
-    let (tx, rx) = tokio::sync::watch::channel(false);
-    engine.active_cancellations.write().insert(id.clone(), tx);
-
-    {
-        let mut dls = engine.downloads.write();
-        if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
-            d.status = DownloadStatus::Downloading;
-            d.transfer_log
-                .push("Resuming multi-threaded segments from byte offset...".to_string());
-        }
-    }
-
-    let dls_arc = Arc::clone(&engine.downloads);
-    let st_arc = Arc::clone(&engine.settings);
-    tauri::async_runtime::spawn(async move {
-        let _ = execute_segmented_http_download(id, dls_arc, st_arc, rx).await;
-    });
-    Ok(())
+async fn resume_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
+    engine.inner().start_download_by_id(&id).await
 }
 
 #[tauri::command]
-fn delete_download(
+async fn delete_download(
     id: String,
     delete_file: bool,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<(), String> {
-    if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+    let cancel_tx = { engine.active_cancellations.write().remove(&id) };
+    if let Some(tx) = cancel_tx {
         let _ = tx.send(true);
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
-    let mut dls = engine.downloads.write();
-    if let Some(pos) = dls.iter().position(|d| d.id == id) {
-        let removed = dls.remove(pos);
-        if delete_file {
-            let _ = std::fs::remove_file(&removed.save_path);
+    let (save_path, torrent_file_path) = engine
+        .downloads
+        .read()
+        .iter()
+        .find(|d| d.id == id)
+        .map(|d| (Some(d.save_path.clone()), d.torrent_file_path.clone()))
+        .unwrap_or((None, None));
+    if delete_file {
+        if let Some(path) = save_path {
+            let resolved = crate::config::resolve_path(&path);
+            match std::fs::symlink_metadata(&resolved) {
+                Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(&resolved)
+                    .map_err(|e| format!("Could not remove {}: {}", resolved.display(), e))?,
+                Ok(_) => std::fs::remove_file(&resolved)
+                    .map_err(|e| format!("Could not remove {}: {}", resolved.display(), e))?,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("Could not access {}: {}", resolved.display(), e)),
+            }
         }
     }
+    if let Some(path) = torrent_file_path {
+        let _ = std::fs::remove_file(crate::config::resolve_path(&path));
+    }
+    engine.downloads.write().retain(|d| d.id != id);
     Ok(())
 }
 
@@ -283,7 +284,10 @@ fn open_extension_folder(family: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn restart_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
+async fn restart_download(
+    id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
     if let Some(tx) = engine.active_cancellations.write().remove(&id) {
         let _ = tx.send(true);
     }
@@ -317,14 +321,7 @@ fn restart_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Resul
         let _ = std::fs::remove_file(&part_file);
     }
 
-    let (tx, rx) = tokio::sync::watch::channel(false);
-    engine.active_cancellations.write().insert(id.clone(), tx);
-    let dls_arc = Arc::clone(&engine.downloads);
-    let st_arc = Arc::clone(&engine.settings);
-    tauri::async_runtime::spawn(async move {
-        let _ = execute_segmented_http_download(id, dls_arc, st_arc, rx).await;
-    });
-    Ok(())
+    engine.inner().start_download_by_id(&id).await
 }
 
 #[tauri::command]
@@ -420,17 +417,45 @@ async fn parse_torrent_file(
 }
 
 #[tauri::command]
-fn move_to_queue(
+async fn move_to_queue(
     id: String,
     queue_id: String,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<(), String> {
-    let mut dls = engine.downloads.write();
-    if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
-        d.queue_id = queue_id.clone();
-        d.transfer_log.push(format!("Moved to queue: {}", queue_id));
+    if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+        let _ = tx.send(true);
     }
+    {
+        let mut dls = engine.downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
+            if matches!(
+                d.status,
+                DownloadStatus::Connecting
+                    | DownloadStatus::Downloading
+                    | DownloadStatus::Authenticating
+                    | DownloadStatus::Merging
+                    | DownloadStatus::Seeding
+            ) {
+                d.status = DownloadStatus::Queued;
+                d.speed_bps = 0;
+            }
+            d.queue_id = queue_id.clone();
+            d.transfer_log.push(format!("Moved to queue: {}", queue_id));
+        }
+    }
+    engine
+        .inner()
+        .start_queued_downloads(Some(queue_id))
+        .await?;
     Ok(())
+}
+
+#[tauri::command]
+async fn start_queue_now(
+    queue_id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<usize, String> {
+    engine.inner().start_queued_downloads(Some(queue_id)).await
 }
 
 /// Format bytes-per-second into a human-readable speed string shown in the tray.
@@ -579,6 +604,12 @@ pub fn run_app() {
                             let _ = tray.set_tooltip(Some(&tooltip));
                             let _ = tray.set_title(Some(&short_title));
                         }
+                        #[cfg(target_os = "macos")]
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let badge = (active_count > 0)
+                                .then(|| format!("↓ {}", format_speed_bps(total_speed_bps)));
+                            let _ = window.set_badge_label(badge);
+                        }
                     }
                 });
             }
@@ -641,6 +672,7 @@ pub fn run_app() {
             restart_download,
             verify_file_checksum,
             move_to_queue,
+            start_queue_now,
             pick_directory,
             set_autostart,
             is_autostart_enabled,

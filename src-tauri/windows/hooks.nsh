@@ -1,3 +1,15 @@
+!macro NSIS_HOOK_PREINSTALL
+  ; Remove an existing per-user or per-machine installation before replacing its files.
+  IfFileExists "$INSTDIR\uninstall.exe" 0 xdm_preinstall_done
+  DetailPrint "Removing the previous X Download Manager installation..."
+  ExecWait '"$INSTDIR\uninstall.exe" /S' $0
+  ; A failed uninstall should stop setup rather than overlay two versions.
+  IntCmp $0 0 xdm_preinstall_done xdm_preinstall_failed xdm_preinstall_failed
+  xdm_preinstall_failed:
+  Abort "The previous X Download Manager version could not be removed. Close it and retry setup."
+  xdm_preinstall_done:
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   ; Automatically register X Download Manager Native Messaging Host & Browser Extensions on install
   ExecWait '"$INSTDIR\x-download-manager.exe" --register-browsers-silent'

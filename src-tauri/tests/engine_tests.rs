@@ -60,6 +60,8 @@ fn test_add_download_task_proper_routing() {
         auth_username: None,
         auth_password: None,
         sequential_torrent: None,
+        torrent_file_data: None,
+        torrent_selected_files: None,
     };
 
     let item = engine.add_download(req);

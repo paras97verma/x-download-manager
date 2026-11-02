@@ -7,6 +7,16 @@
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
   let bypassKeyPressed = false;
 
+  runtimeAPI.runtime.onMessage.addListener((message) => {
+    if (!message || message.type !== "XDM_CAPTURE_RESULT") return;
+    const toast = document.createElement("div");
+    const filename = (message.filename || "Download").split(/[\\/]/).pop();
+    toast.textContent = `${message.success ? "✓ Downloading in XDM" : "⚠ XDM could not start; browser download resumed"} · ${filename}`;
+    toast.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:2147483647;background:#111827;color:#fff;padding:12px 16px;border-radius:10px;font:13px sans-serif;box-shadow:0 8px 24px #0008;max-width:420px";
+    document.documentElement.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+  });
+
   window.addEventListener("keydown", (e) => {
     if (e.altKey) {
       bypassKeyPressed = true;

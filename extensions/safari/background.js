@@ -166,7 +166,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
     auth_password: authPass,
     is_torrent: isTorrent,
     user_agent: navigator.userAgent,
-    browser: "Safari",
+    browser: /orion/i.test(navigator.userAgent || "") ? "Orion" : "Safari",
     tab_title: tabTitle || null,
   };
 
@@ -178,7 +178,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
       body: JSON.stringify(payload),
     });
     if (resp.ok) {
-      return true;
+      const result = await resp.json().catch(() => null);
+      return result?.accepted === true && Boolean(result?.download_id);
     }
   } catch (err) {
     console.warn("XDM Safari bridge HTTP fetch failed:", err);
@@ -187,8 +188,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   // 2. Fallback to Native Messaging Host (com.peivee.xdm)
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
-      await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return true;
+      const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
+      return result?.accepted === true && Boolean(result?.download_id);
     } catch (_) {
       return false;
     }

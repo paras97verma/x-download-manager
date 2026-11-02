@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+OLD_APP="/Applications/X Download Manager.app"
+if [ -d "$OLD_APP" ]; then
+  /usr/bin/logger "XDM installer: removing previous application version"
+  /bin/rm -rf "$OLD_APP"
+fi
+exit 0

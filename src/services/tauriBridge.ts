@@ -72,11 +72,7 @@ export async function apiResumeDownload(id: string): Promise<void> {
 
 export async function apiDeleteDownload(id: string, deleteFile = false): Promise<void> {
   if (!isTauriRuntime()) return;
-  try {
-    await invoke("delete_download", { id, deleteFile });
-  } catch (err) {
-    console.error("Failed to delete_download via Tauri:", err);
-  }
+  await invoke("delete_download", { id, deleteFile });
 }
 
 export async function apiGetSettings(): Promise<AppSettings | null> {
@@ -197,6 +193,11 @@ export async function apiMoveToQueue(id: string, queueId: string): Promise<void>
   } catch (err) {
     console.error("Failed to move_to_queue via Tauri:", err);
   }
+}
+
+export async function apiStartQueueNow(queueId: string): Promise<number> {
+  if (!isTauriRuntime()) return 0;
+  return invoke<number>("start_queue_now", { queueId });
 }
 
 export async function apiPickDirectory(): Promise<string | null> {

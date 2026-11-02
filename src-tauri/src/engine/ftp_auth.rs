@@ -333,6 +333,8 @@ pub async fn execute_ftp_download(
     let matched_cred = match_site_credential(ftp_url, &current_settings.site_credentials);
     let username = if !parsed.username().is_empty() {
         parsed.username().to_string()
+    } else if let Some(username) = item_snapshot.custom_headers.get("X-XDM-FTP-Username") {
+        username.clone()
     } else if let Some(c) = matched_cred {
         c.username.clone()
     } else {
@@ -341,6 +343,8 @@ pub async fn execute_ftp_download(
 
     let password = if let Some(p) = parsed.password() {
         p.to_string()
+    } else if let Some(password) = item_snapshot.custom_headers.get("X-XDM-FTP-Password") {
+        password.clone()
     } else if let Some(c) = matched_cred {
         c.password_or_token.clone()
     } else {

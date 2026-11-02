@@ -68,7 +68,7 @@ if (runtimeAPI.contextMenus) {
 }
 
 // Listen for messages from content script or popup
-runtimeAPI.runtime.onMessage.addListener((msg, sender) => {
+runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "XDM_BYPASS_STATE") {
     state.bypassActive = Boolean(msg.bypass);
   } else if (msg.type === "XDM_MANUAL_CAPTURE") {
@@ -76,7 +76,14 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender) => {
       url: msg.url,
       referer: msg.referer || (sender.tab ? sender.tab.url : ""),
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
+    }).then((ok) => {
+      notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url);
+      sendResponse({ success: ok });
+    }).catch(() => {
+      notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
+      sendResponse({ success: false });
     });
+    return true;
   }
 });
 
@@ -210,7 +217,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
       body: JSON.stringify(payload),
     });
     if (resp.ok) {
-      return true;
+      const result = await resp.json().catch(() => null);
+      return result?.accepted === true && Boolean(result?.download_id);
     }
   } catch (_) {
     // Fallback to Native Messaging
@@ -219,8 +227,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
   // 2. Fallback to Native Messaging Host (`com.peivee.xdm`) which launches XDM if closed
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
-      await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return true;
+      const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
+      return result?.accepted === true && Boolean(result?.download_id);
     } catch (_) {
       return false;
     }
@@ -260,6 +268,7 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (accepted) {
+    notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename);
     try {
       runtimeAPI.downloads.cancel(downloadItem.id);
       if (runtimeAPI.downloads.erase) {
@@ -269,6 +278,7 @@ async function handleDownloadInterception(downloadItem) {
     return true;
   } else {
     // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
+    notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
     if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
       try {
         await runtimeAPI.downloads.resume(downloadItem.id);
@@ -296,14 +306,35 @@ if (runtimeAPI.downloads) {
 function detectBrowserFamily() {
   const ua = navigator.userAgent || "";
   const appVer = navigator.appVersion || "";
-  if (/dia/i.test(ua) || /dia/i.test(appVer) || (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.some(b => /dia/i.test(b.brand)))) return "Dia";
+  const brands = navigator.userAgentData && Array.isArray(navigator.userAgentData.brands)
+    ? navigator.userAgentData.brands.map((b) => b.brand)
+    : [];
+  if (/dia/i.test(ua) || /dia/i.test(appVer) || brands.some((brand) => /dia/i.test(brand))) return "Dia";
   if (ua.includes("Arc/")) return "Arc";
+  if (/OPRGX\//i.test(ua)) return "Opera GX";
   if (ua.includes("OPR/") || ua.includes("Opera")) return "Opera";
   if (ua.includes("Brave") || navigator.brave) return "Brave";
   if (ua.includes("Vivaldi")) return "Vivaldi";
   if (ua.includes("Edg/")) return "Edge";
+  if (ua.includes("YaBrowser")) return "Yandex";
+  if (brands.some((brand) => /google chrome/i.test(brand))) return "Chrome";
+  if (brands.some((brand) => /^chromium$/i.test(brand))) return "Chromium";
+  if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) return "Chrome";
+  if (/Chromium\//.test(ua)) return "Chromium";
   if (ua.includes("Firefox")) return "Firefox";
   if (ua.includes("Zen")) return "Zen";
   if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari";
-  return "Dia";
+  return "Chromium";
+}
+
+function notifyCaptureResult(tabId, success, filename) {
+  if (tabId == null || !runtimeAPI.tabs || !runtimeAPI.tabs.sendMessage) return;
+  try {
+    const result = runtimeAPI.tabs.sendMessage(tabId, {
+      type: "XDM_CAPTURE_RESULT",
+      success,
+      filename: filename || "Download",
+    });
+    if (result && result.catch) result.catch(() => {});
+  } catch (_) {}
 }

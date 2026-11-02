@@ -90,6 +90,8 @@ export interface DownloadItem {
   completed_at?: string | null;
   error_message?: string | null;
   transfer_log: string[];
+  torrent_file_path?: string | null;
+  torrent_selected_files?: number[] | null;
 }
 
 export interface SiteCredential {
@@ -222,4 +224,6 @@ export interface NewDownloadRequest {
   auth_username?: string;
   auth_password?: string;
   sequential_torrent?: boolean;
+  torrent_file_data?: string;
+  torrent_selected_files?: number[];
 }

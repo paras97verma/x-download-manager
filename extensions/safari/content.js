@@ -124,7 +124,7 @@
     return false;
   }
 
-  function showXdmCaptureToast(url, filename) {
+  function showXdmCaptureToast(url, filename, success) {
     try {
       const existing = document.getElementById("xdm-capture-toast");
       if (existing) existing.remove();
@@ -146,7 +146,7 @@
 
       const titleEl = document.createElement("div");
       titleEl.style.cssText = "font-weight:bold;font-size:12px;color:#ffffff;";
-      titleEl.textContent = "Captured by X Download Manager";
+      titleEl.textContent = success ? "Download started in XDM" : "XDM could not start; browser download resumed";
 
       const nameEl = document.createElement("div");
       nameEl.style.cssText =
@@ -186,9 +186,7 @@
     } catch (_) {}
   }
 
-  function captureDownload(targetUrl, filename, anchor) {
-    showXdmCaptureToast(targetUrl, filename);
-
+  function captureDownload(targetUrl, filename, anchor, fallback) {
     const payload = {
       type: "XDM_MANUAL_CAPTURE",
       url: targetUrl,
@@ -199,24 +197,26 @@
     };
 
     // 1. Send via Extension Messaging to background script
-    let sentToBg = false;
     try {
       runtimeAPI.runtime.sendMessage(payload, (res) => {
         if (!runtimeAPI.runtime.lastError && res && res.success) {
-          sentToBg = true;
-        } else {
-          fallbackDirectIpc(payload);
-        }
+          showXdmCaptureToast(targetUrl, filename, true);
+        } else fallbackDirectIpc(payload).then((ok) => finishCapture(ok, targetUrl, filename, fallback));
       });
     } catch (_) {
-      fallbackDirectIpc(payload);
+      fallbackDirectIpc(payload).then((ok) => finishCapture(ok, targetUrl, filename, fallback));
     }
+  }
+
+  function finishCapture(success, url, filename, fallback) {
+    showXdmCaptureToast(url, filename, success);
+    if (!success && fallback) fallback();
   }
 
   // Direct Localhost IPC fallback in case background script is sleeping
   function fallbackDirectIpc(payload) {
     try {
-      fetch(`${XDM_IPC_URL}/api/v1/intercept`, {
+      return fetch(`${XDM_IPC_URL}/api/v1/intercept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -225,11 +225,12 @@
           referer: payload.referer,
           cookies: payload.cookies,
           user_agent: navigator.userAgent,
-          browser: "Safari",
+          browser: /orion/i.test(navigator.userAgent || "") ? "Orion" : "Safari",
           tab_title: payload.tabTitle,
         }),
-      }).catch(() => {});
+      }).then((response) => response.json()).then((result) => result && result.accepted === true && Boolean(result.download_id)).catch(() => false);
     } catch (_) {}
+    return Promise.resolve(false);
   }
 
   // 1. Intercept standard <a> link clicks
@@ -245,7 +246,7 @@
         event.preventDefault();
         event.stopPropagation();
         const downloadFilename = anchor.getAttribute("download") || null;
-        captureDownload(anchor.href, downloadFilename, anchor);
+        captureDownload(anchor.href, downloadFilename, anchor, () => window.location.assign(anchor.href));
       }
     },
     true
@@ -256,7 +257,8 @@
   HTMLAnchorElement.prototype.click = function () {
     if (!bypassKeyPressed && this.href && isDownloadableUrl(this.href, this)) {
       const downloadFilename = this.getAttribute("download") || null;
-      captureDownload(this.href, downloadFilename, this);
+      const anchor = this;
+      captureDownload(anchor.href, downloadFilename, anchor, () => originalAnchorClick.call(anchor));
       return;
     }
     return originalAnchorClick.apply(this, arguments);
@@ -266,7 +268,7 @@
   const originalWindowOpen = window.open;
   window.open = function (url, ...args) {
     if (!bypassKeyPressed && typeof url === "string" && isDownloadableUrl(url, null)) {
-      captureDownload(url, null, null);
+      captureDownload(url, null, null, () => originalWindowOpen.call(window, url, ...args));
       return null;
     }
     return originalWindowOpen.call(this, url, ...args);

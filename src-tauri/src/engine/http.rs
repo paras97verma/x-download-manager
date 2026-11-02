@@ -119,6 +119,9 @@ pub fn build_http_client(
         }
     }
     for (k, v) in &item.custom_headers {
+        if k.starts_with("X-XDM-FTP-") {
+            continue;
+        }
         if let (Ok(name), Ok(val)) = (
             HeaderName::from_bytes(k.as_bytes()),
             HeaderValue::from_str(v),
@@ -204,6 +207,12 @@ pub async fn probe_remote_resource(
         .map_err(|e| format!("Network probe error: {}", e))?;
 
     let status = get_resp.status();
+    if !status.is_success() && status != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!(
+            "Download server rejected the request with HTTP {}. Check the URL, browser session cookies, and site credentials.",
+            status
+        ));
+    }
     let accepts_ranges = status == reqwest::StatusCode::PARTIAL_CONTENT;
     let total_bytes = get_resp
         .headers()
@@ -417,6 +426,13 @@ pub async fn execute_segmented_http_download(
             }
 
             let resp = req.send().await.map_err(|e| e.to_string())?;
+            if !resp.status().is_success() {
+                return Err(format!(
+                    "HTTP {} while downloading {}",
+                    resp.status(),
+                    url_clone
+                ));
+            }
             let mut stream = resp.bytes_stream();
 
             let mut file = OpenOptions::new()
