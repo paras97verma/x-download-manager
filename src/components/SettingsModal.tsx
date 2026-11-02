@@ -30,7 +30,6 @@ import { AppSettings, BrowserStatus, SiteCredential } from "../types/xdm";
 import {
   apiPickDirectory,
   apiPromptNotificationPermission,
-  apiSetAutostart,
   apiIsAutostartEnabled,
   apiOpenExtensionFolder,
   apiOpenBrowserUrl,
@@ -106,17 +105,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleToggleAutostart = async (enabled: boolean) => {
+  const handleToggleAutostart = (enabled: boolean) => {
     setDraft({ ...draft, start_on_boot: enabled });
-    try {
-      await apiSetAutostart(enabled);
-    } catch (e) {
-      console.error("Failed to set autostart:", e);
-    }
   };
 
   const handleToggleNotifications = async (enabled: boolean) => {
-    setDraft({ ...draft, play_sound_on_complete: enabled, show_completion_dialog: enabled });
+    setDraft({ ...draft, show_completion_dialog: enabled });
     if (enabled) {
       try {
         const granted = await apiPromptNotificationPermission();
@@ -125,9 +119,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             "ByteX Download Manager",
             "Download completion notifications are active!"
           );
+        } else {
+          setDraft((prev) => ({ ...prev, show_completion_dialog: false }));
+          window.alert("ByteX could not get notification permission from the operating system. Enable notifications for ByteX in system settings, then try again.");
         }
       } catch (e) {
         console.error("Failed to prompt notification permission:", e);
+        setDraft((prev) => ({ ...prev, show_completion_dialog: false }));
+        window.alert("ByteX could not request notification permission from the operating system.");
       }
     }
   };
@@ -351,13 +350,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-slate-700 transition">
                     <input
                       type="checkbox"
-                      checked={draft.play_sound_on_complete}
+                      checked={draft.show_completion_dialog}
                       onChange={(e) => handleToggleNotifications(e.target.checked)}
                       className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">OS Completion Notifications</div>
-                      <div className="text-[10px] text-slate-400">Requests native system alert permission</div>
+                      <div className="text-[10px] text-slate-400">Requires OS notification permission</div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-slate-700 transition">
+                    <input
+                      type="checkbox"
+                      checked={draft.play_sound_on_complete}
+                      onChange={(e) => setDraft({ ...draft, play_sound_on_complete: e.target.checked })}
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
+                    />
+                    <div>
+                      <div className="font-semibold text-slate-200">Completion Sound</div>
+                      <div className="text-[10px] text-slate-400">Plays a short chime while ByteX is open</div>
                     </div>
                   </label>
 
@@ -470,7 +482,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Speed Limiter Tab */}
             {activeTab === "speed" && (
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white">Token-Bucket Bandwidth Speed Limiter</h3>
+                <h3 className="text-sm font-bold text-white">Global Bandwidth Speed Limiter</h3>
+                <p className="text-[11px] text-slate-400">Download bandwidth is shared across HTTP, FTP/FTPS, and active torrents. Upload limiting applies to BitTorrent seeding. Set either value to 0 for unlimited.</p>
                 <label className="flex items-center gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
                   <input
                     type="checkbox"
@@ -491,6 +504,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </label>
                     <input
                       type="number"
+                      min={0}
                       value={draft.global_max_download_kbps}
                       onChange={(e) => setDraft({ ...draft, global_max_download_kbps: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200"
@@ -503,6 +517,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </label>
                     <input
                       type="number"
+                      min={0}
                       value={draft.global_max_upload_kbps}
                       onChange={(e) => setDraft({ ...draft, global_max_upload_kbps: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200"
@@ -1068,8 +1083,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Cancel
             </button>
             <button
-              onClick={() => {
-                onSave(draft);
+              onClick={async () => {
+                let settingsToSave = draft;
+                if (draft.show_completion_dialog) {
+                  try {
+                    const granted = await apiPromptNotificationPermission();
+                    if (!granted) {
+                      settingsToSave = { ...draft, show_completion_dialog: false };
+                      setDraft(settingsToSave);
+                      window.alert("The OS has not granted ByteX notification permission. Other preferences will be saved with completion notifications turned off.");
+                    }
+                  } catch (error) {
+                    settingsToSave = { ...draft, show_completion_dialog: false };
+                    setDraft(settingsToSave);
+                    console.error("Could not verify OS notification permission:", error);
+                  }
+                }
+                onSave(settingsToSave);
                 onClose();
               }}
               className="px-4 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-400 text-white text-xs font-semibold shadow transition"

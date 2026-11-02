@@ -515,6 +515,27 @@ pub async fn execute_segmented_http_download(
                     maybe_chunk = stream.next() => {
                         match maybe_chunk {
                             Some(Ok(chunk)) => {
+                                let (limiter_on, max_kbps) = {
+                                    let st = settings_clone.read();
+                                    (st.speed_limiter_enabled, st.global_max_download_kbps)
+                                };
+                                let limit_bps = {
+                                    let dls = dls_clone.read();
+                                    super::rate_limiter::download_rate_limit_bps(
+                                        limiter_on,
+                                        max_kbps,
+                                        &dls,
+                                        false,
+                                    )
+                                };
+                                tokio::select! {
+                                    _ = super::rate_limiter::throttle_download(chunk.len(), limit_bps) => {}
+                                    changed = worker_cancel.changed() => {
+                                        if changed.is_err() || *worker_cancel.borrow() {
+                                            return Err("Paused or cancelled by user".to_string());
+                                        }
+                                    }
+                                }
                                 file.write_all(&chunk).map_err(|e| e.to_string())?;
                                 let len = chunk.len() as u64;
                                 seg_downloaded += len;
@@ -542,17 +563,6 @@ pub async fn execute_segmented_http_download(
                                         }
                                     }
 
-                                    // Bandwidth limiter check
-                                    let (limiter_on, max_kbps) = {
-                                        let st = settings_clone.read();
-                                        (st.speed_limiter_enabled, st.global_max_download_kbps)
-                                    };
-                                    if limiter_on && max_kbps > 0 {
-                                        let per_thread_bps = (max_kbps * 1024) / (threads.max(1) as u64);
-                                        if speed > per_thread_bps && per_thread_bps > 0 {
-                                            tokio::time::sleep(Duration::from_millis(60)).await;
-                                        }
-                                    }
                                 }
                             }
                             Some(Err(e)) => return Err(e.to_string()),

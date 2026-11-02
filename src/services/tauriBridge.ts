@@ -223,7 +223,7 @@ export async function apiSetAutostart(enable: boolean): Promise<boolean> {
     return await invoke<boolean>("set_autostart", { enable });
   } catch (err) {
     console.error("Failed to set_autostart via Tauri:", err);
-    return false;
+    throw err;
   }
 }
 

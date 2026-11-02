@@ -546,6 +546,33 @@ pub async fn execute_ftp_download(
                     }
                 };
 
+                let (limiter_on, max_kbps) = {
+                    let current = settings.read();
+                    (current.speed_limiter_enabled, current.global_max_download_kbps)
+                };
+                let limit_bps = {
+                    let dls = downloads.read();
+                    super::rate_limiter::download_rate_limit_bps(
+                        limiter_on,
+                        max_kbps,
+                        &dls,
+                        false,
+                    )
+                };
+                tokio::select! {
+                    _ = super::rate_limiter::throttle_download(n, limit_bps) => {}
+                    changed = cancel_rx.changed() => {
+                        if changed.is_err() || *cancel_rx.borrow() {
+                            let mut dls = downloads.write();
+                            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                                d.status = crate::engine::DownloadStatus::Paused;
+                                d.speed_bps = 0;
+                            }
+                            return Ok(total_written);
+                        }
+                    }
+                }
+
                 file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
                 total_written += n as u64;
                 window_bytes += n as u64;

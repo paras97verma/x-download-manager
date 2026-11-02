@@ -577,7 +577,6 @@ fn format_speed_bps(bps: u64) -> String {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 fn compact_speed_bps(bps: u64) -> String {
     if bps >= 1_000_000_000 {
         format!("{:.1}G", bps as f64 / 1_000_000_000.0)
@@ -592,7 +591,6 @@ fn compact_speed_bps(bps: u64) -> String {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 fn build_speed_tray_icon(download_bps: u64, upload_bps: u64) -> tauri::image::Image<'static> {
     const SIZE: usize = 64;
     let mut rgba = vec![0u8; SIZE * SIZE * 4];
@@ -697,8 +695,18 @@ pub fn run_app() {
 
     let sched_engine = Arc::clone(&engine);
     let shutdown_engine = Arc::clone(&engine);
+    let completion_engine = Arc::clone(&engine);
+    let start_on_boot_setting = engine.settings.read().start_on_boot;
 
     let app_result = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -708,13 +716,25 @@ pub fn run_app() {
         ))
         .manage(engine)
         .setup(move |app| {
-            // Setup Native System Application Menu (macOS system menu bar / Windows & Linux native menu)
-            if let Ok(native_menu) = menu::create_native_app_menu(app.handle()) {
-                let _ = app.set_menu(native_menu);
+            use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
+            let autolaunch = app.autolaunch();
+            let autostart_result = if start_on_boot_setting {
+                autolaunch.enable()
+            } else {
+                autolaunch.disable()
+            };
+            if let Err(error) = autostart_result {
+                tracing::warn!(%error, "Could not synchronize OS startup registration with settings");
             }
 
-            // Keep the macOS Dock as the app's only persistent icon. Windows and Linux use a tray icon.
-            #[cfg(not(target_os = "macos"))]
+            // Setup Native System Application Menu (macOS system menu bar / Windows & Linux native menu)
+            if let Ok(native_menu) = menu::create_native_app_menu(app.handle()) {
+                if let Err(error) = app.set_menu(native_menu) {
+                    tracing::warn!(%error, "Could not install the native application menu");
+                }
+            }
+
+            // Create a status item on macOS and a system tray icon on Windows/Linux.
             {
                 // Setup Tray Icon & Context Menu
                 if let Ok(show_i) = tauri::menu::MenuItem::with_id(
@@ -734,6 +754,7 @@ pub fn run_app() {
                         if let Ok(menu) = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i]) {
                             let mut builder = tauri::tray::TrayIconBuilder::new()
                                 .menu(&menu)
+                                .title("↓ 0 B/s ↑ 0 B/s")
                                 .show_menu_on_left_click(false)
                                 .on_menu_event(|app, event| match event.id.as_ref() {
                                     "quit" => {
@@ -770,10 +791,58 @@ pub fn run_app() {
                                 builder = builder.icon(icon.clone());
                             }
 
-                            let _ = builder.build(app);
+                            if let Err(error) = builder.build(app) {
+                                tracing::warn!(%error, "Could not create the system tray icon");
+                            }
                         }
                     }
                 }
+            }
+
+            // Observe completions in the native process so notifications still work while
+            // the window is hidden or the webview is background-throttled.
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let app_handle = app.handle().clone();
+                let completion_ids = completion_engine
+                    .downloads
+                    .read()
+                    .iter()
+                    .filter(|download| download.status == crate::engine::DownloadStatus::Completed)
+                    .map(|download| download.id.clone())
+                    .collect::<std::collections::HashSet<_>>();
+                tauri::async_runtime::spawn(async move {
+                    let mut already_notified = completion_ids;
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_millis(500));
+                    loop {
+                        ticker.tick().await;
+                        let completed = completion_engine
+                            .downloads
+                            .read()
+                            .iter()
+                            .filter(|download| download.status == crate::engine::DownloadStatus::Completed)
+                            .map(|download| (download.id.clone(), download.filename.clone()))
+                            .collect::<Vec<_>>();
+                        if !completion_engine.settings.read().show_completion_dialog {
+                            already_notified.extend(completed.into_iter().map(|(id, _)| id));
+                            continue;
+                        }
+                        for (id, filename) in completed {
+                            if !already_notified.insert(id) {
+                                continue;
+                            }
+                            if let Err(error) = app_handle
+                                .notification()
+                                .builder()
+                                .title("Download Complete")
+                                .body(format!("{filename} has finished downloading successfully."))
+                                .show()
+                            {
+                                tracing::warn!(%error, "Could not show download completion notification");
+                            }
+                        }
+                    }
+                });
             }
 
             // ---------------------------------------------------------------
@@ -830,7 +899,6 @@ pub fn run_app() {
                             (active.len(), down, up)
                         };
 
-                        #[cfg(not(target_os = "macos"))]
                         let tooltip = if active_count > 0 {
                             format!(
                                 "ByteX Download Manager — {} active — ↓ {} — ↑ {} torrent",
@@ -842,7 +910,6 @@ pub fn run_app() {
                             "ByteX Download Manager — Idle".to_string()
                         };
 
-                        #[cfg(not(target_os = "macos"))]
                         let short_title = if active_count > 0 {
                             format!(
                                 "↓ {} ↑ {}",
@@ -853,8 +920,7 @@ pub fn run_app() {
                             String::new()
                         };
 
-                        // Update default tray icon (id = "" in Tauri 2) on Windows/Linux.
-                        #[cfg(not(target_os = "macos"))]
+                        // Update the status item/tray icon and its live rates on every OS.
                         if let Some(tray) = app_handle.tray_by_id("") {
                             let _ = tray.set_tooltip(Some(&tooltip));
                             let _ = tray.set_title(Some(&short_title));
@@ -960,6 +1026,7 @@ pub fn run_app() {
                     let _ = window.set_focus();
                 }
             }
+            tauri::RunEvent::Exit => scheduler::update_sleep_prevention(false, false),
             _ => {}
         }),
         Err(error) => tracing::error!(%error, "Could not start ByteX Download Manager"),

@@ -12,18 +12,65 @@ use crate::engine::{DownloadEngine, DownloadStatus};
 
 static SLEEP_INHIBITOR: Mutex<Option<Child>> = Mutex::new(None);
 
+fn spawn_sleep_inhibitor() -> std::io::Result<Child> {
+    let mut command = if cfg!(target_os = "macos") {
+        let mut command = std::process::Command::new("caffeinate");
+        command.args(["-i", "-s"]);
+        command
+    } else if cfg!(target_os = "windows") {
+        let mut command = std::process::Command::new("powershell.exe");
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            "$src='using System.Runtime.InteropServices; public static class ByteXPower { [DllImport(\"kernel32.dll\")] public static extern uint SetThreadExecutionState(uint state); }'; Add-Type -TypeDefinition $src; while ($true) { [ByteXPower]::SetThreadExecutionState(0x80000001); Start-Sleep -Seconds 30 }",
+        ]);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        command
+    } else if cfg!(target_os = "linux") {
+        let mut command = std::process::Command::new("systemd-inhibit");
+        command.args([
+            "--what=sleep:idle",
+            "--mode=block",
+            "--who=ByteX Download Manager",
+            "--why=Download or upload is active",
+            "sleep",
+            "infinity",
+        ]);
+        command
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Sleep prevention is not supported on this operating system",
+        ));
+    };
+
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+}
+
 pub fn update_sleep_prevention(is_downloading: bool, prevent_sleep_setting: bool) {
     if let Ok(mut lock) = SLEEP_INHIBITOR.lock() {
         if is_downloading && prevent_sleep_setting {
+            let child_exited = lock
+                .as_mut()
+                .is_some_and(|child| matches!(child.try_wait(), Ok(Some(_)) | Err(_)));
+            if child_exited {
+                lock.take();
+            }
             if lock.is_none() {
-                #[cfg(target_os = "macos")]
-                {
-                    if let Ok(child) = std::process::Command::new("caffeinate")
-                        .args(["-d", "-i", "-m"])
-                        .spawn()
-                    {
-                        *lock = Some(child);
-                    }
+                match spawn_sleep_inhibitor() {
+                    Ok(child) => *lock = Some(child),
+                    Err(error) => tracing::warn!(%error, "Could not start the OS sleep inhibitor"),
                 }
             }
         } else if let Some(mut child) = lock.take() {
@@ -113,7 +160,16 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
         // 1. Maintain active OS sleep inhibitor while transfers are running
         let is_downloading = {
             let dls = engine.downloads.read();
-            dls.iter().any(|d| d.status == DownloadStatus::Downloading)
+            dls.iter().any(|d| {
+                matches!(
+                    d.status,
+                    DownloadStatus::Connecting
+                        | DownloadStatus::Authenticating
+                        | DownloadStatus::Downloading
+                        | DownloadStatus::Merging
+                        | DownloadStatus::Seeding
+                )
+            })
         };
         let prevent_sleep = engine.settings.read().prevent_system_sleep;
         update_sleep_prevention(is_downloading, prevent_sleep);
