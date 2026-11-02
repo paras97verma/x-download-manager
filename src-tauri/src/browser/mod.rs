@@ -515,7 +515,7 @@ pub fn configure_browser_integration(
             if is_firefox_family {
                 let ff_manifest = FirefoxNativeHostManifest {
                     name: NATIVE_HOST_NAME.to_string(),
-                    description: "X Download Manager Native Messaging Host".to_string(),
+                    description: "ByteX Download Manager Native Messaging Host".to_string(),
                     path: current_exe.clone(),
                     host_type: "stdio".to_string(),
                     allowed_extensions: vec![FIREFOX_EXTENSION_ID.to_string()],
@@ -526,7 +526,7 @@ pub fn configure_browser_integration(
             } else {
                 let cr_manifest = ChromiumNativeHostManifest {
                     name: NATIVE_HOST_NAME.to_string(),
-                    description: "X Download Manager Native Messaging Host".to_string(),
+                    description: "ByteX Download Manager Native Messaging Host".to_string(),
                     path: current_exe.clone(),
                     host_type: "stdio".to_string(),
                     allowed_origins: vec![
@@ -851,7 +851,7 @@ fn register_windows_registry_native_host(
         if let Ok((ff_ext, _)) = hkcu.create_subkey(r"Software\Mozilla\Firefox\Extensions") {
             if let Ok(exe) = std::env::current_exe() {
                 if let Some(parent) = exe.parent() {
-                    let xpi_path = parent.join(r"extensions\firefox\xdm-extension-firefox.xpi");
+                    let xpi_path = parent.join(r"extensions\firefox\bytex-extension-firefox.xpi");
                     let _ = ff_ext.set_value(
                         FIREFOX_EXTENSION_ID,
                         &xpi_path.to_string_lossy().to_string(),

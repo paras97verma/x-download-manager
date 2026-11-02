@@ -24,14 +24,14 @@ if [[ -n "${APP_PATH}" && ! -d "${APP_PATH}" ]]; then
 fi
 
 SEARCH_PATHS=(
-  "${ROOT_DIR}/target/universal-apple-darwin/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/target/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/target/aarch64-apple-darwin/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/target/x86_64-apple-darwin/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/src-tauri/target/universal-apple-darwin/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/src-tauri/target/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/X Download Manager.app"
-  "${ROOT_DIR}/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/X Download Manager.app"
+  "${ROOT_DIR}/target/universal-apple-darwin/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/target/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/target/aarch64-apple-darwin/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/target/x86_64-apple-darwin/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/src-tauri/target/universal-apple-darwin/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/src-tauri/target/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/ByteX Download Manager.app"
+  "${ROOT_DIR}/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/ByteX Download Manager.app"
 )
 
 for p in "${SEARCH_PATHS[@]}"; do
@@ -43,7 +43,7 @@ done
 
 if [[ -z "${APP_PATH}" ]]; then
   # Fallback to search in target and src-tauri/target directories
-  FOUND_PATH="$(find "${ROOT_DIR}/target" "${ROOT_DIR}/src-tauri/target" -maxdepth 6 -type d -name "X Download Manager.app" 2>/dev/null | head -n 1 || true)"
+  FOUND_PATH="$(find "${ROOT_DIR}/target" "${ROOT_DIR}/src-tauri/target" -maxdepth 6 -type d \( -name "ByteX Download Manager.app" -o -name "X Download Manager.app" \) 2>/dev/null | head -n 1 || true)"
   if [[ -n "${FOUND_PATH}" && -d "${FOUND_PATH}" ]]; then
     APP_PATH="${FOUND_PATH}"
   fi
@@ -51,14 +51,14 @@ fi
 
 if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
   # Last-ditch search anywhere in repo
-  FOUND_PATH="$(find "${ROOT_DIR}" -maxdepth 7 -type d -name "X Download Manager.app" 2>/dev/null | head -n 1 || true)"
+  FOUND_PATH="$(find "${ROOT_DIR}" -maxdepth 7 -type d \( -name "ByteX Download Manager.app" -o -name "X Download Manager.app" \) 2>/dev/null | head -n 1 || true)"
   if [[ -n "${FOUND_PATH}" && -d "${FOUND_PATH}" ]]; then
     APP_PATH="${FOUND_PATH}"
   fi
 fi
 
 if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
-  echo "Error: Could not locate 'X Download Manager.app' bundle in target/ or src-tauri/target/." >&2
+  echo "Error: Could not locate 'ByteX Download Manager.app' bundle in target/ or src-tauri/target/." >&2
   echo "Contents of target directory:" >&2
   ls -la "${ROOT_DIR}/target" 2>/dev/null || true
   ls -la "${ROOT_DIR}/src-tauri/target" 2>/dev/null || true
@@ -74,7 +74,7 @@ elif [[ "${APP_PATH}" == *"x86_64"* ]]; then
   ARCH="x64"
 fi
 
-PKG_FILENAME="X-Download-Manager_${VERSION}_${ARCH}.pkg"
+PKG_FILENAME="ByteX-Download-Manager_${VERSION}_${ARCH}.pkg"
 PKG_OUTPUT_PATH="${DIST_PKG_DIR}/${PKG_FILENAME}"
 
 echo "==> Building macOS Installer Package (.pkg)..."
@@ -94,7 +94,7 @@ pkgbuild \
   "${PKG_OUTPUT_PATH}"
 
 # Create secondary file without hyphen if needed for compatibility
-cp "${PKG_OUTPUT_PATH}" "${DIST_PKG_DIR}/X_Download_Manager_${VERSION}_${ARCH}.pkg"
+cp "${PKG_OUTPUT_PATH}" "${DIST_PKG_DIR}/ByteX_Download_Manager_${VERSION}_${ARCH}.pkg"
 
 echo "==> macOS .pkg installer created successfully!"
 ls -lh "${DIST_PKG_DIR}"

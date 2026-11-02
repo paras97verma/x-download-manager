@@ -1,4 +1,4 @@
-name: Verify, Build & Release X Download Manager (macOS DMG/PKG, Windows EXE/MSI, Linux DEB/AppImage/RPM)
+name: ByteX Download Manager — Verify, Build & Release
 
 on:
   push:
@@ -100,7 +100,7 @@ jobs:
       - name: Upload Packaged Browser Extensions Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: xdm-browser-extensions
+          name: bytex-browser-extensions
           path: dist-extensions/*
 
   # ============================================================================
@@ -120,7 +120,7 @@ jobs:
       - name: Download Browser Extension Bundles
         uses: actions/download-artifact@v8
         with:
-          name: xdm-browser-extensions
+          name: bytex-browser-extensions
           path: dist-extensions
 
       - name: Create Version-Typed Release & Attach Browser Extensions
@@ -133,10 +133,10 @@ jobs:
           prerelease: ${{ contains(needs.verify.outputs.version_tag, 'beta') || contains(needs.verify.outputs.version_tag, 'nightly') }}
           make_latest: ${{ !contains(needs.verify.outputs.version_tag, 'beta') && !contains(needs.verify.outputs.version_tag, 'nightly') }}
           files: |
-            dist-extensions/xdm-extension-chromium.zip
-            dist-extensions/xdm-extension-firefox.xpi
-            dist-extensions/xdm-extension-firefox.zip
-            dist-extensions/xdm-extension-safari.zip
+            dist-extensions/bytex-extension-chromium.zip
+            dist-extensions/bytex-extension-firefox.xpi
+            dist-extensions/bytex-extension-firefox.zip
+            dist-extensions/bytex-extension-safari.zip
           body: |
             # ${{ needs.verify.outputs.release_title }}
 
@@ -148,14 +148,14 @@ jobs:
 
             | Package | Format | Description | Target / Compatibility |
             | :--- | :--- | :--- | :--- |
-            | `*.pkg` | **macOS Component Installer** | Standard Apple guided wizard for `/Applications` installation | macOS 11.0 Big Sur or later (Universal) |
+            | `*.pkg` | **macOS Component Installer** | Guided ByteX installer for `/Applications` | macOS 11.0 Big Sur or later (Universal) |
             | `*.dmg` | **Apple Disk Image** | Drag-and-drop installer window | macOS 11.0 Big Sur or later (Universal) |
             | `*.app.tar.gz` | **Application Archive** | Standalone compressed application bundle | macOS 11.0 Big Sur or later (Universal) |
 
             > [!TIP]
             > **Quick Start for macOS**:
             > - Download the **`.pkg` installer** for a standard one-click guided installation wizard directly into your `/Applications` directory.
-            > - Or download the **`.dmg` disk image** and drag `X Download Manager.app` into `/Applications`.
+            > - Or download the **`.dmg` disk image** and drag `ByteX Download Manager.app` into `/Applications`.
             > - If macOS Gatekeeper shows an unidentified developer prompt on first launch, open **System Settings → Privacy & Security** and click **Open Anyway**.
 
             ---
@@ -170,7 +170,7 @@ jobs:
             > [!TIP]
             > **Quick Start for Windows**:
             > - Run the `*-setup.exe` installer for an interactive desktop setup.
-            > - For headless or IT deployment, run: `msiexec /i "X Download Manager_..._x64_en-US.msi" /qn`.
+            > - For headless or IT deployment, run: `msiexec /i "bytex-download-manager_x64_en-US.msi" /qn`.
             > - If Windows SmartScreen displays *"Windows protected your PC"*, click **More info** → **Run anyway**.
 
             ---
@@ -186,24 +186,23 @@ jobs:
             > [!TIP]
             > **Quick Start for Linux**:
             > - On Ubuntu/Debian: `sudo apt install -y libwebkit2gtk-4.1-0 && sudo dpkg -i *.deb`
-            > - Portable AppImage: `chmod +x *.AppImage && ./xdm*.AppImage`
+            > - Portable AppImage: `chmod +x *.AppImage && ./bytex-download-manager_amd64.AppImage`
 
             ---
 
-            ## 🧩 Browser Companion Extensions (XDM Browser Monitor)
+            ## 🧩 Browser Companion Extensions (ByteX Browser Companion)
 
             Download and attach the companion extension to automatically intercept downloads and capture streaming media:
 
             | Browser Family | Release Asset | Compatible Browsers | Setup Instructions |
             | :--- | :--- | :--- | :--- |
-            | **Chromium** | `xdm-extension-chromium.zip` | Google Chrome, Dia, Arc, Brave, Microsoft Edge, Opera, Opera GX, Vivaldi, Thorium, Chromium, Yandex | Unpack zip → Open `chrome://extensions` → Enable **Developer mode** → Click **Load unpacked** |
-            | **Firefox** | `xdm-extension-firefox.xpi` / `.zip` | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | Drag & drop `.xpi` into browser window or load via `about:debugging` |
-            | **Safari** | `xdm-extension-safari.zip` | Apple Safari, Orion Browser | Safari Settings → Advanced → check **Show Develop menu** → Develop → **Allow Unsigned Extensions** → **Add Temporary Extension…** |
+            | **Chromium** | `bytex-extension-chromium.zip` | Google Chrome, Dia, Arc, Brave, Microsoft Edge, Opera, Opera GX, Vivaldi, Thorium, Chromium, Yandex | Unpack zip → Open `chrome://extensions` → Enable **Developer mode** → Click **Load unpacked** |
+            | **Firefox** | `bytex-extension-firefox.xpi` / `.zip` | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | Drag & drop `.xpi` into browser window or load via `about:debugging` |
+            | **Safari** | `bytex-extension-safari.zip` | Apple Safari, Orion Browser | Safari Settings → Advanced → check **Show Develop menu** → Develop → **Allow Unsigned Extensions** → **Add Temporary Extension…** |
 
             ---
 
-            *X Download Manager — High-performance multi-threaded, torrent & streaming download manager.*  
-            *Made with ❤️ by ~peivee*
+            *ByteX Download Manager — fast multi-threaded, torrent, and streaming downloads.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -211,20 +210,26 @@ jobs:
   # STAGE 3: MULTI-PLATFORM MATRIX BUILD (macOS .dmg/.pkg, Windows .exe/.msi, Linux .deb/.AppImage/.rpm)
   # ============================================================================
   build-native:
-    name: Build Native Installer (${{ matrix.os_label }})
+    name: Build ${{ matrix.platform_name }} Installer
     needs: [verify, create-release]
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: macos-latest
-            os_label: macOS-Universal-DMG-PKG
+            platform_name: macOS
+            build_step_name: Build macOS Universal DMG and PKG Installers
+            build_summary: Universal Apple Silicon and Intel app. Publishes the DMG, PKG, and app archive.
             args: "--target universal-apple-darwin"
           - platform: windows-latest
-            os_label: Windows-x64-EXE-MSI
+            platform_name: Windows
+            build_step_name: Build Windows x64 EXE and MSI Installers
+            build_summary: Windows x64 app. Publishes the NSIS EXE setup and WiX MSI package.
             args: ""
           - platform: ubuntu-22.04
-            os_label: Linux-x64-DEB-AppImage
+            platform_name: Linux
+            build_step_name: Build Linux x64 DEB, AppImage, and RPM Packages
+            build_summary: Linux x64 app. Publishes Debian, AppImage, and RPM packages.
             args: ""
     runs-on: ${{ matrix.platform }}
     steps:
@@ -266,7 +271,7 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm install
 
-      - name: Build Native Desktop Bundles (.dmg / .exe / .msi / .deb / .AppImage)
+      - name: ${{ matrix.build_step_name }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -296,8 +301,16 @@ jobs:
         if: matrix.platform == 'macos-latest'
         uses: actions/upload-artifact@v7
         with:
-          name: xdm-macos-pkg
+          name: bytex-macos-pkg
           path: dist-pkg/*.pkg
+
+      - name: Add platform-specific build summary
+        run: |
+          {
+            echo "## ByteX Download Manager — ${{ matrix.platform_name }} Build"
+            echo
+            echo "${{ matrix.build_summary }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prepare stable direct-download asset names
         shell: bash
@@ -315,15 +328,15 @@ jobs:
             cp "$source" "dist-alias/${destination}"
           }
           if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
-            copy_first x-download-manager_universal.dmg target src-tauri/target -path '*/bundle/dmg/*.dmg'
-            copy_first X-Download-Manager_universal.pkg dist-pkg -name '*.pkg'
+            copy_first bytex-download-manager_universal.dmg target src-tauri/target -path '*/bundle/dmg/*.dmg'
+            copy_first ByteX-Download-Manager_universal.pkg dist-pkg -name '*.pkg'
           elif [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-            copy_first x-download-manager_x64-setup.exe target src-tauri/target -path '*/bundle/nsis/*.exe'
-            copy_first x-download-manager_x64_en-US.msi target src-tauri/target -path '*/bundle/msi/*.msi'
+            copy_first bytex-download-manager_x64-setup.exe target src-tauri/target -path '*/bundle/nsis/*.exe'
+            copy_first bytex-download-manager_x64_en-US.msi target src-tauri/target -path '*/bundle/msi/*.msi'
           else
-            copy_first x-download-manager_amd64.AppImage target src-tauri/target -path '*/bundle/appimage/*.AppImage'
-            copy_first x-download-manager_amd64.deb target src-tauri/target -path '*/bundle/deb/*.deb'
-            copy_first x-download-manager-1.x86_64.rpm target src-tauri/target -path '*/bundle/rpm/*.rpm'
+            copy_first bytex-download-manager_amd64.AppImage target src-tauri/target -path '*/bundle/appimage/*.AppImage'
+            copy_first bytex-download-manager_amd64.deb target src-tauri/target -path '*/bundle/deb/*.deb'
+            copy_first bytex-download-manager-1.x86_64.rpm target src-tauri/target -path '*/bundle/rpm/*.rpm'
           fi
 
       - name: Upload stable direct-download assets

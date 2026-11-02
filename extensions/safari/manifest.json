@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "X Download Manager Safari Integration",
-  "short_name": "XDM",
+  "name": "ByteX Download Manager for Safari",
+  "short_name": "ByteX",
   "version": "1.0.0",
-  "description": "Intercepts downloads, Usersdrive/authenticated file hosts, and streaming video for X Download Manager on macOS Safari.",
+  "description": "Capture downloadable files and media with ByteX Download Manager on Safari.",
   "author": "~peivee",
   "permissions": [
     "cookies",
@@ -19,12 +19,24 @@
     "http://localhost/*",
     "http://localhost:45678/*"
   ],
+  "icons": {
+    "16": "icons/16x16.png",
+    "32": "icons/32x32.png",
+    "48": "icons/48x48.png",
+    "128": "icons/128x128.png"
+  },
   "background": {
     "service_worker": "background.js",
     "scripts": ["background.js"]
   },
   "action": {
-    "default_title": "X Download Manager",
+    "default_title": "ByteX Download Manager",
+    "default_icon": {
+      "16": "icons/16x16.png",
+      "32": "icons/32x32.png",
+      "48": "icons/48x48.png",
+      "128": "icons/128x128.png"
+    },
     "default_popup": "popup.html"
   },
   "content_scripts": [

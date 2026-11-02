@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>X Download Manager Safari Extension</string>
+    <string>ByteX Download Manager Safari Extension</string>
     <key>CFBundleIdentifier</key>
     <string>com.peivee.xdm.SafariExtension</string>
     <key>CFBundleVersion</key>

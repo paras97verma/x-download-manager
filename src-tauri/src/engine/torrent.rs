@@ -1,4 +1,4 @@
-//! BitTorrent & Magnet Protocol Engine for X Download Manager
+//! BitTorrent & Magnet Protocol Engine for ByteX Download Manager
 //! Supports:
 //! - Magnet URI (`magnet:?xt=urn:btih:...`) & `.torrent` metainfo parsing
 //! - DHT, PEX, Local Peer Discovery, and UDP/HTTP Tracker announcements

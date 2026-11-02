@@ -1,6 +1,6 @@
 //! Local IPC HTTP & WebSocket Server (`http://127.0.0.1:45678`)
 //! Receives intercepted downloads, streaming video/audio URLs, cookies, referers, and auth headers
-//! from X Download Manager's Chrome, Firefox, and Safari browser extensions.
+//! from ByteX Download Manager's Chrome, Firefox, and Safari browser extensions.
 
 use axum::{
     extract::{Json, Query, State},
@@ -96,7 +96,7 @@ async fn handle_status(
     }
     let st = engine.settings.read();
     Json(IpcStatusResponse {
-        app: "X Download Manager".to_string(),
+        app: "ByteX Download Manager".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         intercept_enabled: st.browser.intercept_all_downloads,
         min_file_size_kb: st.browser.min_file_size_kb,

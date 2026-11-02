@@ -144,14 +144,14 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
           </div>
 
           {/* Quick Activation Guide for Chromium & Firefox */}
-          <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/30 space-y-2">
-            <div className="font-semibold text-blue-200 flex items-center gap-1.5 text-xs">
-              <Sparkles className="w-4 h-4 text-blue-400" />
+          <div className="p-3.5 rounded-xl bg-cyan-950/20 border border-cyan-400/30 space-y-2">
+            <div className="font-semibold text-cyan-100 flex items-center gap-1.5 text-xs">
+              <Sparkles className="w-4 h-4 text-cyan-300" />
               How to Activate in Dia, Arc, Chrome & Firefox:
             </div>
             <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 pl-1 leading-relaxed">
               <li>
-                Click <strong className="text-blue-300">"Load Unpacked"</strong> on your installed browser below. This opens Finder with the extension folder selected and opens the browser extensions page.
+                Click <strong className="text-cyan-200">"Load Unpacked"</strong> on your installed browser below. This opens Finder with the extension folder selected and opens the browser extensions page.
               </li>
               <li>
                 Turn on <strong className="text-amber-300">Developer mode</strong> (top-right of browser), click <strong className="text-emerald-300">Load unpacked</strong>, and select the opened extension folder.
@@ -200,7 +200,7 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                 <br />
                 In Safari Settings, the <em>Extensions</em> tab only lists extensions that are <strong>already loaded</strong>. If none are loaded yet, clicking "Get Extensions" opens the Mac App Store by Apple design.
                 <br />
-                To load XDM into Safari, <strong>do not click "Get Extensions"</strong>. Instead, use the <strong>Develop &rarr; Add Temporary Extension…</strong> menu as instructed below:
+                To load ByteX into Safari, <strong>do not click "Get Extensions"</strong>. Instead, use the <strong>Develop &rarr; Add Temporary Extension…</strong> menu as instructed below:
               </div>
             </div>
 
@@ -215,10 +215,10 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                 <strong>Load Extension from Folder:</strong> In the macOS top menu bar, click <strong className="text-emerald-400 font-bold">Develop &rarr; Add Temporary Extension…</strong> (or in Safari Settings &rarr; <strong className="text-emerald-400 font-bold">Developer</strong> tab &rarr; click <strong>"Add Temporary Extension…"</strong>).
               </li>
               <li>
-                <strong>Select XDM Folder:</strong> In the file picker dialog that appears, press <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘⇧G</kbd> (Go to Folder), paste with <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘V</kbd> (the path was copied to your clipboard), and click <strong className="text-emerald-300">Select</strong>!
+                <strong>Select the ByteX extension folder:</strong> In the file picker dialog, press <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘⇧G</kbd> (Go to Folder), paste the copied folder path with <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘V</kbd>, and click <strong className="text-emerald-300">Select</strong>!
               </li>
               <li>
-                <strong>Enable & Set Permissions:</strong> Now in Safari Settings &rarr; switch to the <strong className="text-indigo-300">Extensions</strong> tab. <strong className="text-white">X Download Manager</strong> is now visible! Check its checkbox to enable it and choose <strong className="text-blue-300">"Always Allow on Every Website..."</strong>.
+                <strong>Enable & Set Permissions:</strong> Now in Safari Settings &rarr; switch to the <strong className="text-indigo-300">Extensions</strong> tab. <strong className="text-white">ByteX Download Manager</strong> is now visible! Check its checkbox to enable it and choose <strong className="text-cyan-200">"Always Allow on Every Website..."</strong>.
               </li>
             </ol>
           </div>
@@ -271,7 +271,7 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => handleLaunchAndReveal(b)}
-                      className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-semibold flex items-center gap-1.5 transition"
+                      className="px-3 py-1.5 rounded-lg bg-cyan-700/20 hover:bg-cyan-700/30 border border-cyan-400/40 text-cyan-200 font-semibold flex items-center gap-1.5 transition"
                       title={`Open ${b.display_name} extensions and reveal folder`}
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -297,7 +297,7 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                       className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition ${
                         b.extension_enabled
                           ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 hover:bg-rose-600/20 hover:text-rose-300 hover:border-rose-500/40"
-                          : "bg-slate-800 text-slate-300 hover:bg-blue-600 hover:text-white"
+                          : "bg-slate-800 text-slate-300 hover:bg-cyan-700 hover:text-white"
                       }`}
                     >
                       <Power className="w-3.5 h-3.5" />
@@ -357,7 +357,7 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium shadow"
+            className="px-4 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-400 text-white font-medium shadow"
           >
             Done
           </button>

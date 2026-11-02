@@ -1,4 +1,4 @@
-//! Queue Scheduler & Bandwidth Speed Limiter for X Download Manager
+//! Queue Scheduler & Bandwidth Speed Limiter for ByteX Download Manager
 //! Evaluates time-of-day queue windows (e.g., Night Off-Peak Queue), concurrency limits,
 //! and post-queue completion actions.
 

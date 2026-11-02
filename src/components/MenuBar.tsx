@@ -107,16 +107,16 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-1 w-60 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200">
             <button
               onClick={() => handleAction(onOpenAddUrl)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
-                <Plus className="w-3.5 h-3.5 text-blue-400" /> Add URL...
+                <Plus className="w-3.5 h-3.5 text-cyan-300" /> Add URL...
               </span>
               <kbd className="text-[10px] text-slate-400">{modKey}N</kbd>
             </button>
             <button
               onClick={() => handleAction(onOpenAddTorrent)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
                 <Magnet className="w-3.5 h-3.5 text-emerald-400" /> Add Torrent / Magnet...
@@ -126,7 +126,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             <div className="h-px bg-slate-700/60 my-1" />
             <button
               onClick={() => handleAction(() => onOpenSettings("general"))}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
                 <Settings className="w-3.5 h-3.5 text-slate-400" /> Preferences...
@@ -151,16 +151,16 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-1 w-56 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200">
             <button
               onClick={() => handleAction(onSelectAll)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
-                <CheckSquare className="w-3.5 h-3.5 text-blue-400" /> Select All
+                <CheckSquare className="w-3.5 h-3.5 text-cyan-300" /> Select All
               </span>
               <kbd className="text-[10px] text-slate-400">{modKey}A</kbd>
             </button>
             <button
               onClick={() => handleAction(onDeselectAll)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span>Deselect All</span>
               <kbd className="text-[10px] text-slate-400">Esc</kbd>
@@ -203,7 +203,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-1 w-64 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200">
             <button
               onClick={() => handleAction(onToggleUiMode)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left font-semibold text-blue-300"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left font-semibold text-cyan-200"
             >
               <span className="flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5" />
@@ -235,7 +235,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             <button
               onClick={() => handleAction(onResumeSelected)}
               disabled={selectedCount === 0}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left disabled:opacity-40"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left disabled:opacity-40"
             >
               <span className="flex items-center gap-2">
                 <Play className="w-3.5 h-3.5 text-emerald-400" /> Resume Selected
@@ -245,7 +245,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             <button
               onClick={() => handleAction(onPauseSelected)}
               disabled={selectedCount === 0}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left disabled:opacity-40"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left disabled:opacity-40"
             >
               <span className="flex items-center gap-2">
                 <Pause className="w-3.5 h-3.5 text-amber-400" /> Pause Selected
@@ -256,14 +256,14 @@ export const MenuBar: React.FC<MenuBarProps> = ({
               <button
                 onClick={() => handleAction(onRestartSelected)}
                 disabled={selectedCount === 0}
-                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left disabled:opacity-40"
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left disabled:opacity-40"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-blue-400" /> Restart Selected from 0%
+                <RotateCcw className="w-3.5 h-3.5 text-cyan-300" /> Restart Selected from 0%
               </button>
             )}
             <button
               onClick={() => handleAction(onStopAll)}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left text-rose-300"
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left text-rose-300"
             >
               <Square className="w-3.5 h-3.5 text-rose-400" /> Stop All Transfers
             </button>
@@ -271,10 +271,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             {onOpenFile && (
               <button
                 onClick={() => handleAction(onOpenFile)}
-                className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+                className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
               >
                 <span className="flex items-center gap-2">
-                  <FileText className="w-3.5 h-3.5 text-blue-400" /> Open File
+                  <FileText className="w-3.5 h-3.5 text-cyan-300" /> Open File
                 </span>
                 <kbd className="text-[10px] text-slate-400">Enter</kbd>
               </button>
@@ -282,7 +282,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             {onShowInFolder && (
               <button
                 onClick={() => handleAction(onShowInFolder)}
-                className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+                className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
               >
                 <span className="flex items-center gap-2">
                   <FolderOpen className="w-3.5 h-3.5 text-indigo-400" /> Reveal in Finder / Folder
@@ -307,10 +307,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-1 w-64 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200">
             <button
               onClick={() => handleAction(onOpenScheduler)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
-                <CalendarClock className="w-3.5 h-3.5 text-indigo-400" /> XDM Queues & Scheduler...
+                <CalendarClock className="w-3.5 h-3.5 text-indigo-400" /> ByteX Queues & Scheduler...
               </span>
             </button>
           </div>
@@ -331,7 +331,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-1 w-64 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200">
             <button
               onClick={() => handleAction(onOpenExtensions)}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
                 <Puzzle className="w-3.5 h-3.5 text-indigo-400" /> Browser Integration...
@@ -339,7 +339,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             </button>
             <button
               onClick={() => handleAction(() => onOpenSettings("logins"))}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" /> Site Logins & Auth Vault...
@@ -347,10 +347,10 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             </button>
             <button
               onClick={() => handleAction(() => onOpenSettings("speed"))}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
-                <Gauge className="w-3.5 h-3.5 text-blue-400" /> Speed Limiter Settings...
+                <Gauge className="w-3.5 h-3.5 text-cyan-300" /> Speed Limiter Settings...
               </span>
             </button>
           </div>
@@ -371,7 +371,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
           <div className="absolute left-0 top-full mt-1 w-64 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200">
             <button
               onClick={() => handleAction(() => onOpenSettings("shortcuts"))}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
                 <HelpCircle className="w-3.5 h-3.5 text-emerald-400" /> Keyboard Shortcuts Guide
@@ -380,9 +380,9 @@ export const MenuBar: React.FC<MenuBarProps> = ({
             </button>
             <button
               onClick={() => handleAction(() => onOpenSettings("about"))}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
-              <span>About X Download Manager</span>
+              <span>About ByteX Download Manager</span>
             </button>
           </div>
         )}

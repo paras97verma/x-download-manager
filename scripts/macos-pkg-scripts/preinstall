@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
-OLD_APP="/Applications/X Download Manager.app"
-if [ -d "$OLD_APP" ]; then
-  /usr/bin/logger "XDM installer: removing previous application version"
-  /bin/rm -rf "$OLD_APP"
-fi
+for APP_PATH in "/Applications/ByteX Download Manager.app" "/Applications/X Download Manager.app"; do
+  if [ -d "$APP_PATH" ]; then
+    /usr/bin/logger "ByteX installer: removing previous application at $APP_PATH"
+    /bin/rm -rf "$APP_PATH"
+  fi
+done
 exit 0

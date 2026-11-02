@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const resp = await fetch("http://127.0.0.1:45678/api/v1/status");
     if (resp.ok) {
       const data = await resp.json();
-      statusEl.textContent = `Connected • XDM v${data.version}`;
+      statusEl.textContent = `Connected • ByteX v${data.version}`;
       statusEl.style.color = "#10b981";
     } else {
       throw new Error("Offline");

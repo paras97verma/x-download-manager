@@ -120,7 +120,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         const granted = await apiPromptNotificationPermission();
         if (granted) {
           await apiShowNotification(
-            "X Download Manager",
+            "ByteX Download Manager",
             "Download completion notifications are active!"
           );
         }
@@ -214,8 +214,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Header */}
         <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="font-bold text-sm text-white flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-blue-400" />
-            X Download Manager — Preferences & Settings
+            <Sliders className="w-4 h-4 text-cyan-300" />
+            ByteX Download Manager — Preferences & Settings
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition">
             <X className="w-4 h-4" />
@@ -234,7 +234,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClick={() => setActiveTab(t.id)}
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition ${
                     activeTab === t.id
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                      ? "bg-cyan-700 text-white shadow-md shadow-cyan-400/20"
                       : "text-slate-300 hover:bg-slate-800/80"
                   }`}
                 >
@@ -255,14 +255,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {/* Beginner vs Advanced Mode Toggle */}
                 <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
                   <div className="font-semibold text-slate-200 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-blue-400" />
+                    <Sparkles className="w-4 h-4 text-cyan-300" />
                     Interface Mode ({draft.ui_mode === "simple" ? "Simple / Beginner" : "Advanced / Professional"})
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <label
                       className={`p-3 rounded-lg border flex flex-col gap-1 cursor-pointer transition ${
                         draft.ui_mode === "simple"
-                          ? "bg-blue-600/20 border-blue-500/50 text-blue-200"
+                          ? "bg-cyan-700/20 border-cyan-400/50 text-cyan-100"
                           : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                       }`}
                     >
@@ -272,7 +272,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           name="ui_mode"
                           checked={draft.ui_mode === "simple"}
                           onChange={() => setDraft({ ...draft, ui_mode: "simple" })}
-                          className="text-blue-600 bg-slate-900 border-slate-700"
+                          className="text-cyan-700 bg-slate-900 border-slate-700"
                         />
                         Simple Mode (Beginner Friendly)
                       </div>
@@ -284,7 +284,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <label
                       className={`p-3 rounded-lg border flex flex-col gap-1 cursor-pointer transition ${
                         draft.ui_mode === "advanced"
-                          ? "bg-blue-600/20 border-blue-500/50 text-blue-200"
+                          ? "bg-cyan-700/20 border-cyan-400/50 text-cyan-100"
                           : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                       }`}
                     >
@@ -294,7 +294,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           name="ui_mode"
                           checked={draft.ui_mode === "advanced"}
                           onChange={() => setDraft({ ...draft, ui_mode: "advanced" })}
-                          className="text-blue-600 bg-slate-900 border-slate-700"
+                          className="text-cyan-700 bg-slate-900 border-slate-700"
                         />
                         Advanced Mode (Power User)
                       </div>
@@ -320,7 +320,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={handlePickDirectory}
-                      className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold flex items-center gap-1.5 shrink-0 shadow transition"
+                      className="px-3.5 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-400 text-white font-semibold flex items-center gap-1.5 shrink-0 shadow transition"
                     >
                       <Folder className="w-3.5 h-3.5" />
                       Browse Folder...
@@ -338,7 +338,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="checkbox"
                       checked={draft.start_on_boot}
                       onChange={(e) => handleToggleAutostart(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">Start with Operating System</div>
@@ -351,7 +351,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="checkbox"
                       checked={draft.play_sound_on_complete}
                       onChange={(e) => handleToggleNotifications(e.target.checked)}
-                      className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">OS Completion Notifications</div>
@@ -364,7 +364,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="checkbox"
                       checked={draft.minimize_to_tray}
                       onChange={(e) => setDraft({ ...draft, minimize_to_tray: e.target.checked })}
-                      className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">Menu Bar / System Tray</div>
@@ -377,7 +377,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="checkbox"
                       checked={draft.prevent_system_sleep}
                       onChange={(e) => setDraft({ ...draft, prevent_system_sleep: e.target.checked })}
-                      className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">Prevent OS Sleep</div>
@@ -391,11 +391,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Connections & Multi-Threading Tab */}
             {activeTab === "connections" && (
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white">Multi-Threaded Segmentation Engine (XDM Architecture)</h3>
+                <h3 className="text-sm font-bold text-white">Multi-Threaded Segmentation Engine (ByteX Download Engine)</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5">
                     <label className="block text-slate-200 font-semibold">
-                      Default Parallel Threads per Download: <strong className="text-blue-400">{draft.default_threads_per_download}</strong>
+                      Default Parallel Threads per Download: <strong className="text-cyan-300">{draft.default_threads_per_download}</strong>
                     </label>
                     <input
                       type="range"
@@ -405,7 +405,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onChange={(e) =>
                         setDraft({ ...draft, default_threads_per_download: Number(e.target.value) })
                       }
-                      className="w-full accent-blue-600"
+                      className="w-full accent-cyan-700"
                     />
                     <div className="flex justify-between text-[10px] text-slate-500">
                       <span>1 (Single)</span>
@@ -443,7 +443,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="checkbox"
                     checked={draft.dynamic_segment_stealing}
                     onChange={(e) => setDraft({ ...draft, dynamic_segment_stealing: e.target.checked })}
-                    className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                    className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                   />
                   <div>
                     <div className="font-semibold text-slate-200">Dynamic Segment Work-Stealing</div>
@@ -474,7 +474,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     type="checkbox"
                     checked={draft.speed_limiter_enabled}
                     onChange={(e) => setDraft({ ...draft, speed_limiter_enabled: e.target.checked })}
-                    className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                    className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                   />
                   <div>
                     <div className="font-semibold text-slate-200">Enable Global Bandwidth Speed Limiter</div>
@@ -522,7 +522,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onChange={(e) =>
                         setDraft({ ...draft, torrent: { ...draft.torrent, enable_dht: e.target.checked } })
                       }
-                      className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">Mainline DHT</div>
@@ -537,7 +537,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onChange={(e) =>
                         setDraft({ ...draft, torrent: { ...draft.torrent, enable_pex: e.target.checked } })
                       }
-                      className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">Peer Exchange (PEX)</div>
@@ -630,7 +630,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={addCredential}
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg px-3 py-1.5 flex items-center justify-center gap-1.5 shadow"
+                      className="bg-cyan-700 hover:bg-cyan-400 text-white font-semibold rounded-lg px-3 py-1.5 flex items-center justify-center gap-1.5 shadow"
                     >
                       <Plus className="w-3.5 h-3.5" /> Save Auth Entry
                     </button>
@@ -685,7 +685,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       <div>
                         <div className="font-semibold text-slate-200">
-                          {cat.name} → <span className="font-mono text-blue-400">/{cat.default_subfolder}</span>
+                          {cat.name} → <span className="font-mono text-cyan-300">/{cat.default_subfolder}</span>
                         </div>
                         <div className="text-[11px] text-slate-400 font-mono mt-0.5">
                           Extensions: {cat.extensions.join(", ")}
@@ -763,7 +763,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <br />
                       In Safari Settings, the <em>Extensions</em> tab only shows extensions that are <strong>already loaded</strong>. If none are loaded yet, clicking "Get Extensions" opens the Mac App Store by Apple design.
                       <br />
-                      To load XDM into Safari, <strong>do not click "Get Extensions"</strong>. Instead, use the <strong>Develop &rarr; Add Temporary Extension…</strong> menu as instructed below:
+                      To load ByteX into Safari, <strong>do not click "Get Extensions"</strong>. Instead, use the <strong>Develop &rarr; Add Temporary Extension…</strong> menu as instructed below:
                     </div>
                   </div>
 
@@ -778,10 +778,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <strong>Load Extension from Folder:</strong> In the macOS top menu bar, click <strong className="text-emerald-400 font-bold">Develop &rarr; Add Temporary Extension…</strong> (or in Safari Settings &rarr; <strong className="text-emerald-400 font-bold">Developer</strong> tab &rarr; click <strong>"Add Temporary Extension…"</strong>).
                     </li>
                     <li>
-                      <strong>Select XDM Folder:</strong> In the file picker dialog that appears, press <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘⇧G</kbd> (Go to Folder), paste with <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘V</kbd> (the path was copied to your clipboard), and click <strong className="text-emerald-300">Select</strong>!
+                      <strong>Select the ByteX extension folder:</strong> In the file picker dialog, press <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘⇧G</kbd> (Go to Folder), paste the copied folder path with <kbd className="px-1 py-0.5 bg-slate-800 rounded font-mono text-[10px]">⌘V</kbd>, and click <strong className="text-emerald-300">Select</strong>!
                     </li>
                     <li>
-                      <strong>Enable & Set Permissions:</strong> Now in Safari Settings &rarr; switch to the <strong className="text-indigo-300">Extensions</strong> tab. <strong className="text-white">X Download Manager</strong> is now visible! Check its checkbox to enable it and choose <strong className="text-blue-300">"Always Allow on Every Website..."</strong>.
+                      <strong>Enable & Set Permissions:</strong> Now in Safari Settings &rarr; switch to the <strong className="text-indigo-300">Extensions</strong> tab. <strong className="text-white">ByteX Download Manager</strong> is now visible! Check its checkbox to enable it and choose <strong className="text-cyan-200">"Always Allow on Every Website..."</strong>.
                     </li>
                   </ol>
                 </div>
@@ -837,7 +837,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <button
                               type="button"
                               onClick={() => handleLaunchAndReveal(b)}
-                              className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 font-semibold text-xs flex items-center gap-1 transition"
+                              className="px-2.5 py-1 rounded-lg bg-cyan-700/20 hover:bg-cyan-700/30 border border-cyan-400/40 text-cyan-200 font-semibold text-xs flex items-center gap-1 transition"
                               title={`Open ${b.display_name} extensions and reveal folder`}
                             >
                               <ExternalLink className="w-3 h-3" />
@@ -866,7 +866,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 className={`px-2.5 py-1 rounded-lg font-semibold text-xs flex items-center gap-1 transition ${
                                   b.extension_enabled
                                     ? "bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 hover:bg-rose-600/20 hover:text-rose-300 hover:border-rose-500/40"
-                                    : "bg-slate-800 text-slate-300 hover:bg-blue-600 hover:text-white"
+                                    : "bg-slate-800 text-slate-300 hover:bg-cyan-700 hover:text-white"
                                 }`}
                               >
                                 <Power className="w-3 h-3" />
@@ -894,11 +894,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         },
                       })
                     }
-                    className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                    className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                   />
                   <div>
                     <div className="font-semibold text-slate-200 text-xs">
-                      Auto-register Native Messaging Host when X Download Manager starts
+                      Auto-register Native Messaging Host when ByteX Download Manager starts
                     </div>
                     <div className="text-[10px] text-slate-400">
                       Ensures Native Messaging manifests across Dia, Opera, Arc, Safari, Firefox, and Chromium stay registered.
@@ -941,7 +941,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onChange={(e) =>
                       setDraft({ ...draft, proxy: { ...draft.proxy, enabled: e.target.checked } })
                     }
-                    className="rounded bg-slate-950 border-slate-700 text-blue-600"
+                    className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                   />
                   <div>
                     <div className="font-semibold text-slate-200">Route All Downloads through Proxy</div>
@@ -1030,11 +1030,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {activeTab === "about" && (
               <div className="space-y-4">
                 <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 text-center space-y-3.5">
-                  <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30 text-white font-black text-2xl">
+                  <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-cyan-400 to-indigo-600 flex items-center justify-center shadow-xl shadow-cyan-400/30 text-white font-black text-2xl">
                     X
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">X Download Manager</h3>
+                    <h3 className="text-base font-bold text-white">ByteX Download Manager</h3>
                     <p className="text-xs text-slate-400 mt-0.5">Version {appVersion || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "")} (Production)</p>
                   </div>
                   <div>
@@ -1068,7 +1068,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onSave(draft);
                 onClose();
               }}
-              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow transition"
+              className="px-4 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-400 text-white text-xs font-semibold shadow transition"
             >
               Save All Settings
             </button>

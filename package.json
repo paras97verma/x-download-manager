@@ -1,8 +1,8 @@
 {
-  "name": "x-download-manager",
+  "name": "bytex-download-manager",
   "private": true,
   "version": "1.0.2",
-  "description": "X Download Manager — Cross-Platform Multi-Threaded, Torrent & FTP Download Manager",
+  "description": "ByteX Download Manager \u2014 a fast cross-platform download manager for HTTP, torrents, FTP, and browser downloads",
   "author": "~peivee",
   "license": "MIT",
   "type": "module",

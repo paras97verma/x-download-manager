@@ -85,7 +85,7 @@ fn run_native_messaging_stdio_bridge() {
                             .text()
                             .await
                             .unwrap_or_else(|_| r#"{"accepted":true}"#.to_string()),
-                        Err(_) => r#"{"accepted":false,"error":"XDM desktop app not reachable"}"#
+                        Err(_) => r#"{"accepted":false,"error":"ByteX desktop app not reachable"}"#
                             .to_string(),
                     }
                 })

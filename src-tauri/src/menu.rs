@@ -6,10 +6,16 @@ pub fn create_native_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<M
     #[cfg(target_os = "macos")]
     let app_menu = Submenu::with_items(
         app,
-        "X Download Manager",
+        "ByteX Download Manager",
         true,
         &[
-            &MenuItem::with_id(app, "about", "About X Download Manager", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                "about",
+                "About ByteX Download Manager",
+                true,
+                None::<&str>,
+            )?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(
                 app,
@@ -153,7 +159,7 @@ pub fn create_native_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<M
         &[&MenuItem::with_id(
             app,
             "open_scheduler",
-            "XDM Queues & Scheduler...",
+            "ByteX Queues & Scheduler...",
             true,
             None::<&str>,
         )?],
@@ -215,7 +221,13 @@ pub fn create_native_app_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<M
                 Some("CmdOrCtrl+/"),
             )?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "about", "About X Download Manager", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                "about",
+                "About ByteX Download Manager",
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
 

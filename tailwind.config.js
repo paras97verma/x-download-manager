@@ -9,7 +9,7 @@ export default {
           panel: "#111827",
           card: "#1e293b",
           border: "#334155",
-          accent: "#3b82f6",
+          accent: "#45d9cf",
           emerald: "#10b981",
           amber: "#f59e0b",
           rose: "#f43f5e"

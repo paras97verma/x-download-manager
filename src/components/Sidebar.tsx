@@ -81,7 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${
                     active
-                      ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
+                      ? "bg-cyan-700/20 text-cyan-300 border border-cyan-400/30"
                       : "text-slate-300 hover:bg-slate-800/70"
                   }`}
                 >
@@ -130,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* XDM Synchronized Queues */}
+        {/* ByteX synchronized queues */}
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-2 mb-1.5">
             Download Queues

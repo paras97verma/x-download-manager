@@ -11,7 +11,7 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-If you discover a security vulnerability in X Download Manager (e.g. credential leakage, IPC privilege escalation, protocol vulnerabilities), please report it responsibly:
+If you discover a security vulnerability in ByteX Download Manager (e.g. credential leakage, IPC privilege escalation, protocol vulnerabilities), please report it responsibly:
 
 1. **GitHub Security Advisory (Preferred)**:
    Navigate to the [Security Advisories](https://github.com/paras97verma/x-download-manager/security/advisories) tab of this repository and click **Report a vulnerability**.

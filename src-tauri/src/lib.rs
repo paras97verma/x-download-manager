@@ -507,12 +507,12 @@ pub fn run_app() {
             if let Ok(show_i) = tauri::menu::MenuItem::with_id(
                 app,
                 "show",
-                "Show X Download Manager",
+                "Show ByteX Download Manager",
                 true,
                 None::<&str>,
             ) {
                 if let Ok(quit_i) =
-                    tauri::menu::MenuItem::with_id(app, "quit", "Quit XDM", true, None::<&str>)
+                    tauri::menu::MenuItem::with_id(app, "quit", "Quit ByteX", true, None::<&str>)
                 {
                     if let Ok(menu) = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i]) {
                         let mut builder = tauri::tray::TrayIconBuilder::new()
@@ -585,12 +585,12 @@ pub fn run_app() {
 
                         let tooltip = if active_count > 0 {
                             format!(
-                                "X Download Manager — {} active — ↓ {}",
+                                "ByteX Download Manager — {} active — ↓ {}",
                                 active_count,
                                 format_speed_bps(total_speed_bps)
                             )
                         } else {
-                            "X Download Manager — Idle".to_string()
+                            "ByteX Download Manager — Idle".to_string()
                         };
 
                         let short_title = if active_count > 0 {
@@ -682,5 +682,5 @@ pub fn run_app() {
             get_app_version,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running X Download Manager");
+        .expect("error while running ByteX Download Manager");
 }

@@ -227,7 +227,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
   const getFileIcon = (filePath: string) => {
     const ext = filePath.split(".").pop()?.toLowerCase();
-    if (["mp4", "mkv", "avi", "webm", "mov"].includes(ext || "")) return <Film className="w-3.5 h-3.5 text-blue-400" />;
+    if (["mp4", "mkv", "avi", "webm", "mov"].includes(ext || "")) return <Film className="w-3.5 h-3.5 text-cyan-300" />;
     if (["mp3", "flac", "wav", "aac"].includes(ext || "")) return <Music className="w-3.5 h-3.5 text-indigo-400" />;
     if (["zip", "rar", "7z", "tar", "gz"].includes(ext || "")) return <Archive className="w-3.5 h-3.5 text-amber-400" />;
     if (["exe", "dmg", "pkg", "iso"].includes(ext || "")) return <Cpu className="w-3.5 h-3.5 text-emerald-400" />;
@@ -281,7 +281,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
               onClick={() => setMode("url")}
               className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
                 mode === "url"
-                  ? "bg-blue-600 text-white shadow"
+                  ? "bg-cyan-700 text-white shadow"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -483,7 +483,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://... or ftp://username:password@host/file.zip or magnet:?xt=..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-xs focus:border-blue-500 focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-xs focus:border-cyan-400 focus:outline-none"
                 />
               </div>
 
@@ -548,7 +548,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                     max={32}
                     value={threadsCount}
                     onChange={(e) => setThreadsCount(Number(e.target.value))}
-                    className="w-full accent-blue-600"
+                    className="w-full accent-cyan-700"
                   />
                 </div>
 
@@ -608,7 +608,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                     </label>
                     <label className="text-[11px] text-slate-400">
                       User-Agent
-                      <input value={userAgent} onChange={(e) => setUserAgent(e.target.value)} placeholder="Use XDM default" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200" />
+                      <input value={userAgent} onChange={(e) => setUserAgent(e.target.value)} placeholder="Use ByteX default" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200" />
                     </label>
                     <label className="col-span-2 text-[11px] text-slate-400">
                       Additional HTTP headers (one per line, Name: value)
@@ -642,7 +642,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
               className={`px-4 py-1.5 rounded-lg text-white text-xs font-semibold shadow transition ${
                 mode === "torrent"
                   ? "bg-emerald-600 hover:bg-emerald-500"
-                  : "bg-blue-600 hover:bg-blue-500"
+                  : "bg-cyan-700 hover:bg-cyan-400"
               }`}
             >
               Start Download Now

@@ -1,10 +1,17 @@
-// X Download Manager (XDM) — Safari Content Script
+// ByteX Download Manager (XDM) — Safari Content Script
 // Intercepts browser download links, download buttons, and streaming media for macOS Safari.
 
 (function () {
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
   const XDM_IPC_URL = "http://127.0.0.1:45678";
   let bypassKeyPressed = false;
+
+  runtimeAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || message.type !== "XDM_CAPTURE_RESULT") return false;
+    showXdmCaptureToast(message.url || "", "", message.success);
+    sendResponse?.({ received: true });
+    return false;
+  });
 
   // Track Alt / Option key to allow users to bypass XDM when desired
   window.addEventListener(
@@ -139,14 +146,14 @@
 
       const logo = document.createElement("div");
       logo.style.cssText =
-        "width:18px;height:18px;border-radius:4px;background:#3b82f6;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px;";
-      logo.textContent = "X";
+        "width:18px;height:18px;border-radius:4px;background:#45d9cf;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px;";
+      logo.textContent = "B";
 
       const textCol = document.createElement("div");
 
       const titleEl = document.createElement("div");
       titleEl.style.cssText = "font-weight:bold;font-size:12px;color:#ffffff;";
-      titleEl.textContent = success ? "Download started in XDM" : "XDM could not start; browser download resumed";
+      titleEl.textContent = success ? "Download started in ByteX" : "ByteX could not start; browser download resumed";
 
       const nameEl = document.createElement("div");
       nameEl.style.cssText =
@@ -166,7 +173,7 @@
         "z-index: 2147483647",
         "background: rgba(15, 23, 42, 0.95)",
         "backdrop-filter: blur(8px)",
-        "border: 1px solid rgba(59, 130, 246, 0.5)",
+        "border: 1px solid rgba(69, 217, 207, 0.55)",
         "border-radius: 12px",
         "padding: 10px 14px",
         "box-shadow: 0 10px 30px rgba(0,0,0,0.6)",
@@ -177,7 +184,9 @@
         "animation: xdmSlideIn 0.25s ease-out",
       ].join(";");
 
-      document.body.appendChild(toast);
+      const root = document.documentElement || document.body;
+      if (!root) return;
+      root.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = "0";
         toast.style.transform = "translateY(10px)";
@@ -284,13 +293,13 @@
 
       media.dataset.xdmAttached = "true";
       const badge = document.createElement("button");
-      badge.innerText = "⬇ Download with XDM";
+      badge.innerText = "⬇ Download with ByteX";
       badge.style.cssText = [
         "position: absolute",
         "top: 10px",
         "right: 10px",
         "z-index: 2147483647",
-        "background: linear-gradient(135deg, #2563eb, #4f46e5)",
+        "background: linear-gradient(135deg, #17b8ad, #5147d9)",
         "color: #ffffff",
         "border: 1px solid rgba(255,255,255,0.25)",
         "border-radius: 8px",
@@ -306,7 +315,7 @@
         ev.preventDefault();
         ev.stopPropagation();
         captureDownload(src, null, null);
-        badge.innerText = "✓ Sent to XDM";
+        badge.innerText = "✓ Sent to ByteX";
       });
 
       const parent = media.parentElement;

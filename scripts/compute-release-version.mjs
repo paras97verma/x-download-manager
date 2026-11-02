@@ -50,5 +50,5 @@ if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tagName)) {
 }
 
 const version = tagName.slice(1);
-const releaseTitle = `X Download Manager ${tagName}${channel === "stable" || releaseRef.startsWith("refs/tags/v") ? "" : ` (${channel.toUpperCase()})`}`;
+const releaseTitle = `ByteX Download Manager ${tagName}${channel === "stable" || releaseRef.startsWith("refs/tags/v") ? "" : ` (${channel.toUpperCase()})`}`;
 process.stdout.write(`version_tag=${tagName}\nversion=${version}\nrelease_title=${releaseTitle}\n`);

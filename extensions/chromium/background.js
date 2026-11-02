@@ -1,4 +1,4 @@
-// X Download Manager (XDM) — Background Service Worker / WebExtension Script
+// ByteX Download Manager (XDM) — Background Service Worker / WebExtension Script
 // Works across Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Mozilla Firefox, and Apple Safari.
 // Features:
 // 1. Intercepts browser downloads (`downloads.onCreated`) matching configured extensions or size threshold
@@ -41,12 +41,12 @@ async function syncWithDesktopApp() {
 syncWithDesktopApp();
 setInterval(syncWithDesktopApp, 15000);
 
-// Create Context Menu Item ("Download with X Download Manager")
+// Create Context Menu Item ("Download with ByteX")
 runtimeAPI.runtime.onInstalled.addListener(() => {
   if (runtimeAPI.contextMenus) {
     runtimeAPI.contextMenus.create({
       id: "xdm-download-link",
-      title: "Download with X Download Manager",
+      title: "Download with ByteX",
       contexts: ["link", "video", "audio"],
     });
   }
@@ -76,11 +76,11 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       url: msg.url,
       referer: msg.referer || (sender.tab ? sender.tab.url : ""),
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
-    }).then((ok) => {
-      notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url);
+    }).then(async (ok) => {
+      await notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url);
       sendResponse({ success: ok });
-    }).catch(() => {
-      notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
+    }).catch(async () => {
+      await notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
       sendResponse({ success: false });
     });
     return true;
@@ -268,7 +268,7 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (accepted) {
-    notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename);
+    await notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename);
     try {
       runtimeAPI.downloads.cancel(downloadItem.id);
       if (runtimeAPI.downloads.erase) {
@@ -278,7 +278,7 @@ async function handleDownloadInterception(downloadItem) {
     return true;
   } else {
     // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
-    notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
+    await notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
     if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
       try {
         await runtimeAPI.downloads.resume(downloadItem.id);
@@ -327,14 +327,69 @@ function detectBrowserFamily() {
   return "Chromium";
 }
 
-function notifyCaptureResult(tabId, success, filename) {
-  if (tabId == null || !runtimeAPI.tabs || !runtimeAPI.tabs.sendMessage) return;
-  try {
-    const result = runtimeAPI.tabs.sendMessage(tabId, {
-      type: "XDM_CAPTURE_RESULT",
-      success,
-      filename: filename || "Download",
-    });
-    if (result && result.catch) result.catch(() => {});
-  } catch (_) {}
+async function notifyCaptureResult(tabId, success, filename) {
+  const message = {
+    type: "XDM_CAPTURE_RESULT",
+    success,
+    filename: filename || "Download",
+  };
+  let delivered = false;
+
+  if (Number.isInteger(tabId) && tabId >= 0 && runtimeAPI.tabs?.sendMessage) {
+    try {
+      const response = await runtimeAPI.tabs.sendMessage(tabId, message);
+      delivered = response?.received === true;
+    } catch (_) {
+      // A page may not have a live content script. Inject the toast below.
+    }
+
+    if (!delivered && runtimeAPI.scripting?.executeScript) {
+      try {
+        const result = await runtimeAPI.scripting.executeScript({
+          target: { tabId },
+          func: renderCaptureToast,
+          args: [message],
+        });
+        delivered = result?.some((frame) => frame.result === true) === true;
+      } catch (_) {
+        // Restricted browser pages do not permit content-script injection.
+      }
+    }
+  }
+
+  if (!delivered && runtimeAPI.notifications?.create) {
+    const status = success
+      ? "Download started with ByteX"
+      : "ByteX could not start; the browser download continues";
+    try {
+      await runtimeAPI.notifications.create(`bytex-${Date.now()}`, {
+        type: "basic",
+        iconUrl: "icons/128x128.png",
+        title: "ByteX Download Manager",
+        message: `${status}: ${filename || "Download"}`,
+      });
+    } catch (_) {}
+  }
+}
+
+function renderCaptureToast(message) {
+  const root = document.documentElement || document.body;
+  if (!root) return false;
+
+  document.getElementById("bytex-capture-toast")?.remove();
+  const host = document.createElement("div");
+  host.id = "bytex-capture-toast";
+  host.style.cssText = "all:initial;display:block;position:fixed;right:20px;bottom:20px;z-index:2147483647;pointer-events:none";
+  const shadow = host.attachShadow({ mode: "closed" });
+  const toast = document.createElement("div");
+  const filename = (message.filename || "Download").split(/[\\/]/).pop();
+  const status = message.success
+    ? "Download started with ByteX"
+    : "ByteX could not start; browser download continues";
+  toast.textContent = `${message.success ? "✓" : "⚠"} ${status} · ${filename}`;
+  toast.style.cssText = "box-sizing:border-box;background:#102038;color:#f7fbff;border:1px solid #45d9cf;border-radius:10px;padding:12px 16px;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 28px #0008;max-width:min(420px,calc(100vw - 40px));overflow-wrap:anywhere";
+  shadow.appendChild(toast);
+  root.appendChild(host);
+  setTimeout(() => host.remove(), 5000);
+  return true;
 }

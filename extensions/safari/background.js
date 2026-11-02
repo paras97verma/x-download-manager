@@ -1,4 +1,4 @@
-// X Download Manager (XDM) — Safari Background Service Worker & Script
+// ByteX Download Manager (XDM) — Safari Background Service Worker & Script
 // Features:
 // 1. Receives intercepted link downloads and streaming media from content.js
 // 2. Captures full authentication cookies, Referer, and User-Agent headers
@@ -39,13 +39,13 @@ async function syncWithDesktopApp() {
 syncWithDesktopApp();
 setInterval(syncWithDesktopApp, 15000);
 
-// Create Context Menu Item ("Download with X Download Manager")
+// Create Context Menu Item ("Download with ByteX")
 runtimeAPI.runtime.onInstalled.addListener(() => {
   if (runtimeAPI.contextMenus) {
     try {
       runtimeAPI.contextMenus.create({
         id: "xdm-download-link",
-        title: "Download with X Download Manager",
+        title: "Download with ByteX",
         contexts: ["link", "video", "audio", "image"],
       });
     } catch (_) {}
@@ -61,6 +61,10 @@ if (runtimeAPI.contextMenus) {
           url: targetUrl,
           referer: info.pageUrl || (tab ? tab.url : ""),
           tabTitle: tab ? tab.title : "",
+        }).then((success) => {
+          notifyCaptureResult(tab && tab.id, success, targetUrl);
+        }).catch(() => {
+          notifyCaptureResult(tab && tab.id, false, targetUrl);
         });
       }
     }
@@ -196,4 +200,17 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   }
 
   return false;
+}
+
+function notifyCaptureResult(tabId, success, filename) {
+  if (!Number.isInteger(tabId) || tabId < 0 || !runtimeAPI.tabs?.sendMessage) return;
+  try {
+    const result = runtimeAPI.tabs.sendMessage(tabId, {
+      type: "XDM_CAPTURE_RESULT",
+      success,
+      filename: filename || "Download",
+      url: filename || "",
+    });
+    if (result && result.catch) result.catch(() => {});
+  } catch (_) {}
 }

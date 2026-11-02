@@ -63,7 +63,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
         {/* Header */}
         <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+            <div className="w-8 h-8 rounded-lg bg-cyan-700/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
               <FileText className="w-4 h-4" />
             </div>
             <div>
@@ -88,7 +88,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                     item.status === "completed"
                       ? "bg-emerald-400"
                       : item.status === "downloading"
-                      ? "bg-blue-400 animate-pulse"
+                      ? "bg-cyan-300 animate-pulse"
                       : item.status === "paused"
                       ? "bg-amber-400"
                       : "bg-rose-400"
@@ -116,7 +116,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
             <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Engine & Speed</div>
               <div className="font-semibold text-slate-200 flex items-center gap-2">
-                <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                <Cpu className="w-3.5 h-3.5 text-cyan-300" />
                 {item.threads_count} Threads • {item.status === "downloading" ? formatSpeed(item.speed_bps) : "Idle"}
               </div>
             </div>
@@ -128,7 +128,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
               <span>Source URL</span>
               <button
                 onClick={() => copyToClipboard(item.url, "url")}
-                className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
               >
                 {copiedField === "url" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 {copiedField === "url" ? "Copied" : "Copy URL"}
@@ -152,7 +152,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                 </button>
                 <button
                   onClick={() => copyToClipboard(item.save_path, "path")}
-                  className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
                 >
                   {copiedField === "path" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   {copiedField === "path" ? "Copied" : "Copy Path"}
@@ -176,7 +176,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                 disabled={isHashing}
                 className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-[11px] font-medium flex items-center gap-1 transition"
               >
-                <RefreshCw className={`w-3 h-3 ${isHashing ? "animate-spin text-blue-400" : ""}`} />
+                <RefreshCw className={`w-3 h-3 ${isHashing ? "animate-spin text-cyan-300" : ""}`} />
                 {isHashing ? "Calculating..." : hash ? "Recalculate" : "Verify Integrity"}
               </button>
             </div>

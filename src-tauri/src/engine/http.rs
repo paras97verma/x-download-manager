@@ -331,7 +331,7 @@ pub async fn execute_segmented_http_download(
             .unwrap_or(false);
 
         if (is_html_mime && probe.total_bytes < 10_000_000) || suggested_is_html {
-            let err_msg = "Remote server returned an HTML error or landing page (Content-Type: text/html) instead of the requested binary file. This occurs on file hosts (MediaFire, 1fichier, Usersdrive) when a captcha, wait timer, or active browser session is required. Please trigger the download in your browser so the XDM extension can intercept the direct CDN link.".to_string();
+            let err_msg = "Remote server returned an HTML error or landing page (Content-Type: text/html) instead of the requested binary file. This occurs on file hosts (MediaFire, 1fichier, Usersdrive) when a captcha, wait timer, or active browser session is required. Please trigger the download in your browser so the ByteX extension can intercept the direct CDN link.".to_string();
             let mut dls = downloads.write();
             if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
                 d.status = DownloadStatus::Failed;
