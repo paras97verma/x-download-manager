@@ -1,4 +1,4 @@
-//! BitTorrent & Magnet Protocol Engine for X Download Manager
+//! BitTorrent & Magnet Protocol Engine for ByteX Download Manager
 //! Supports:
 //! - Magnet URI (`magnet:?xt=urn:btih:...`) & `.torrent` metainfo parsing
 //! - DHT, PEX, Local Peer Discovery, and UDP/HTTP Tracker announcements
@@ -442,9 +442,27 @@ pub async fn execute_torrent_download(
         librqbit::AddTorrent::from_bytes(bytes)
     };
 
-    let session = librqbit::Session::new(std::path::PathBuf::from(&save_dir))
-        .await
-        .map_err(|e| format!("Could not start torrent engine: {e}"))?;
+    let mut state_key = Sha256::new();
+    state_key.update(save_dir.as_bytes());
+    let state_key = hex::encode(state_key.finalize());
+    let persistence_root = directories::ProjectDirs::from("com", "peivee", "XDownloadManager")
+        .map(|project| project.config_dir().join("torrent-state"))
+        .unwrap_or_else(|| std::path::PathBuf::from(".xdm-torrent-state"));
+    let session_state_dir = persistence_root.join(format!("{}-{}", &state_key[..16], item_id));
+    std::fs::create_dir_all(&session_state_dir)
+        .map_err(|e| format!("Could not create torrent resume state: {e}"))?;
+    let session = librqbit::Session::new_with_opts(
+        std::path::PathBuf::from(&save_dir),
+        librqbit::SessionOptions {
+            fastresume: true,
+            persistence: Some(librqbit::SessionPersistenceConfig::Json {
+                folder: Some(session_state_dir),
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| format!("Could not start torrent engine: {e}"))?;
     let options = librqbit::AddTorrentOptions {
         output_folder: Some(save_dir.clone()),
         overwrite: true,

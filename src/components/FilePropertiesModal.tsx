@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   X,
   FileText,
@@ -25,12 +25,21 @@ import {
 interface FilePropertiesModalProps {
   item: DownloadItem;
   onClose: () => void;
+  onUpdateUrl: (id: string, url: string) => Promise<void>;
 }
 
-export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, onClose }) => {
+export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, onClose, onUpdateUrl }) => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(item.checksum_sha256 || null);
   const [isHashing, setIsHashing] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState(item.url);
+  const [isUpdatingUrl, setIsUpdatingUrl] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSourceUrl(item.url);
+    setUrlError(null);
+  }, [item.id, item.url]);
 
   const copyToClipboard = (text: string, fieldName: string) => {
     navigator.clipboard?.writeText(text);
@@ -52,6 +61,18 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
     }
   };
 
+  const handleUpdateUrl = async () => {
+    setIsUpdatingUrl(true);
+    setUrlError(null);
+    try {
+      await onUpdateUrl(item.id, sourceUrl.trim());
+    } catch (error) {
+      setUrlError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsUpdatingUrl(false);
+    }
+  };
+
   const pct =
     item.total_bytes > 0
       ? Math.min(100, (item.downloaded_bytes / item.total_bytes) * 100).toFixed(1)
@@ -63,7 +84,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
         {/* Header */}
         <div className="px-5 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+            <div className="w-8 h-8 rounded-lg bg-cyan-700/20 border border-cyan-400/30 flex items-center justify-center text-cyan-300">
               <FileText className="w-4 h-4" />
             </div>
             <div>
@@ -88,7 +109,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                     item.status === "completed"
                       ? "bg-emerald-400"
                       : item.status === "downloading"
-                      ? "bg-blue-400 animate-pulse"
+                      ? "bg-cyan-300 animate-pulse"
                       : item.status === "paused"
                       ? "bg-amber-400"
                       : "bg-rose-400"
@@ -116,7 +137,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
             <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
               <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Engine & Speed</div>
               <div className="font-semibold text-slate-200 flex items-center gap-2">
-                <Cpu className="w-3.5 h-3.5 text-blue-400" />
+                <Cpu className="w-3.5 h-3.5 text-cyan-300" />
                 {item.threads_count} Threads • {item.status === "downloading" ? formatSpeed(item.speed_bps) : "Idle"}
               </div>
             </div>
@@ -128,15 +149,32 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
               <span>Source URL</span>
               <button
                 onClick={() => copyToClipboard(item.url, "url")}
-                className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
               >
                 {copiedField === "url" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 {copiedField === "url" ? "Copied" : "Copy URL"}
               </button>
             </div>
-            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono break-all select-text">
-              {item.url}
-            </div>
+            <input
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              disabled={item.status === "completed" || isUpdatingUrl}
+              aria-label="Download source URL"
+              className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-200 font-mono focus:outline-none focus:border-cyan-500 disabled:opacity-60"
+            />
+            {item.status !== "completed" && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] text-amber-300/80">Updating clears partial data and restarts from this link.</span>
+                <button
+                  onClick={handleUpdateUrl}
+                  disabled={isUpdatingUrl || !sourceUrl.trim() || sourceUrl.trim() === item.url}
+                  className="shrink-0 px-2.5 py-1 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 text-white text-[10px] font-semibold"
+                >
+                  {isUpdatingUrl ? "Restarting…" : "Update Link & Restart"}
+                </button>
+              </div>
+            )}
+            {urlError && <p role="alert" className="text-[10px] text-rose-300">{urlError}</p>}
           </div>
 
           {/* Save Path */}
@@ -152,7 +190,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                 </button>
                 <button
                   onClick={() => copyToClipboard(item.save_path, "path")}
-                  className="text-[10px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  className="text-[10px] text-cyan-300 hover:text-cyan-200 flex items-center gap-1"
                 >
                   {copiedField === "path" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   {copiedField === "path" ? "Copied" : "Copy Path"}
@@ -176,7 +214,7 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                 disabled={isHashing}
                 className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-[11px] font-medium flex items-center gap-1 transition"
               >
-                <RefreshCw className={`w-3 h-3 ${isHashing ? "animate-spin text-blue-400" : ""}`} />
+                <RefreshCw className={`w-3 h-3 ${isHashing ? "animate-spin text-cyan-300" : ""}`} />
                 {isHashing ? "Calculating..." : hash ? "Recalculate" : "Verify Integrity"}
               </button>
             </div>

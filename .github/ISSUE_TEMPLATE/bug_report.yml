@@ -1,5 +1,5 @@
 name: 🐛 Bug Report
-description: File a bug report to help us improve X Download Manager
+description: File a bug report to help us improve ByteX Download Manager
 title: "[Bug]: "
 labels: ["bug"]
 body:
@@ -48,7 +48,7 @@ body:
       label: Steps to Reproduce
       description: What steps lead to this behavior?
       placeholder: |
-        1. Open XDM
+        1. Open ByteX Download Manager
         2. Click 'Add URL' and enter ...
         3. Observe error ...
     validations:

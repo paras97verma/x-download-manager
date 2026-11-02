@@ -1,6 +1,6 @@
-# Contributing to X Download Manager
+# Contributing to ByteX Download Manager
 
-Thank you for your interest in contributing to **X Download Manager**!
+Thank you for your interest in contributing to **ByteX Download Manager**!
 
 ---
 

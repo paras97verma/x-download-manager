@@ -19,7 +19,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         }
 
         let response = NSExtensionItem()
-        response.userInfo = [SFExtensionMessageKey: ["accepted": true, "app": "X Download Manager"]]
+        response.userInfo = [SFExtensionMessageKey: ["accepted": true, "app": "ByteX Download Manager"]]
         context.completeRequest(returningItems: [response], completionHandler: nil)
     }
 }

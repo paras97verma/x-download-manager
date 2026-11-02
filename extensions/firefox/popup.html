@@ -2,15 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>X Download Manager</title>
+  <title>ByteX Download Manager</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="xdm-popup">
     <div class="xdm-header">
-      <div class="xdm-logo">X</div>
+      <img class="xdm-logo" src="icons/128x128.png" alt="" />
       <div>
-        <div class="xdm-title">X Download Manager</div>
+        <div class="xdm-title">ByteX Download Manager</div>
         <div id="xdm-conn-status" class="xdm-subtitle">Checking Desktop Bridge...</div>
       </div>
     </div>
@@ -20,7 +20,7 @@
         <span>Intercept Browser Downloads</span>
         <input type="checkbox" id="xdm-enable-toggle" checked />
       </label>
-      <div class="xdm-hint">Hold <strong>Alt / Option</strong> while clicking any link to bypass XDM.</div>
+      <div class="xdm-hint">Hold <strong id="xdm-bypass-key">Alt</strong> while clicking any link to bypass ByteX.</div>
     </div>
 
     <div class="xdm-card">
@@ -32,7 +32,7 @@
     </div>
 
     <div class="xdm-footer">
-      Made with ❤️ by ~peivee
+      ByteX • Cross-platform downloads
     </div>
   </div>
   <script src="popup.js"></script>

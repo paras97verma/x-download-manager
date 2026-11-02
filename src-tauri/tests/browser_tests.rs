@@ -14,8 +14,20 @@ fn test_supported_browsers_list_completeness() {
     assert!(ids.contains(&"opera"), "Opera must be supported");
     assert!(ids.contains(&"operagx"), "Opera GX must be supported");
     assert!(ids.contains(&"vivaldi"), "Vivaldi must be supported");
+    assert!(ids.contains(&"thorium"), "Thorium must be supported");
+    assert!(
+        ids.contains(&"ungoogled"),
+        "Ungoogled Chromium must be supported"
+    );
+    assert!(ids.contains(&"whale"), "NAVER Whale must be supported");
+    assert!(ids.contains(&"helium"), "Helium must be supported");
     assert!(ids.contains(&"firefox"), "Firefox must be supported");
     assert!(ids.contains(&"zen"), "Zen Browser must be supported");
+    assert!(ids.contains(&"tor"), "Tor Browser must be supported");
+    assert!(
+        ids.contains(&"mullvad"),
+        "Mullvad Browser must be supported"
+    );
     assert!(ids.contains(&"safari"), "Apple Safari must be supported");
 }
 
@@ -34,6 +46,7 @@ fn test_detect_browsers_returns_valid_structure() {
         ));
         assert!(!status.manifest_path.is_empty());
         assert!(!status.status_message.is_empty());
+        assert!(!status.extension_bundle_path.is_empty());
     }
 }
 
@@ -50,4 +63,7 @@ fn test_native_messaging_directories_generated() {
 
     let zen_dirs = get_all_native_messaging_dirs("zen");
     assert!(!zen_dirs.is_empty());
+
+    assert!(!get_all_native_messaging_dirs("thorium").is_empty());
+    assert!(!get_all_native_messaging_dirs("tor").is_empty());
 }

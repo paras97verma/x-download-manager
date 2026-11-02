@@ -5,6 +5,26 @@ use std::io::{self, Read, Write};
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
+    if args.iter().any(|a| a == "--prepare-for-update") {
+        // Installer scripts invoke this on the previous installation. It asks the already
+        // running process to exit cleanly; a missing process is a successful no-op.
+        let settings = xdm_lib::config::ConfigManager::new().load();
+        let port = settings.browser.ipc_port;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build();
+        if let Ok(runtime) = runtime {
+            let _ = runtime.block_on(async move {
+                reqwest::Client::new()
+                    .post(format!("http://127.0.0.1:{port}/api/v1/prepare-update"))
+                    .timeout(std::time::Duration::from_secs(3))
+                    .send()
+                    .await
+            });
+        }
+        return;
+    }
+
     // If launched by Chrome, Firefox, Brave, Edge, or Safari as a Native Messaging Host
     // (Chromium passes `chrome-extension://...`, Firefox passes path to `.json` and extension ID)
     let is_native_messaging = args.iter().any(|a| {
@@ -85,7 +105,7 @@ fn run_native_messaging_stdio_bridge() {
                             .text()
                             .await
                             .unwrap_or_else(|_| r#"{"accepted":true}"#.to_string()),
-                        Err(_) => r#"{"accepted":false,"error":"XDM desktop app not reachable"}"#
+                        Err(_) => r#"{"accepted":false,"error":"ByteX desktop app not reachable"}"#
                             .to_string(),
                     }
                 })

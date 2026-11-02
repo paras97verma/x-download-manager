@@ -1,4 +1,4 @@
-//! Queue Scheduler & Bandwidth Speed Limiter for X Download Manager
+//! Queue Scheduler & Bandwidth Speed Limiter for ByteX Download Manager
 //! Evaluates time-of-day queue windows (e.g., Night Off-Peak Queue), concurrency limits,
 //! and post-queue completion actions.
 
@@ -105,6 +105,10 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
     let mut interval = tokio::time::interval(Duration::from_secs(3));
     loop {
         interval.tick().await;
+
+        if let Err(error) = engine.persist_downloads() {
+            tracing::warn!(%error, "Could not persist download history");
+        }
 
         // 1. Maintain active OS sleep inhibitor while transfers are running
         let is_downloading = {

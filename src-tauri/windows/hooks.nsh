@@ -1,17 +1,52 @@
+!include "FileFunc.nsh"
+
 !macro NSIS_HOOK_PREINSTALL
-  ; Remove an existing per-user or per-machine installation before replacing its files.
-  IfFileExists "$INSTDIR\uninstall.exe" 0 xdm_preinstall_done
-  DetailPrint "Removing the previous X Download Manager installation..."
-  ExecWait '"$INSTDIR\uninstall.exe" /S' $0
+  ; Locate both the selected install directory and the previous product-name defaults.
+  IfFileExists "$INSTDIR\uninstall.exe" 0 xdm_check_legacy_user_install
+  StrCpy $0 "$INSTDIR\uninstall.exe"
+  Goto xdm_run_previous_uninstaller
+
+  xdm_check_legacy_user_install:
+  IfFileExists "$LOCALAPPDATA\Programs\X Download Manager\uninstall.exe" 0 xdm_check_legacy_user_root
+  StrCpy $0 "$LOCALAPPDATA\Programs\X Download Manager\uninstall.exe"
+  Goto xdm_run_previous_uninstaller
+
+  xdm_check_legacy_user_root:
+  IfFileExists "$LOCALAPPDATA\X Download Manager\uninstall.exe" 0 xdm_check_legacy_machine_install
+  StrCpy $0 "$LOCALAPPDATA\X Download Manager\uninstall.exe"
+  Goto xdm_run_previous_uninstaller
+
+  xdm_check_legacy_machine_install:
+  IfFileExists "$PROGRAMFILES64\X Download Manager\uninstall.exe" 0 xdm_check_legacy_machine_x86
+  StrCpy $0 "$PROGRAMFILES64\X Download Manager\uninstall.exe"
+  Goto xdm_run_previous_uninstaller
+
+  xdm_check_legacy_machine_x86:
+  IfFileExists "$PROGRAMFILES\X Download Manager\uninstall.exe" 0 xdm_preinstall_done
+  StrCpy $0 "$PROGRAMFILES\X Download Manager\uninstall.exe"
+
+  xdm_run_previous_uninstaller:
+  ; Ask the old app to quit before removing files. Its local IPC handler exits the
+  ; process after acknowledging this request, even when the window is in the tray.
+  ${GetParent} $2 "$0"
+  IfFileExists "$2\x-download-manager.exe" 0 xdm_run_uninstaller
+  Exec '"$2\x-download-manager.exe" --prepare-for-update'
+  Sleep 1000
+  ; Older releases do not have the IPC quit command. Close any remaining old
+  ; process before the uninstaller removes its executable and data files.
+  ExecWait 'taskkill /IM x-download-manager.exe /T'
+  xdm_run_uninstaller:
+  DetailPrint "Removing the previous ByteX Download Manager installation..."
+  ExecWait '"$0" /S' $1
   ; A failed uninstall should stop setup rather than overlay two versions.
-  IntCmp $0 0 xdm_preinstall_done xdm_preinstall_failed xdm_preinstall_failed
+  IntCmp $1 0 xdm_preinstall_done xdm_preinstall_failed xdm_preinstall_failed
   xdm_preinstall_failed:
-  Abort "The previous X Download Manager version could not be removed. Close it and retry setup."
+  Abort "The previous ByteX Download Manager version could not be removed. Close it and retry setup."
   xdm_preinstall_done:
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Automatically register X Download Manager Native Messaging Host & Browser Extensions on install
+  ; Automatically register ByteX Download Manager Native Messaging Host & Browser Extensions on install
   ExecWait '"$INSTDIR\x-download-manager.exe" --register-browsers-silent'
 !macroend
 

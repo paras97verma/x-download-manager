@@ -1,4 +1,4 @@
-// X Download Manager (XDM) — Background Service Worker / WebExtension Script
+// ByteX Download Manager (XDM) — Background Service Worker / WebExtension Script
 // Works across Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Mozilla Firefox, and Apple Safari.
 // Features:
 // 1. Intercepts browser downloads (`downloads.onCreated`) matching configured extensions or size threshold
@@ -20,6 +20,7 @@ let state = {
     "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
   ],
   ignoredDomains: ["localhost", "127.0.0.1"],
+  detectedBrowser: null,
 };
 
 // Periodically sync settings from running XDM Desktop App
@@ -32,6 +33,7 @@ async function syncWithDesktopApp() {
       state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
       state.interceptedExtensions = cfg.intercepted_extensions ?? state.interceptedExtensions;
       state.ignoredDomains = cfg.ignored_domains ?? state.ignoredDomains;
+      state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
     }
   } catch (_) {
     // Desktop app will be woken via Native Messaging when a download occurs
@@ -41,12 +43,12 @@ async function syncWithDesktopApp() {
 syncWithDesktopApp();
 setInterval(syncWithDesktopApp, 15000);
 
-// Create Context Menu Item ("Download with X Download Manager")
+// Create Context Menu Item ("Download with ByteX")
 runtimeAPI.runtime.onInstalled.addListener(() => {
   if (runtimeAPI.contextMenus) {
     runtimeAPI.contextMenus.create({
       id: "xdm-download-link",
-      title: "Download with X Download Manager",
+      title: "Download with ByteX",
       contexts: ["link", "video", "audio"],
     });
   }
@@ -76,11 +78,12 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       url: msg.url,
       referer: msg.referer || (sender.tab ? sender.tab.url : ""),
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
-    }).then((ok) => {
-      notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url);
-      sendResponse({ success: ok });
-    }).catch(() => {
-      notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
+    }).then(async (result) => {
+      const ok = Boolean(result);
+      await notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url, result?.duplicate);
+      sendResponse({ success: ok, duplicate: Boolean(result?.duplicate) });
+    }).catch(async () => {
+      await notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
       sendResponse({ success: false });
     });
     return true;
@@ -178,6 +181,7 @@ async function getCookieHeaderForUrl(url, referer) {
 }
 
 async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
+  await syncWithDesktopApp();
   const cookies = await getCookieHeaderForUrl(url, referer);
 
   // Extract embedded FTP/HTTP user:password credentials if present
@@ -205,7 +209,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     auth_password: authPass,
     is_torrent: isTorrent,
     user_agent: navigator.userAgent,
-    browser: detectBrowserFamily(),
+    browser: state.detectedBrowser || detectBrowserFamily(),
     tab_title: tabTitle || null,
   };
 
@@ -218,7 +222,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     });
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
-      return result?.accepted === true && Boolean(result?.download_id);
+      return result?.accepted === true && result?.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null;
     }
   } catch (_) {
     // Fallback to Native Messaging
@@ -228,7 +234,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return result?.accepted === true && Boolean(result?.download_id);
+      return result?.accepted === true && result?.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null;
     } catch (_) {
       return false;
     }
@@ -259,7 +267,7 @@ async function handleDownloadInterception(downloadItem) {
   }
 
   const url = downloadItem.finalUrl || downloadItem.url;
-  const accepted = await dispatchToXdm({
+  const result = await dispatchToXdm({
     url,
     filename: downloadItem.filename || null,
     fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
@@ -267,8 +275,8 @@ async function handleDownloadInterception(downloadItem) {
     referer: downloadItem.referrer || null,
   });
 
-  if (accepted) {
-    notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename);
+  if (result) {
+    await notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename, result.duplicate);
     try {
       runtimeAPI.downloads.cancel(downloadItem.id);
       if (runtimeAPI.downloads.erase) {
@@ -278,7 +286,7 @@ async function handleDownloadInterception(downloadItem) {
     return true;
   } else {
     // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
-    notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
+    await notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
     if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
       try {
         await runtimeAPI.downloads.resume(downloadItem.id);
@@ -310,6 +318,10 @@ function detectBrowserFamily() {
     ? navigator.userAgentData.brands.map((b) => b.brand)
     : [];
   if (/dia/i.test(ua) || /dia/i.test(appVer) || brands.some((brand) => /dia/i.test(brand))) return "Dia";
+  if (/whale/i.test(ua) || brands.some((brand) => /whale/i.test(brand))) return "NAVER Whale";
+  if (/thorium/i.test(ua) || brands.some((brand) => /thorium/i.test(brand))) return "Thorium";
+  if (/helium/i.test(ua) || brands.some((brand) => /helium/i.test(brand))) return "Helium";
+  if (/ungoogled/i.test(ua) || brands.some((brand) => /ungoogled/i.test(brand))) return "Ungoogled Chromium";
   if (ua.includes("Arc/")) return "Arc";
   if (/OPRGX\//i.test(ua)) return "Opera GX";
   if (ua.includes("OPR/") || ua.includes("Opera")) return "Opera";
@@ -327,14 +339,74 @@ function detectBrowserFamily() {
   return "Chromium";
 }
 
-function notifyCaptureResult(tabId, success, filename) {
-  if (tabId == null || !runtimeAPI.tabs || !runtimeAPI.tabs.sendMessage) return;
-  try {
-    const result = runtimeAPI.tabs.sendMessage(tabId, {
-      type: "XDM_CAPTURE_RESULT",
-      success,
-      filename: filename || "Download",
-    });
-    if (result && result.catch) result.catch(() => {});
-  } catch (_) {}
+async function notifyCaptureResult(tabId, success, filename, duplicate = false) {
+  const message = {
+    type: "XDM_CAPTURE_RESULT",
+    success,
+    duplicate,
+    filename: filename || "Download",
+  };
+  let delivered = false;
+
+  if (Number.isInteger(tabId) && tabId >= 0 && runtimeAPI.tabs?.sendMessage) {
+    try {
+      const response = await runtimeAPI.tabs.sendMessage(tabId, message);
+      delivered = response?.received === true;
+    } catch (_) {
+      // A page may not have a live content script. Inject the toast below.
+    }
+
+    if (!delivered && runtimeAPI.scripting?.executeScript) {
+      try {
+        const result = await runtimeAPI.scripting.executeScript({
+          target: { tabId },
+          func: renderCaptureToast,
+          args: [message],
+        });
+        delivered = result?.some((frame) => frame.result === true) === true;
+      } catch (_) {
+        // Restricted browser pages do not permit content-script injection.
+      }
+    }
+  }
+
+  if (!delivered && runtimeAPI.notifications?.create) {
+    const status = duplicate
+      ? "Already added to ByteX"
+      : success
+      ? "Download started with ByteX"
+      : "ByteX could not start; the browser download continues";
+    try {
+      await runtimeAPI.notifications.create(`bytex-${Date.now()}`, {
+        type: "basic",
+        iconUrl: "icons/128x128.png",
+        title: "ByteX Download Manager",
+        message: `${status}: ${filename || "Download"}`,
+      });
+    } catch (_) {}
+  }
+}
+
+function renderCaptureToast(message) {
+  const root = document.documentElement || document.body;
+  if (!root) return false;
+
+  document.getElementById("bytex-capture-toast")?.remove();
+  const host = document.createElement("div");
+  host.id = "bytex-capture-toast";
+  host.style.cssText = "all:initial;display:block;position:fixed;right:20px;bottom:20px;z-index:2147483647;pointer-events:none";
+  const shadow = host.attachShadow({ mode: "closed" });
+  const toast = document.createElement("div");
+  const filename = (message.filename || "Download").split(/[\\/]/).pop();
+  const status = message.duplicate
+    ? "Already added to ByteX"
+    : message.success
+    ? "Download started with ByteX"
+    : "ByteX could not start; browser download continues";
+  toast.textContent = `${message.success ? "✓" : "⚠"} ${status} · ${filename}`;
+  toast.style.cssText = "box-sizing:border-box;background:#102038;color:#f7fbff;border:1px solid #45d9cf;border-radius:10px;padding:12px 16px;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 28px #0008;max-width:min(420px,calc(100vw - 40px));overflow-wrap:anywhere";
+  shadow.appendChild(toast);
+  root.appendChild(host);
+  setTimeout(() => host.remove(), 5000);
+  return true;
 }

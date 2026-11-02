@@ -27,7 +27,7 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
             onClick={() => setActiveTab("segments")}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition ${
               activeTab === "segments"
-                ? "bg-blue-600 text-white"
+                ? "bg-cyan-700 text-white"
                 : "text-slate-400 hover:text-slate-200"
             }`}
           >
@@ -103,10 +103,10 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
       <div className="flex-1 overflow-auto p-3">
         {activeTab === "segments" && (
           <div className="space-y-3">
-            {/* XDM Visual Chunk Map */}
+            {/* ByteX visual chunk map */}
             <div>
               <div className="text-[11px] text-slate-400 mb-1 flex justify-between">
-                <span>XDM Dynamic Byte-Range Allocation Map ({item.threads_count} Threads)</span>
+                <span>ByteX Dynamic Byte-Range Allocation Map ({item.threads_count} Threads)</span>
                 <span className="text-slate-300 font-mono">
                   {formatBytes(item.downloaded_bytes)} / {formatBytes(item.total_bytes)}
                 </span>
@@ -126,7 +126,7 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
                           seg.status === "completed"
                             ? "bg-emerald-500"
                             : seg.status === "receiving"
-                            ? "bg-blue-500"
+                            ? "bg-cyan-400"
                             : "bg-amber-500"
                         }`}
                         style={{ width: `${pct}%` }}
@@ -213,7 +213,7 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
                     className="p-2 rounded bg-slate-950/70 border border-slate-800 flex items-center justify-between text-[11px]"
                   >
                     <span className="truncate font-mono text-slate-200">{f.path}</span>
-                    <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 uppercase text-[10px] font-semibold">
+                    <span className="px-2 py-0.5 rounded bg-cyan-400/20 text-cyan-200 uppercase text-[10px] font-semibold">
                       {f.priority} ({formatBytes(f.size_bytes)})
                     </span>
                   </div>
@@ -316,7 +316,7 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
               { label: "Category", value: item.category },
               { label: "Queue ID", value: item.queue_id },
               { label: "Protocol", value: (
-                <span className="inline-block px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-semibold uppercase">
+                <span className="inline-block px-1.5 py-0.5 rounded bg-cyan-400/20 text-cyan-200 text-[10px] font-semibold uppercase">
                   {item.protocol}
                 </span>
               )},

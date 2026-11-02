@@ -1,10 +1,10 @@
-# X Download Manager (XDM) — System Architecture & Implementation Plan
+# ByteX Download Manager — System Architecture & Implementation Plan
 
 ## 1. Executive Overview
 
-**X Download Manager (XDM)** is a native, cross-platform desktop download accelerator and manager for **macOS, Windows, and Linux**, built in **Rust** (using **Tauri v2**, **Tokio**, **Reqwest**, **Librqbit / Custom BitTorrent Engine**, and **SuppaFTP / Async SSH2**) paired with a high-performance **React 18 + TypeScript + Tailwind CSS** desktop interface inspired by **Internet Download Manager (IDM)** and **Free Download Manager (FDM)**.
+**ByteX Download Manager** is a native, cross-platform desktop download accelerator and manager for **macOS, Windows, and Linux**, built in **Rust** (using **Tauri v2**, **Tokio**, **Reqwest**, **Librqbit / Custom BitTorrent Engine**, and **SuppaFTP / Async SSH2**) paired with a high-performance **React 18 + TypeScript + Tailwind CSS** desktop interface inspired by **Internet Download Manager (IDM)** and **Free Download Manager (FDM)**.
 
-The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Firefox, and Safari**, a **Native Messaging Host binary (`xdm-native-host`)**, and an embedded **Local IPC/HTTP Bridge (`127.0.0.1:45678`)**. Upon installation or first launch, XDM detects all installed browsers on the host operating system and automatically registers the Native Messaging manifests and browser extension policies—while allowing users to install, enable, or disable browser integration directly from the **Browser Extensions** manager inside the app.
+The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Firefox, and Safari**, a **Native Messaging Host binary (`xdm-native-host`)**, and an embedded **Local IPC/HTTP Bridge (`127.0.0.1:45678`)**. Upon installation or first launch, ByteX detects installed browsers and registers the Native Messaging manifests and browser extension policies. Users can manage browser integration directly from the app.
 
 ## 2. Core System Architecture
 
@@ -96,9 +96,9 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 
   * Works in two ways:
 
-    1. **Browser Session Passthrough**: When a user initiates a download in Chrome/Firefox/Safari after logging into Usersdrive or solving a gate, the XDM Browser Extension captures the exact `Cookie`, `Referer`, `User-Agent`, and `Authorization` headers and hands them directly to XDM's worker threads.
+    1. **Browser Session Passthrough**: When a user initiates a download in Chrome/Firefox/Safari after logging into Usersdrive or solving a gate, the ByteX browser extension captures the exact `Cookie`, `Referer`, `User-Agent`, and `Authorization` headers and hands them directly to ByteX's worker threads.
 
-    2. **Built-in Site Login Vault (`SiteCredential`)**: Users can store site patterns (e.g., `*.usersdrive.com`, `ftp.myserver.org`) with username/password, session cookies, or API tokens in XDM's Site Logins manager. For Usersdrive links (`https://usersdrive.com/<id>.html`), the resolver parses form parameters (`op=download2`, `id`, `rand`, `referer`, `method_free`/`method_premium`) and extracts the direct CDN stream URL automatically.
+    2. **Built-in Site Login Vault (`SiteCredential`)**: Users can store site patterns (e.g., `*.usersdrive.com`, `ftp.myserver.org`) with username/password, session cookies, or API tokens in ByteX's Site Logins manager. For Usersdrive links (`https://usersdrive.com/<id>.html`), the resolver parses form parameters (`op=download2`, `id`, `rand`, `referer`, `method_free`/`method_premium`) and extracts the direct CDN stream URL automatically.
 
 ### 3.4 Cross-Browser Extension Suite & Automatic Installer (`src-tauri/src/browser/mod.rs` & `extensions/`)
 
@@ -112,11 +112,11 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 
 * **Automatic Detection & Registration**:
 
-  * On startup (and on-demand via the **Browser Extensions** UI modal), XDM scans standard OS paths (`Applications` / `~/Library/Application Support` on macOS, Registry `HKCU\Software\Google\Chrome\NativeMessagingHosts` & `Extensions` on Windows, `~/.config/.../NativeMessagingHosts` & `/usr/share/.../extensions` on Linux).
+  * On startup (and on-demand via the **Browser Extensions** UI modal), ByteX scans standard OS paths (`Applications` / `~/Library/Application Support` on macOS, Registry `HKCU\Software\Google\Chrome\NativeMessagingHosts` & `Extensions` on Windows, `~/.config/.../NativeMessagingHosts` & `/usr/share/.../extensions` on Linux).
 
-  * Writes the platform-specific Native Messaging Host manifest (`com.peivee.xdm.json`) pointing to the installed XDM executable and installs external extension policy files so browsers prompt/activate the XDM extension automatically.
+  * Writes the platform-specific Native Messaging Host manifest (`com.peivee.xdm.json`) pointing to the installed app executable and installs browser extension policies where supported.
 
-  * Users can toggle **Enable / Disable / Install / Reinstall** per browser directly from XDM's UI, as well as configure intercepted file extensions (`ZIP, RAR, 7Z, EXE, DMG, DEB, ISO, MP4, MKV, MP3, PDF, TORRENT...`), minimum file size threshold, and bypass modifier keys (`Alt` / `Option`).
+  * Users can toggle **Enable / Disable / Install / Reinstall** per browser directly from ByteX's UI, as well as configure intercepted file extensions (`ZIP, RAR, 7Z, EXE, DMG, DEB, ISO, MP4, MKV, MP3, PDF, TORRENT...`), minimum file size threshold, and bypass modifier keys (`Alt` / `Option`).
 
 ### 3.5 GitHub Actions Verification & Multi-OS Release Pipeline (`.github/workflows/release.yml`)
 
@@ -134,7 +134,7 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 
   * `ubuntu-22.04` (`x86_64-unknown-linux-gnu`) -> `.deb`, `.AppImage`, and `.rpm`
 
-* **Stage 4 — GitHub Release Publishing**: Publishes a version-typed GitHub Release containing the native OS installers alongside `xdm-extension-chromium.zip`, `xdm-extension-firefox.xpi`, and `xdm-extension-safari.zip`.
+* **Stage 4 — GitHub Release Publishing**: Publishes a version-typed GitHub Release containing the native OS installers alongside `bytex-extension-chromium.zip`, `bytex-extension-firefox.xpi`, and `bytex-extension-safari.zip`.
 
 ## 4. Repository Directory Structure
 

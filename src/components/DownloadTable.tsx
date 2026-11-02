@@ -134,7 +134,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-400/15 text-cyan-300 border border-cyan-400/30">
             <Globe className="w-3 h-3" /> {item.threads_count}x HTTP/S
           </span>
         );
@@ -157,7 +157,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                   if (el) el.indeterminate = isIndeterminate;
                 }}
                 onChange={(e) => onSelectAll(e.target.checked)}
-                className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                className="rounded bg-slate-900 border-slate-700 text-cyan-700 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                 title="Select all downloads"
               />
             </th>
@@ -181,7 +181,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                   </div>
                   <div className="text-sm font-medium text-slate-300">No downloads in list</div>
                   <div className="text-xs text-slate-500 max-w-sm leading-relaxed">
-                    Click <strong className="text-blue-400">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or trigger any file download in Dia, Safari, Arc, Chrome, or Firefox to intercept automatically.
+                    Click <strong className="text-cyan-300">+ Add URL</strong> or <strong className="text-emerald-400">+ Torrent</strong> to start, or trigger any file download in Dia, Safari, Arc, Chrome, or Firefox to intercept automatically.
                   </div>
                 </div>
               </td>
@@ -202,7 +202,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 onContextMenu={(e) => handleRowContextMenu(e, item)}
                 className={`cursor-pointer transition ${
                   isSelected
-                    ? "bg-blue-600/15 hover:bg-blue-600/20"
+                    ? "bg-cyan-700/15 hover:bg-cyan-700/20"
                     : "hover:bg-slate-900/90"
                 }`}
               >
@@ -214,7 +214,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => onSelect(item.id, true)}
-                    className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                    className="rounded bg-slate-900 border-slate-700 text-cyan-700 focus:ring-0 focus:ring-offset-0 cursor-pointer"
                   />
                 </td>
                 <td className="py-2.5 px-3 font-medium text-slate-100 max-w-xs">
@@ -241,7 +241,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                                   ? "bg-emerald-500"
                                   : item.status === "paused"
                                   ? "bg-amber-500"
-                                  : "bg-blue-500"
+                                  : "bg-cyan-400"
                               }`}
                               style={{ width: `${segPct}%` }}
                             />
@@ -255,7 +255,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                             ? "bg-emerald-500"
                             : item.status === "paused"
                             ? "bg-amber-500"
-                            : "bg-blue-500"
+                            : "bg-cyan-400"
                         }`}
                         style={{ width: `${pct}%` }}
                       />
@@ -297,7 +297,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                         className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1 text-[11px]"
                         title="Open file"
                       >
-                        <FileText className="w-3 h-3 text-blue-400" /> Open
+                        <FileText className="w-3 h-3 text-cyan-300" /> Open
                       </button>
                       <button
                         onClick={(e) => {
@@ -344,7 +344,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
         </tbody>
       </table>
 
-      {/* XDM Full Right-Click Context Menu */}
+      {/* ByteX full right-click context menu */}
       {contextMenu && (
         <div
           ref={contextMenuRef}
@@ -359,7 +359,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 onTogglePauseResume(contextMenu.item);
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
             >
               <Pause className="w-3.5 h-3.5 text-amber-400" />
               Pause Download
@@ -370,7 +370,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 onTogglePauseResume(contextMenu.item);
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
             >
               <Play className="w-3.5 h-3.5 text-emerald-400" />
               Resume Download
@@ -383,9 +383,9 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               onRestartDownload(contextMenu.item.id);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-blue-400" />
+            <RotateCcw className="w-3.5 h-3.5 text-cyan-300" />
             Restart from 0%
           </button>
 
@@ -396,7 +396,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 onOpenFile(contextMenu.item.save_path);
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left font-medium text-emerald-300"
+              className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left font-medium text-emerald-300"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               Open File
@@ -409,7 +409,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               onShowInFolder(contextMenu.item.save_path);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
             <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
             Show in Finder / Folder
@@ -424,7 +424,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 onToggleSpeedLimiter();
                 setContextMenu(null);
               }}
-              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-blue-600 hover:text-white text-left"
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
               title="Toggle Speed Limit"
             >
               <span className="flex items-center gap-2">
@@ -488,7 +488,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               onOpenScheduler();
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
             <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
             Schedule Queue & Timer...
@@ -500,7 +500,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               onOpenProperties(contextMenu.item);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
             <Info className="w-3.5 h-3.5 text-emerald-400" />
             File Properties & Checksum...
@@ -514,7 +514,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               navigator.clipboard?.writeText(contextMenu.item.url);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
             <Copy className="w-3.5 h-3.5 text-slate-400" />
             Copy Download Link
@@ -525,7 +525,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
               navigator.clipboard?.writeText(contextMenu.item.save_path);
               setContextMenu(null);
             }}
-            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-blue-600 hover:text-white text-left"
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
             <Copy className="w-3.5 h-3.5 text-slate-400" />
             Copy File Save Path

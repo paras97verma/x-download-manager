@@ -47,14 +47,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       {/* Left Brand + Actions */}
       <div className="flex items-center gap-2 shrink-0">
         <div className="flex items-center gap-2 pr-3 border-r border-slate-800 shrink-0">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow shadow-blue-500/20 font-black text-white text-base tracking-tighter shrink-0">
-            X
-          </div>
+        <img src="/bytex-mark.svg" alt="" className="w-8 h-8 rounded-lg shrink-0" />
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-bold tracking-tight text-white whitespace-nowrap">
-              X Download Manager
+              ByteX Download Manager
             </span>
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 whitespace-nowrap">
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-cyan-400/15 text-cyan-300 border border-cyan-400/30 whitespace-nowrap">
               v{appVersion || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "")}
             </span>
           </div>
@@ -63,7 +61,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* Primary Add Actions */}
         <button
           onClick={() => onOpenAddModal("url")}
-          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs shadow-sm transition shrink-0"
+          className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-400 text-white font-medium text-xs shadow-sm transition shrink-0"
           title="Add Download (⌘N)"
         >
           <Plus className="w-4 h-4" />
@@ -130,7 +128,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           onClick={onToggleUiMode}
           className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs font-semibold transition shrink-0 ${
             uiMode === "simple"
-              ? "bg-blue-600/20 border-blue-500/40 text-blue-300 hover:bg-blue-600/30"
+              ? "bg-cyan-700/20 border-cyan-400/40 text-cyan-200 hover:bg-cyan-700/30"
               : "bg-indigo-600/20 border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/30"
           }`}
           title={`Switch between Simple and Advanced Mode (${isMac ? "⌘" : "Ctrl+"}M)`}

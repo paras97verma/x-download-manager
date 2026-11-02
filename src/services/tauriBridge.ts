@@ -52,6 +52,11 @@ export async function apiAddDownload(req: NewDownloadRequest): Promise<DownloadI
   }
 }
 
+export async function apiUpdateDownloadUrl(id: string, url: string): Promise<DownloadItem> {
+  if (!isTauriRuntime()) throw new Error("Changing a download URL requires the desktop app");
+  return await invoke<DownloadItem>("update_download_url", { id, url });
+}
+
 export async function apiPauseDownload(id: string): Promise<void> {
   if (!isTauriRuntime()) return;
   try {

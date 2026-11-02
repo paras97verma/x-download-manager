@@ -75,7 +75,7 @@ export const SchedulerModal: React.FC<SchedulerModalProps> = ({
               <CalendarClock className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-white">XDM Queue Scheduler & Bandwidth Planner</h2>
+              <h2 className="text-sm font-bold text-white">ByteX Queue Scheduler & Bandwidth Planner</h2>
               <p className="text-[11px] text-slate-400">
                 Automate download schedules, set concurrency limits, and execute actions on queue completion.
               </p>
@@ -232,7 +232,7 @@ export const SchedulerModal: React.FC<SchedulerModalProps> = ({
                   {/* Concurrency & Speed Limit */}
                   <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
                     <div className="font-semibold text-slate-200 flex items-center gap-2">
-                      <Gauge className="w-4 h-4 text-blue-400" />
+                      <Gauge className="w-4 h-4 text-cyan-300" />
                       Concurrency & Throughput Controls
                     </div>
 
@@ -287,7 +287,7 @@ export const SchedulerModal: React.FC<SchedulerModalProps> = ({
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {[
                         { id: "none", label: "Do Nothing (Keep Running)" },
-                        { id: "exit_app", label: "Exit X Download Manager" },
+                        { id: "exit_app", label: "Exit ByteX Download Manager" },
                         { id: "sleep", label: "Put Computer to Sleep" },
                         { id: "shutdown", label: "Turn off Computer (Shutdown)" },
                       ].map((act) => (
