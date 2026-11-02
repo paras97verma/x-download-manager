@@ -118,7 +118,17 @@ fn normalized_download_url(value: &str) -> String {
 fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<DownloadItem> {
     let candidate = normalized_download_url(url);
     engine.downloads.read().iter().find_map(|download| {
-        if download.status == crate::engine::DownloadStatus::Failed {
+        let actively_managed = matches!(
+            download.status,
+            crate::engine::DownloadStatus::Queued
+                | crate::engine::DownloadStatus::Connecting
+                | crate::engine::DownloadStatus::Authenticating
+                | crate::engine::DownloadStatus::Downloading
+                | crate::engine::DownloadStatus::Merging
+                | crate::engine::DownloadStatus::Seeding
+        );
+        let output_still_exists = crate::config::resolve_path(&download.save_path).exists();
+        if !actively_managed && !output_still_exists {
             return None;
         }
         let matches = std::iter::once(download.url.as_str())

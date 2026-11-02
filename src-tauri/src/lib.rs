@@ -92,7 +92,18 @@ fn find_download_at_path(engine: &DownloadEngine, path: &std::path::Path) -> Opt
         .downloads
         .read()
         .iter()
-        .find(|item| crate::config::resolve_path(&item.save_path) == path)
+        .find(|item| {
+            let managed = matches!(
+                item.status,
+                DownloadStatus::Queued
+                    | DownloadStatus::Connecting
+                    | DownloadStatus::Authenticating
+                    | DownloadStatus::Downloading
+                    | DownloadStatus::Merging
+                    | DownloadStatus::Seeding
+            );
+            crate::config::resolve_path(&item.save_path) == path && (managed || path.exists())
+        })
         .cloned()
 }
 
@@ -109,7 +120,17 @@ fn normalize_download_url(value: &str) -> String {
 fn find_download_by_url(engine: &DownloadEngine, url: &str) -> Option<DownloadItem> {
     let candidate = normalize_download_url(url);
     engine.downloads.read().iter().find_map(|item| {
-        if item.status == DownloadStatus::Failed {
+        let actively_managed = matches!(
+            item.status,
+            DownloadStatus::Queued
+                | DownloadStatus::Connecting
+                | DownloadStatus::Authenticating
+                | DownloadStatus::Downloading
+                | DownloadStatus::Merging
+                | DownloadStatus::Seeding
+        );
+        let output_still_exists = crate::config::resolve_path(&item.save_path).exists();
+        if !actively_managed && !output_still_exists {
             return None;
         }
         let same_url = std::iter::once(item.url.as_str())
