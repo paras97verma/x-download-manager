@@ -677,9 +677,13 @@ mod tray_speed_tests {
 pub fn run_app() {
     let engine = Arc::new(DownloadEngine::new());
 
-    // Auto-install browser extension Native Messaging manifests and extract bundles
-    let _ = browser::get_or_create_extension_dir("chromium");
-    let _ = browser::get_or_create_extension_dir("firefox");
+    // Refresh the user-facing extension folders on every app start so manual
+    // installs receive the current scripts, manifests, icons, and Safari wrapper.
+    for family in ["chromium", "firefox", "safari"] {
+        if let Err(error) = browser::get_or_create_extension_dir(family) {
+            tracing::warn!(%family, %error, "Could not refresh browser extension files");
+        }
+    }
 
     {
         let mut st = engine.settings.write();
