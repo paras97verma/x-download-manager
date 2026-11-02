@@ -545,8 +545,7 @@ pub fn run_app() {
                     .expect("DownloadEngine state not found");
                 let app_handle = app.app_handle().clone();
                 tauri::async_runtime::spawn(async move {
-                    let mut ticker =
-                        tokio::time::interval(std::time::Duration::from_secs(1));
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
                     loop {
                         ticker.tick().await;
 
@@ -554,14 +553,9 @@ pub fn run_app() {
                             let dls = tray_engine.downloads.read();
                             let active: Vec<_> = dls
                                 .iter()
-                                .filter(|d| {
-                                    d.status == crate::engine::DownloadStatus::Downloading
-                                })
+                                .filter(|d| d.status == crate::engine::DownloadStatus::Downloading)
                                 .collect();
-                            (
-                                active.len(),
-                                active.iter().map(|d| d.speed_bps).sum(),
-                            )
+                            (active.len(), active.iter().map(|d| d.speed_bps).sum())
                         };
 
                         let tooltip = if active_count > 0 {

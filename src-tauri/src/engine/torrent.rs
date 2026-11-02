@@ -563,8 +563,7 @@ pub async fn execute_torrent_download(
         }
 
         // Determine pieces for this file
-        let file_pieces =
-            ((torrent_file.size_bytes + piece_length - 1) / piece_length).max(1) as usize;
+        let file_pieces = (torrent_file.size_bytes.div_ceil(piece_length)).max(1) as usize;
         let piece_size_bytes = piece_length;
 
         // Pre-allocate file
@@ -665,8 +664,7 @@ pub async fn execute_torrent_download(
                     d.downloaded_bytes = global_downloaded.min(total_bytes);
                     d.speed_bps = speed;
                     if speed > 0 && total_bytes > global_downloaded {
-                        d.eta_seconds =
-                            Some((total_bytes - global_downloaded) / speed);
+                        d.eta_seconds = Some((total_bytes - global_downloaded) / speed);
                     }
                     if let Some(ref mut tm) = d.torrent_meta {
                         tm.completed_pieces = completed_pieces.min(total_pieces);
@@ -675,9 +673,8 @@ pub async fn execute_torrent_download(
                             fe.downloaded_bytes = file_downloaded.min(fe.size_bytes);
                         }
                         // Fluctuate peer count realistically
-                        let peer_jitter = (piece_idx % 7) as usize;
-                        tm.peers_connected =
-                            (4 + peer_jitter).min(meta.peers_connected.max(8));
+                        let peer_jitter = piece_idx % 7;
+                        tm.peers_connected = (4 + peer_jitter).min(meta.peers_connected.max(8));
                         tm.seeds_connected = (2 + peer_jitter / 2).min(6);
                     }
                 }
