@@ -92,18 +92,7 @@ fn find_download_at_path(engine: &DownloadEngine, path: &std::path::Path) -> Opt
         .downloads
         .read()
         .iter()
-        .find(|item| {
-            let managed = matches!(
-                item.status,
-                DownloadStatus::Queued
-                    | DownloadStatus::Connecting
-                    | DownloadStatus::Authenticating
-                    | DownloadStatus::Downloading
-                    | DownloadStatus::Merging
-                    | DownloadStatus::Seeding
-            );
-            crate::config::resolve_path(&item.save_path) == path && (managed || path.exists())
-        })
+        .find(|item| crate::config::resolve_path(&item.save_path) == path && path.exists())
         .cloned()
 }
 
@@ -130,7 +119,11 @@ fn find_download_by_url(engine: &DownloadEngine, url: &str) -> Option<DownloadIt
                 | DownloadStatus::Seeding
         );
         let output_still_exists = crate::config::resolve_path(&item.save_path).exists();
-        if !actively_managed && !output_still_exists {
+        // A stale active record must not block a fresh download after the user
+        // deleted its partial output. Keep protecting zero-byte queued/starting
+        // requests, which may not have created their destination yet.
+        let active_without_output = actively_managed && item.downloaded_bytes == 0;
+        if !output_still_exists && !active_without_output {
             return None;
         }
         let same_url = std::iter::once(item.url.as_str())

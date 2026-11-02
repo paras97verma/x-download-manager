@@ -43,9 +43,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 }) => {
   const isMac = typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
   return (
-    <header className="h-14 bg-[#111827] border-b border-slate-800 px-3 flex items-center justify-between select-none shrink-0 gap-2 min-w-0">
+    <header className="min-h-14 bg-[#111827] border-b border-slate-800 px-3 py-2 flex flex-wrap items-center justify-between select-none shrink-0 gap-2 min-w-0">
       {/* Left Brand + Actions */}
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
         <div className="flex items-center gap-2 pr-3 border-r border-slate-800 shrink-0">
         <img src="/bytex-mark.svg" alt="" className="w-8 h-8 rounded-lg shrink-0" />
           <div className="flex items-center gap-1.5">
@@ -65,7 +65,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Add Download (⌘N)"
         >
           <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Add URL</span>
+          <span className="hidden xl:inline">Add URL</span>
         </button>
 
         <button
@@ -74,7 +74,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Add Torrent or Magnet (⌘T)"
         >
           <Magnet className="w-4 h-4" />
-          <span className="hidden sm:inline">Add Torrent</span>
+          <span className="hidden xl:inline">Add Torrent</span>
         </button>
 
         <div className="h-5 w-px bg-slate-800 mx-0.5" />
@@ -87,7 +87,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Resume Selected (Space)"
         >
           <Play className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden md:inline">Resume</span>
+          <span className="hidden xl:inline">Resume</span>
           {selectedCount > 1 ? ` (${selectedCount})` : ""}
         </button>
 
@@ -98,7 +98,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Pause Selected (Space)"
         >
           <Pause className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden md:inline">Pause</span>
+          <span className="hidden xl:inline">Pause</span>
           {selectedCount > 1 ? ` (${selectedCount})` : ""}
         </button>
 
@@ -108,7 +108,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Stop All Transfers"
         >
           <Square className="w-3.5 h-3.5 text-rose-400" />
-          <span className="hidden lg:inline">Stop All</span>
+          <span className="hidden xl:inline">Stop All</span>
         </button>
 
         <button
@@ -134,7 +134,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title={`Switch between Simple and Advanced Mode (${isMac ? "⌘" : "Ctrl+"}M)`}
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span className="hidden md:inline capitalize">{uiMode}</span>
+          <span className="hidden xl:inline capitalize">{uiMode}</span>
         </button>
 
         <button
@@ -143,7 +143,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Queues & Scheduler"
         >
           <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
-          <span className="hidden sm:inline">Queues</span>
+          <span className="hidden xl:inline">Queues</span>
         </button>
 
         <button
@@ -152,7 +152,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           title="Settings (⌘,)"
         >
           <Settings className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Settings</span>
+          <span className="hidden xl:inline">Settings</span>
         </button>
       </div>
     </header>
