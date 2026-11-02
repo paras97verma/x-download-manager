@@ -48,6 +48,7 @@ parking_lot = "0.12"
 thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+librqbit = { version = "9.1", default-features = false, features = ["rust-tls"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.56"

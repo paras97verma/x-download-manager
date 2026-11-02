@@ -21,6 +21,7 @@ import {
   apiOpenFile,
   apiPauseDownload,
   apiRestartDownload,
+  apiStartQueueNow,
   apiResumeDownload,
   apiShowInFolder,
   apiShowNotification,
@@ -57,6 +58,8 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
+  const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
+  const [rememberDeleteConfirmation, setRememberDeleteConfirmation] = useState(false);
   const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
 
   const previousStatusRef = useRef<Map<string, string>>(new Map());
@@ -384,29 +387,32 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleDeleteBatch = (deleteFile = false) => {
-    if (selectedIds.size === 0) return;
-    selectedIds.forEach((id) => {
-      if (isTauriRuntime()) {
-        apiDeleteDownload(id, deleteFile);
-      }
-    });
-    setDownloads((prev) => prev.filter((d) => !selectedIds.has(d.id)));
-    setSelectedIds(new Set());
-    setLastSelectedId(null);
+  const completeDelete = async (ids: string[], deleteFile: boolean) => {
+    try {
+      await Promise.all(ids.map((id) => apiDeleteDownload(id, deleteFile)));
+      const removedIds = new Set(ids);
+      setDownloads((prev) => prev.filter((d) => !removedIds.has(d.id)));
+      setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !removedIds.has(id))));
+      setLastSelectedId((prev) => (prev && removedIds.has(prev) ? null : prev));
+    } catch (error) {
+      console.error("Could not delete download:", error);
+      window.alert(`Could not delete the download: ${String(error)}`);
+    }
   };
 
-  const handleDeleteOne = (id: string, deleteFile = false) => {
-    if (isTauriRuntime()) {
-      apiDeleteDownload(id, deleteFile);
+  const requestDelete = (ids: string[], deleteFile: boolean) => {
+    if (!ids.length) return;
+    if (deleteFile && window.localStorage.getItem("xdm.rememberDeleteFromDisk") !== "true") {
+      setRememberDeleteConfirmation(false);
+      setDeleteConfirmIds(ids);
+      return;
     }
-    setDownloads((prev) => prev.filter((d) => d.id !== id));
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+    void completeDelete(ids, deleteFile);
   };
+
+  const handleDeleteBatch = (deleteFile = false) => requestDelete(Array.from(selectedIds), deleteFile);
+
+  const handleDeleteOne = (id: string, deleteFile = false) => requestDelete([id], deleteFile);
 
   const handleRestartDownload = (id: string) => {
     if (isTauriRuntime()) {
@@ -907,14 +913,17 @@ export const App: React.FC = () => {
               apiUpdateSettings(newSettings);
             }
           }}
-          onStartQueueNow={(qId) => {
-            setDownloads((prev) =>
-              prev.map((d) =>
-                d.queue_id === qId && d.status !== "completed"
-                  ? { ...d, status: "downloading", speed_bps: 0 }
-                  : d
-              )
-            );
+          onStartQueueNow={async (qId) => {
+            try {
+              if (isTauriRuntime()) {
+                await apiStartQueueNow(qId);
+                setDownloads(await apiGetDownloads());
+              } else {
+                setDownloads((prev) => prev.map((d) => d.queue_id === qId && d.status === "queued" ? { ...d, status: "downloading" } : d));
+              }
+            } catch (error) {
+              window.alert(`Could not start queue: ${String(error)}`);
+            }
           }}
           onClose={() => setShowSchedulerModal(false)}
         />
@@ -925,6 +934,39 @@ export const App: React.FC = () => {
           item={propertiesItem}
           onClose={() => setPropertiesItem(null)}
         />
+      )}
+
+      {deleteConfirmIds && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
+          <section className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white">Delete file from disk?</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              This permanently deletes {deleteConfirmIds.length === 1 ? "the downloaded file" : `${deleteConfirmIds.length} downloaded files`}.
+            </p>
+            <label className="mt-5 flex items-center gap-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={rememberDeleteConfirmation}
+                onChange={(event) => setRememberDeleteConfirmation(event.target.checked)}
+              />
+              Remember this choice for future sessions
+            </label>
+            <div className="mt-6 flex justify-end gap-3">
+              <button className="rounded-md px-4 py-2 text-sm text-slate-300 hover:bg-slate-800" onClick={() => setDeleteConfirmIds(null)}>Cancel</button>
+              <button
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
+                onClick={() => {
+                  const ids = deleteConfirmIds;
+                  setDeleteConfirmIds(null);
+                  if (rememberDeleteConfirmation) window.localStorage.setItem("xdm.rememberDeleteFromDisk", "true");
+                  void completeDelete(ids, true);
+                }}
+              >
+                Delete from disk
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );

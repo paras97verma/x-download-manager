@@ -188,8 +188,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   // 2. Fallback to Native Messaging Host (com.peivee.xdm)
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
-      await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return true;
+      const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
+      return result?.accepted === true && Boolean(result?.download_id);
     } catch (_) {
       return false;
     }

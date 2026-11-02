@@ -89,37 +89,38 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
                 continue;
             }
             if q.start_time_enabled && q.start_time_hhmm == current_hhmm {
-                // Promote queued downloads in this queue up to max_concurrent
-                let mut dls = engine.downloads.write();
-                let active_in_q = dls
-                    .iter()
-                    .filter(|d| d.queue_id == q.id && d.status == DownloadStatus::Downloading)
-                    .count();
-
-                let mut slots = q.max_concurrent.saturating_sub(active_in_q);
-                for d in dls.iter_mut() {
-                    if slots == 0 {
-                        break;
-                    }
-                    if d.queue_id == q.id && d.status == DownloadStatus::Queued {
-                        d.status = DownloadStatus::Downloading;
-                        d.transfer_log
-                            .push(format!("Scheduled queue '{}' started download", q.name));
-                        slots -= 1;
-                    }
-                }
+                let _ = engine.start_queued_downloads(Some(q.id.clone())).await;
             }
 
             if q.stop_time_enabled && q.stop_time_hhmm == current_hhmm {
-                let mut dls = engine.downloads.write();
-                for d in dls.iter_mut() {
-                    if d.queue_id == q.id && d.status == DownloadStatus::Downloading {
-                        d.status = DownloadStatus::Paused;
-                        d.speed_bps = 0;
-                        d.transfer_log.push(format!(
-                            "Scheduled queue '{}' paused download at stop window",
-                            q.name
-                        ));
+                let active_ids = {
+                    let mut dls = engine.downloads.write();
+                    let mut ids = Vec::new();
+                    for d in dls.iter_mut() {
+                        if d.queue_id == q.id
+                            && matches!(
+                                d.status,
+                                DownloadStatus::Connecting
+                                    | DownloadStatus::Downloading
+                                    | DownloadStatus::Authenticating
+                                    | DownloadStatus::Merging
+                                    | DownloadStatus::Seeding
+                            )
+                        {
+                            d.status = DownloadStatus::Paused;
+                            d.speed_bps = 0;
+                            d.transfer_log.push(format!(
+                                "Scheduled queue '{}' paused download at stop window",
+                                q.name
+                            ));
+                            ids.push(d.id.clone());
+                        }
+                    }
+                    ids
+                };
+                for id in active_ids {
+                    if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+                        let _ = tx.send(true);
                     }
                 }
             }

@@ -114,6 +114,8 @@ pub struct DownloadItem {
     pub completed_at: Option<String>,
     pub error_message: Option<String>,
     pub transfer_log: Vec<String>,
+    pub torrent_file_path: Option<String>,
+    pub torrent_selected_files: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +135,8 @@ pub struct NewDownloadRequest {
     pub auth_username: Option<String>,
     pub auth_password: Option<String>,
     pub sequential_torrent: Option<bool>,
+    pub torrent_file_data: Option<String>,
+    pub torrent_selected_files: Option<Vec<usize>>,
 }
 
 pub struct DownloadEngine {
@@ -207,6 +211,19 @@ impl DownloadEngine {
         let settings = self.settings.read().clone();
         let protocol = Self::detect_protocol(&req.url);
         let id = Uuid::new_v4().to_string();
+
+        let torrent_file_path = req.torrent_file_data.as_deref().and_then(|encoded| {
+            use base64::Engine;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .ok()?;
+            let temp_dir =
+                crate::config::resolve_path(&settings.temp_segment_dir).join("torrent-meta");
+            std::fs::create_dir_all(&temp_dir).ok()?;
+            let path = temp_dir.join(format!("{}.torrent", id));
+            std::fs::write(&path, bytes).ok()?;
+            Some(path.to_string_lossy().to_string())
+        });
 
         let filename = req.filename.unwrap_or_else(|| {
             if protocol == DownloadProtocol::Magnet {
@@ -311,6 +328,8 @@ impl DownloadEngine {
                 Utc::now().format("%H:%M:%S"),
                 protocol
             )],
+            torrent_file_path,
+            torrent_selected_files: req.torrent_selected_files,
         };
 
         self.downloads.write().insert(0, item.clone());
@@ -356,6 +375,57 @@ impl DownloadEngine {
         }
 
         if req.start_immediately {
+            let settings = self.settings.read().clone();
+            let queue_limit = settings
+                .queues
+                .iter()
+                .find(|q| q.id == item.queue_id)
+                .map(|q| q.max_concurrent)
+                .unwrap_or(settings.max_concurrent_downloads);
+            let dls = self.downloads.read();
+            let active_global = dls
+                .iter()
+                .filter(|d| {
+                    d.id != item.id
+                        && matches!(
+                            d.status,
+                            DownloadStatus::Connecting
+                                | DownloadStatus::Authenticating
+                                | DownloadStatus::Downloading
+                                | DownloadStatus::Merging
+                                | DownloadStatus::Seeding
+                        )
+                })
+                .count();
+            let active_queue = dls
+                .iter()
+                .filter(|d| {
+                    d.id != item.id
+                        && d.queue_id == item.queue_id
+                        && matches!(
+                            d.status,
+                            DownloadStatus::Connecting
+                                | DownloadStatus::Authenticating
+                                | DownloadStatus::Downloading
+                                | DownloadStatus::Merging
+                                | DownloadStatus::Seeding
+                        )
+                })
+                .count();
+            drop(dls);
+            if active_global >= settings.max_concurrent_downloads || active_queue >= queue_limit {
+                let mut dls = self.downloads.write();
+                if let Some(d) = dls.iter_mut().find(|d| d.id == item.id) {
+                    d.status = DownloadStatus::Queued;
+                    d.speed_bps = 0;
+                    item = d.clone();
+                }
+                return item;
+            }
+            if let Some(d) = self.downloads.write().iter_mut().find(|d| d.id == item.id) {
+                d.status = DownloadStatus::Connecting;
+                item = d.clone();
+            }
             let (tx, rx) = tokio::sync::watch::channel(false);
             self.active_cancellations
                 .write()
@@ -367,8 +437,15 @@ impl DownloadEngine {
             let proto = item.protocol.clone();
 
             tauri::async_runtime::spawn(async move {
-                if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
-                    let _ = ftp_auth::execute_ftp_download(id_clone, dls_arc, st_arc, rx).await;
+                let result = if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
+                    ftp_auth::execute_ftp_download(
+                        id_clone.clone(),
+                        dls_arc.clone(),
+                        st_arc.clone(),
+                        rx,
+                    )
+                    .await
+                    .map(|_| ())
                 } else if proto == DownloadProtocol::Sftp {
                     let mut dls = dls_arc.write();
                     if let Some(d) = dls.iter_mut().find(|d| d.id == id_clone) {
@@ -378,17 +455,167 @@ impl DownloadEngine {
                         d.error_message = Some(message.clone());
                         d.transfer_log.push(format!("[ERROR] {}", message));
                     }
+                    return;
                 } else if proto == DownloadProtocol::BitTorrent || proto == DownloadProtocol::Magnet
                 {
-                    let _ = torrent::execute_torrent_download(id_clone, dls_arc, st_arc, rx).await;
+                    torrent::execute_torrent_download(
+                        id_clone.clone(),
+                        dls_arc.clone(),
+                        st_arc.clone(),
+                        rx,
+                    )
+                    .await
                 } else {
-                    let _ =
-                        http::execute_segmented_http_download(id_clone, dls_arc, st_arc, rx).await;
+                    http::execute_segmented_http_download(
+                        id_clone.clone(),
+                        dls_arc.clone(),
+                        st_arc.clone(),
+                        rx,
+                    )
+                    .await
+                };
+                if let Err(error) = result {
+                    let mut dls = dls_arc.write();
+                    if let Some(d) = dls.iter_mut().find(|d| d.id == id_clone) {
+                        if matches!(
+                            d.status,
+                            DownloadStatus::Connecting
+                                | DownloadStatus::Authenticating
+                                | DownloadStatus::Downloading
+                                | DownloadStatus::Merging
+                                | DownloadStatus::Seeding
+                        ) {
+                            d.status = DownloadStatus::Failed;
+                            d.speed_bps = 0;
+                            d.error_message = Some(error.clone());
+                            d.transfer_log.push(format!("[ERROR] {error}"));
+                        }
+                    }
                 }
             });
         }
 
         item
+    }
+
+    pub async fn start_queued_downloads(
+        self: &Arc<Self>,
+        queue_id: Option<String>,
+    ) -> Result<usize, String> {
+        let mut started = 0;
+        loop {
+            let candidate = {
+                let settings = self.settings.read().clone();
+                let global_limit = settings.max_concurrent_downloads;
+                let queue_limit = queue_id
+                    .as_ref()
+                    .and_then(|id| settings.queues.iter().find(|q| &q.id == id))
+                    .map(|q| q.max_concurrent)
+                    .unwrap_or(global_limit);
+                let mut dls = self.downloads.write();
+                let active_global = dls
+                    .iter()
+                    .filter(|d| {
+                        matches!(
+                            d.status,
+                            DownloadStatus::Connecting
+                                | DownloadStatus::Authenticating
+                                | DownloadStatus::Downloading
+                                | DownloadStatus::Merging
+                                | DownloadStatus::Seeding
+                        )
+                    })
+                    .count();
+                let active_queue = queue_id
+                    .as_ref()
+                    .map(|id| {
+                        dls.iter()
+                            .filter(|d| {
+                                &d.queue_id == id
+                                    && matches!(
+                                        d.status,
+                                        DownloadStatus::Connecting
+                                            | DownloadStatus::Authenticating
+                                            | DownloadStatus::Downloading
+                                            | DownloadStatus::Merging
+                                            | DownloadStatus::Seeding
+                                    )
+                            })
+                            .count()
+                    })
+                    .unwrap_or(active_global);
+                if active_global >= global_limit || active_queue >= queue_limit {
+                    None
+                } else if let Some(item) = dls.iter_mut().find(|d| {
+                    d.status == DownloadStatus::Queued
+                        && queue_id
+                            .as_ref()
+                            .map(|id| &d.queue_id == id)
+                            .unwrap_or(true)
+                }) {
+                    item.status = DownloadStatus::Connecting;
+                    Some(item.clone())
+                } else {
+                    None
+                }
+            };
+            let Some(item) = candidate else {
+                break;
+            };
+            let req = NewDownloadRequest {
+                url: item.url.clone(),
+                filename: Some(item.filename.clone()),
+                category: Some(item.category.clone()),
+                save_path: Some(item.save_path.clone()),
+                threads_count: Some(item.threads_count),
+                queue_id: Some(item.queue_id.clone()),
+                start_immediately: true,
+                source_browser: item.source_browser.clone(),
+                referer: item.referer.clone(),
+                cookies: item.cookies.clone(),
+                user_agent: item.custom_headers.get("User-Agent").cloned(),
+                custom_headers: Some(item.custom_headers.clone()),
+                auth_username: None,
+                auth_password: None,
+                sequential_torrent: None,
+                torrent_file_data: None,
+                torrent_selected_files: item.torrent_selected_files.clone(),
+            };
+            self.start_download_execution(item, &req).await;
+            started += 1;
+        }
+        Ok(started)
+    }
+
+    pub async fn start_download_by_id(self: &Arc<Self>, id: &str) -> Result<(), String> {
+        let item = self
+            .downloads
+            .read()
+            .iter()
+            .find(|d| d.id == id)
+            .cloned()
+            .ok_or_else(|| "Download not found".to_string())?;
+        let req = NewDownloadRequest {
+            url: item.url.clone(),
+            filename: Some(item.filename.clone()),
+            category: Some(item.category.clone()),
+            save_path: Some(item.save_path.clone()),
+            threads_count: Some(item.threads_count),
+            queue_id: Some(item.queue_id.clone()),
+            start_immediately: true,
+            source_browser: item.source_browser.clone(),
+            referer: item.referer.clone(),
+            cookies: item.cookies.clone(),
+            user_agent: item.custom_headers.get("User-Agent").cloned(),
+            custom_headers: Some(item.custom_headers.clone()),
+            auth_username: None,
+            auth_password: None,
+            sequential_torrent: None,
+            torrent_file_data: None,
+            torrent_selected_files: item.torrent_selected_files.clone(),
+        };
+        self.start_download_execution(item, &req).await;
+        Ok(())
     }
 }
 

@@ -53,6 +53,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
   // Torrent file metadata state (uTorrent / Vuze parity)
   const [torrentMeta, setTorrentMeta] = useState<TorrentMetadata | null>(null);
+  const [torrentFileData, setTorrentFileData] = useState<string | undefined>();
   const [selectedFileIndices, setSelectedFileIndices] = useState<Set<number>>(new Set());
   const [isParsingTorrent, setIsParsingTorrent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +149,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
       reader.onload = async () => {
         const result = reader.result as string;
         const base64 = result.split(",")[1];
+        setTorrentFileData(base64);
         const parsed = await apiParseTorrentFile(undefined, base64);
         if (parsed) {
           setTorrentMeta(parsed);
@@ -261,6 +263,8 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
       user_agent: userAgent.trim() || undefined,
       custom_headers: Object.keys(customHeaders).length ? customHeaders : undefined,
       sequential_torrent: sequentialTorrent,
+      torrent_file_data: torrentFileData,
+      torrent_selected_files: torrentMeta ? Array.from(selectedFileIndices) : undefined,
     });
     onClose();
   };

@@ -11,7 +11,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::watch;
 
 use crate::config::AppSettings;
@@ -369,336 +369,156 @@ pub async fn execute_torrent_download(
     item_id: String,
     downloads: Arc<RwLock<Vec<DownloadItem>>>,
     settings: Arc<RwLock<AppSettings>>,
-    cancel_rx: watch::Receiver<bool>,
+    mut cancel_rx: watch::Receiver<bool>,
 ) -> Result<(), String> {
-    // -------------------------------------------------------------------------
-    // Phase 1: Snapshot & resolve the URL / magnet
-    // -------------------------------------------------------------------------
-    let (url, save_dir, user_agent, is_magnet) = {
+    let (url, torrent_file_path, selected_files, save_dir, headers, cookies, referer, user_agent) = {
         let dls = downloads.read();
         let item = dls
             .iter()
             .find(|d| d.id == item_id)
             .ok_or("Torrent item not found")?;
-        let url = item.url.clone();
-        let is_magnet = url.trim().to_lowercase().starts_with("magnet:?");
-        // save_dir = directory portion of save_path
-        let save_dir = std::path::Path::new(&item.save_path)
-            .parent()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| item.save_path.clone());
-        let ua = item
-            .custom_headers
-            .get("User-Agent")
-            .cloned()
-            .unwrap_or_else(|| settings.read().custom_user_agent.clone());
-        (url, save_dir, ua, is_magnet)
+        let target = std::path::Path::new(&item.save_path);
+        let output_dir = if target.is_dir() {
+            target.to_path_buf()
+        } else {
+            let parent = target.parent().unwrap_or_else(|| std::path::Path::new("."));
+            let folder_name = target
+                .file_stem()
+                .unwrap_or_else(|| std::ffi::OsStr::new("Torrent"));
+            parent.join(folder_name)
+        };
+        (
+            item.url.clone(),
+            item.torrent_file_path.clone(),
+            item.torrent_selected_files.clone(),
+            output_dir.to_string_lossy().to_string(),
+            item.custom_headers.clone(),
+            item.cookies.clone(),
+            item.referer.clone(),
+            item.custom_headers
+                .get("User-Agent")
+                .cloned()
+                .unwrap_or_else(|| settings.read().custom_user_agent.clone()),
+        )
     };
-
-    // -------------------------------------------------------------------------
-    // Phase 2: For .torrent URLs — download and parse the metainfo file
-    // -------------------------------------------------------------------------
-    let meta: TorrentMetadata = if is_magnet {
-        // For magnets we already have initial metadata from create_initial_torrent_metadata.
-        // Re-read what was already stored.
-        let dls = downloads.read();
-        let item = dls.iter().find(|d| d.id == item_id).ok_or("Item gone")?;
-        item.torrent_meta.clone().ok_or("No torrent metadata")?
+    std::fs::create_dir_all(&save_dir).map_err(|e| e.to_string())?;
+    let add_source = if let Some(path) = torrent_file_path {
+        let bytes =
+            std::fs::read(path).map_err(|e| format!("Could not read torrent metadata: {e}"))?;
+        librqbit::AddTorrent::from_bytes(bytes)
+    } else if url.trim().to_lowercase().starts_with("magnet:") {
+        librqbit::AddTorrent::from_url(url.as_str())
     } else {
-        // Fetch the .torrent file over HTTP
-        {
-            let mut dls = downloads.write();
-            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
-                d.transfer_log
-                    .push("Fetching .torrent metainfo file...".to_string());
-                d.status = DownloadStatus::Connecting;
+        let mut builder = reqwest::Client::builder()
+            .user_agent(&user_agent)
+            .timeout(Duration::from_secs(60));
+        let mut request_headers = reqwest::header::HeaderMap::new();
+        for (name, value) in &headers {
+            if let (Ok(name), Ok(value)) = (
+                reqwest::header::HeaderName::from_bytes(name.as_bytes()),
+                reqwest::header::HeaderValue::from_str(value),
+            ) {
+                request_headers.insert(name, value);
             }
         }
-
-        let client = reqwest::Client::builder()
-            .user_agent(&user_agent)
-            .timeout(Duration::from_secs(60))
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .map_err(|e| e.to_string())?;
-
-        let torrent_bytes = client
-            .get(&url)
+        builder = builder.default_headers(request_headers);
+        let client = builder.build().map_err(|e| e.to_string())?;
+        let mut request = client.get(&url);
+        if let Some(cookie) = cookies.as_deref() {
+            request = request.header(reqwest::header::COOKIE, cookie);
+        }
+        if let Some(referer) = referer.as_deref() {
+            request = request.header(reqwest::header::REFERER, referer);
+        }
+        let bytes = request
             .send()
             .await
-            .map_err(|e| format!("Failed to fetch .torrent file: {}", e))?
+            .map_err(|e| format!("Failed to fetch torrent metadata: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("Torrent server returned an error: {e}"))?
             .bytes()
             .await
-            .map_err(|e| format!("Failed to read .torrent bytes: {}", e))?
-            .to_vec();
-
-        let current_settings = settings.read().clone();
-        let sequential = current_settings.torrent.sequential_download_default;
-
-        let parsed = parse_torrent_bytes(&torrent_bytes, sequential)
-            .map_err(|e| format!("Failed to parse .torrent file: {}", e))?;
-
-        // Store the cached .torrent bytes to the temp directory
-        let temp_dir = crate::config::resolve_path(&settings.read().temp_segment_dir);
-        let _ = std::fs::create_dir_all(&temp_dir);
-        let torrent_cache = temp_dir.join(format!("{}.torrent", item_id));
-        let _ = std::fs::write(&torrent_cache, &torrent_bytes);
-
-        // Update the item with real metadata
-        {
-            let mut dls = downloads.write();
-            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
-                let total: u64 = parsed.files.iter().map(|f| f.size_bytes).sum();
-                d.total_bytes = total;
-                d.filename = parsed
-                    .files
-                    .first()
-                    .map(|f| {
-                        std::path::Path::new(&f.path)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| f.path.clone())
-                    })
-                    .unwrap_or_else(|| "torrent_download".to_string());
-                d.torrent_meta = Some(parsed.clone());
-                d.transfer_log.push(format!(
-                    "Parsed .torrent: {} file(s), {} pieces, info_hash={}",
-                    parsed.files.len(),
-                    parsed.total_pieces,
-                    &parsed.info_hash[..8]
-                ));
-            }
-        }
-        parsed
+            .map_err(|e| format!("Failed to read torrent metadata: {e}"))?;
+        librqbit::AddTorrent::from_bytes(bytes)
     };
 
-    // -------------------------------------------------------------------------
-    // Phase 3: Announce to trackers & simulate DHT peer discovery
-    // -------------------------------------------------------------------------
+    let session = librqbit::Session::new(std::path::PathBuf::from(&save_dir))
+        .await
+        .map_err(|e| format!("Could not start torrent engine: {e}"))?;
+    let mut options = librqbit::AddTorrentOptions::default();
+    options.output_folder = Some(save_dir.clone());
+    options.overwrite = true;
+    options.only_files = selected_files;
+    let handle = session
+        .add_torrent(add_source, Some(options))
+        .await
+        .map_err(|e| format!("Could not add torrent: {e}"))?
+        .into_handle()
+        .ok_or("Torrent engine did not return a download handle")?;
+    handle
+        .wait_until_initialized()
+        .await
+        .map_err(|e| format!("Torrent metadata error: {e}"))?;
     {
         let mut dls = downloads.write();
         if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
-            d.status = DownloadStatus::Connecting;
-            d.transfer_log.push(format!(
-                "Announcing to {} tracker(s)...",
-                meta.trackers.len()
-            ));
-        }
-    }
-
-    // Simulate peer connection delay (real DHT/tracker round-trip)
-    tokio::time::sleep(Duration::from_millis(800)).await;
-
-    if *cancel_rx.borrow() {
-        return Ok(());
-    }
-
-    // -------------------------------------------------------------------------
-    // Phase 4: Download each file in the torrent
-    // -------------------------------------------------------------------------
-    // We download files one at a time (sequential) or all concurrently.
-    // Each file is fetched piece-by-piece; progress is fed back to the shared
-    // DownloadItem incrementally.
-
-    let total_pieces = meta.total_pieces.max(1);
-    let piece_length = meta.piece_length.max(1);
-    let total_bytes: u64 = meta.files.iter().map(|f| f.size_bytes).sum();
-
-    // Reset progress
-    {
-        let mut dls = downloads.write();
-        if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+            let stats = handle.stats();
             d.status = DownloadStatus::Downloading;
-            d.downloaded_bytes = 0;
-            d.total_bytes = total_bytes;
-            d.transfer_log.push(format!(
-                "Starting torrent download: {} bytes across {} file(s)",
-                total_bytes,
-                meta.files.len()
-            ));
-            if let Some(ref mut tm) = d.torrent_meta {
-                tm.peers_connected = 4; // initial simulated peer count
-                tm.seeds_connected = 2;
-            }
+            d.total_bytes = stats.total_bytes;
+            d.save_path = save_dir.clone();
+            d.transfer_log.push(
+                "Torrent metadata resolved; downloading verified pieces from the swarm."
+                    .to_string(),
+            );
         }
     }
 
-    // Build a simple HTTP client to download file data
-    let client = {
-        let st = settings.read().clone();
-        let dls = downloads.read();
-        let item = dls.iter().find(|d| d.id == item_id).cloned();
-        drop(dls);
-        if let Some(item) = item {
-            crate::engine::http::build_http_client(&st, &item)
-                .unwrap_or_else(|_| reqwest::Client::new())
-        } else {
-            reqwest::Client::new()
-        }
-    };
-
-    let mut global_downloaded: u64 = 0;
-    let mut completed_pieces: usize = 0;
-
-    for (file_index, torrent_file) in meta.files.iter().enumerate() {
-        if *cancel_rx.borrow() {
-            return Ok(());
-        }
-
-        if torrent_file.priority.as_str() == "skip" {
-            continue;
-        }
-
-        // Resolve save path for this file
-        let file_save_path = {
-            let resolved_dir = crate::config::resolve_path(&save_dir);
-            resolved_dir
-                .join(&torrent_file.path)
-                .to_string_lossy()
-                .to_string()
-        };
-
-        if let Some(parent) = std::path::Path::new(&file_save_path).parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-
-        // Determine pieces for this file
-        let file_pieces = (torrent_file.size_bytes.div_ceil(piece_length)).max(1) as usize;
-        let piece_size_bytes = piece_length;
-
-        // Pre-allocate file
-        {
-            use std::fs::File;
-            if let Ok(f) = File::create(&file_save_path) {
-                if torrent_file.size_bytes > 0 {
-                    let _ = f.set_len(torrent_file.size_bytes);
-                }
+    let completion = handle.wait_until_completed();
+    tokio::pin!(completion);
+    loop {
+        tokio::select! {
+            result = &mut completion => {
+                result.map_err(|e| format!("Torrent download failed: {e}"))?;
+                break;
             }
-        }
-
-        {
-            let mut dls = downloads.write();
-            if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
-                d.transfer_log.push(format!(
-                    "Downloading file [{}/{}]: {} ({} bytes)",
-                    file_index + 1,
-                    meta.files.len(),
-                    torrent_file.path,
-                    torrent_file.size_bytes
-                ));
-            }
-        }
-
-        // Piece download loop
-        let mut file_downloaded: u64 = 0;
-        let mut window_start = Instant::now();
-        let mut window_bytes: u64 = 0;
-
-        for piece_idx in 0..file_pieces {
-            if *cancel_rx.borrow() {
-                return Ok(());
-            }
-
-            let piece_start = (piece_idx as u64) * piece_size_bytes;
-            let piece_end = (piece_start + piece_size_bytes).min(torrent_file.size_bytes);
-            let piece_actual = piece_end - piece_start;
-
-            // Build tracker URL for announce (using first HTTP tracker if present)
-            // For actual data, we download the range from the original URL or simulate
-            // the peer transfer. If the URL is a direct HTTP/HTTPS .torrent URL that
-            // also serves the content (e.g. some CDN torrents), we use range requests.
-            // Otherwise we simulate realistic peer-download timing.
-            let downloaded_ok = if !is_magnet && url.starts_with("http") {
-                // Try range request on the source URL
-                let range_hdr = format!("bytes={}-{}", piece_start, piece_end - 1);
-                match client
-                    .get(&url)
-                    .header(reqwest::header::RANGE, range_hdr)
-                    .send()
-                    .await
-                {
-                    Ok(resp) if resp.status().is_success() || resp.status() == 206 => {
-                        match resp.bytes().await {
-                            Ok(chunk) => {
-                                use std::io::{Seek, SeekFrom, Write};
-                                if let Ok(mut f) = std::fs::OpenOptions::new()
-                                    .write(true)
-                                    .open(&file_save_path)
-                                {
-                                    let _ = f.seek(SeekFrom::Start(piece_start));
-                                    let _ = f.write_all(&chunk);
-                                }
-                                true
-                            }
-                            Err(_) => false,
-                        }
+            changed = cancel_rx.changed() => {
+                if changed.is_err() || *cancel_rx.borrow() {
+                    let mut dls = downloads.write();
+                    if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+                        d.status = DownloadStatus::Paused;
+                        d.speed_bps = 0;
+                        d.transfer_log.push("Torrent paused; verified pieces are preserved.".to_string());
                     }
-                    _ => false,
+                    return Ok(());
                 }
-            } else {
-                false
-            };
-
-            // If actual HTTP download didn't work (magnet, or no range support),
-            // simulate realistic piece timing based on configured speed limits
-            if !downloaded_ok {
-                // Simulate peer download: sleep proportional to piece size at ~2 MB/s
-                let sim_ms = (piece_actual as f64 / 2_097_152.0 * 1000.0) as u64;
-                let sim_ms = sim_ms.clamp(10, 500);
-                tokio::time::sleep(Duration::from_millis(sim_ms)).await;
             }
-
-            file_downloaded += piece_actual;
-            global_downloaded += piece_actual;
-            window_bytes += piece_actual;
-            completed_pieces += 1;
-
-            let elapsed = window_start.elapsed();
-            if elapsed >= Duration::from_millis(250) || piece_idx == file_pieces - 1 {
-                let speed = ((window_bytes as f64) / elapsed.as_secs_f64()) as u64;
-                window_start = Instant::now();
-                window_bytes = 0;
-
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                let stats = handle.stats();
                 let mut dls = downloads.write();
                 if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
-                    d.downloaded_bytes = global_downloaded.min(total_bytes);
-                    d.speed_bps = speed;
-                    if speed > 0 && total_bytes > global_downloaded {
-                        d.eta_seconds = Some((total_bytes - global_downloaded) / speed);
-                    }
-                    if let Some(ref mut tm) = d.torrent_meta {
-                        tm.completed_pieces = completed_pieces.min(total_pieces);
-                        // Update per-file progress
-                        if let Some(fe) = tm.files.iter_mut().find(|f| f.index == file_index) {
-                            fe.downloaded_bytes = file_downloaded.min(fe.size_bytes);
-                        }
-                        // Fluctuate peer count realistically
-                        let peer_jitter = piece_idx % 7;
-                        tm.peers_connected = (4 + peer_jitter).min(meta.peers_connected.max(8));
-                        tm.seeds_connected = (2 + peer_jitter / 2).min(6);
-                    }
+                    d.total_bytes = stats.total_bytes;
+                    d.downloaded_bytes = stats.progress_bytes.min(stats.total_bytes);
+                    d.speed_bps = stats.live.as_ref().map(|live| live.download_speed.as_bytes() as u64).unwrap_or(0);
+                    d.upload_speed_bps = stats.live.as_ref().map(|live| live.upload_speed.as_bytes() as u64).unwrap_or(0);
+                    let speed = stats.live.as_ref().map(|live| live.download_speed.as_bytes() as u64).unwrap_or(0);
+                    d.eta_seconds = (speed > 0).then(|| stats.total_bytes.saturating_sub(stats.progress_bytes) / speed);
                 }
             }
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Phase 5: Mark completed
-    // -------------------------------------------------------------------------
     let mut dls = downloads.write();
     if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
+        let stats = handle.stats();
         d.status = DownloadStatus::Completed;
-        d.downloaded_bytes = total_bytes;
+        d.downloaded_bytes = stats.progress_bytes;
+        d.total_bytes = stats.total_bytes;
         d.speed_bps = 0;
+        d.upload_speed_bps = 0;
         d.eta_seconds = Some(0);
         d.completed_at = Some(chrono::Utc::now().to_rfc3339());
         d.transfer_log
             .push("Torrent download completed successfully.".to_string());
-        if let Some(ref mut tm) = d.torrent_meta {
-            tm.completed_pieces = total_pieces;
-            tm.peers_connected = 0;
-            tm.seeds_connected = 0;
-        }
     }
     Ok(())
 }
