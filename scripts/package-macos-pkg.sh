@@ -93,9 +93,6 @@ pkgbuild \
   --version "${VERSION}" \
   "${PKG_OUTPUT_PATH}"
 
-# Create secondary file without hyphen if needed for compatibility
-cp "${PKG_OUTPUT_PATH}" "${DIST_PKG_DIR}/ByteX_Download_Manager_${VERSION}_${ARCH}.pkg"
-
 echo "==> macOS .pkg installer created successfully!"
 ls -lh "${DIST_PKG_DIR}"
 
