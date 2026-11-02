@@ -25,7 +25,7 @@ import {
   apiStartQueueNow,
   apiResumeDownload,
   apiShowInFolder,
-  apiShowNotification,
+  apiSetAutostart,
   apiToggleBrowserExtension,
   apiUpdateSettings,
   apiGetAppVersion,
@@ -92,19 +92,13 @@ export const App: React.FC = () => {
     for (const d of downloads) {
       const prev = previousStatusRef.current.get(d.id);
       if (prev && prev !== "completed" && d.status === "completed") {
-        if (settings.show_completion_dialog) {
-          apiShowNotification(
-            "Download Complete",
-            `${d.filename} has finished downloading successfully.`
-          );
-        }
         if (settings.play_sound_on_complete) {
           playNotificationChime();
         }
       }
       previousStatusRef.current.set(d.id, d.status);
     }
-  }, [downloads, settings.show_completion_dialog, settings.play_sound_on_complete, playNotificationChime]);
+  }, [downloads, settings.play_sound_on_complete, playNotificationChime]);
 
   // Sync real state from Tauri backend on mount and via periodic polling
   const syncFromBackend = useCallback(async () => {
@@ -894,10 +888,22 @@ export const App: React.FC = () => {
               if (fresh) setBrowsers(fresh);
             }
           }}
-          onSave={(newSettings) => {
-            setSettings(newSettings);
+          onSave={async (newSettings) => {
             if (isTauriRuntime()) {
-              apiUpdateSettings(newSettings);
+              try {
+                const enabled = await apiSetAutostart(newSettings.start_on_boot);
+                if (enabled !== newSettings.start_on_boot) {
+                  throw new Error("The operating system did not apply the requested startup setting.");
+                }
+                const saved = await apiUpdateSettings(newSettings);
+                if (!saved) throw new Error("ByteX could not save the updated preferences.");
+                setSettings(saved);
+              } catch (error) {
+                await apiSetAutostart(settings.start_on_boot).catch(() => undefined);
+                window.alert(`Could not apply the settings: ${String(error)}`);
+              }
+            } else {
+              setSettings(newSettings);
             }
           }}
           onClose={() => setSettingsTab(null)}

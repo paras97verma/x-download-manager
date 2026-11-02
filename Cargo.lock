@@ -690,6 +690,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "bytex-download-manager"
+version = "1.0.2"
+dependencies = [
+ "async-std",
+ "axum 0.7.9",
+ "base64 0.22.1",
+ "chrono",
+ "directories 5.0.1",
+ "futures-util",
+ "hex",
+ "librqbit",
+ "md-5",
+ "parking_lot",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2",
+ "suppaftp",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "winreg",
+]
+
+[[package]]
 name = "cairo-rs"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5578,6 +5616,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-single-instance"
+version = "2.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "726b6da0dd5bd1344f84f4108a622c07d01923baacb5c803a605189672c5352f"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+ "zbus",
+]
+
+[[package]]
 name = "tauri-runtime"
 version = "2.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7119,43 +7173,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
-]
-
-[[package]]
-name = "x-download-manager"
-version = "1.0.2"
-dependencies = [
- "async-std",
- "axum 0.7.9",
- "base64 0.22.1",
- "chrono",
- "directories 5.0.1",
- "futures-util",
- "hex",
- "librqbit",
- "md-5",
- "parking_lot",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha1",
- "sha2",
- "suppaftp",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-shell",
- "thiserror 2.0.21",
- "tokio",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
- "winreg",
 ]
 
 [[package]]

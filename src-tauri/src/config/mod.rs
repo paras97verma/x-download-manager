@@ -4,11 +4,14 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 ByteX/1.0";
+const LEGACY_DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 XDM/1.0";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteCredential {
     pub id: String,
     pub host_pattern: String,
-    pub site_type: String, // "usersdrive" | "1fichier" | "mediafire" | "ftp" | "sftp" | "http_basic" | "bearer" | "cookie"
+    pub site_type: String, // "usersdrive" | "1fichier" | "mediafire" | "ftp" | "http_basic" | "bearer" | "cookie"
     pub username: String,
     pub password_or_token: String,
     pub cookies: Option<String>,
@@ -129,7 +132,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         let base_dl = dirs_default_download_path();
-        let temp_dl = format!("{}/.xdm_temp", base_dl);
+        let temp_dl = format!("{}/.bytex_temp", base_dl);
 
         let mut enabled_browsers = HashMap::new();
         enabled_browsers.insert("chrome".to_string(), true);
@@ -163,7 +166,7 @@ impl Default for AppSettings {
             max_retries: 10,
             retry_delay_seconds: 5,
             connection_timeout_seconds: 30,
-            custom_user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 XDM/1.0".to_string(),
+            custom_user_agent: DEFAULT_USER_AGENT.to_string(),
 
             speed_limiter_enabled: false,
             global_max_download_kbps: 10240, // 10 MB/s when enabled
@@ -174,35 +177,80 @@ impl Default for AppSettings {
                     id: "compressed".into(),
                     name: "Compressed".into(),
                     icon: "Archive".into(),
-                    extensions: vec!["zip".into(), "rar".into(), "7z".into(), "tar".into(), "gz".into(), "bz2".into(), "xz".into(), "zst".into()],
+                    extensions: vec![
+                        "zip".into(),
+                        "rar".into(),
+                        "7z".into(),
+                        "tar".into(),
+                        "gz".into(),
+                        "bz2".into(),
+                        "xz".into(),
+                        "zst".into(),
+                    ],
                     default_subfolder: "Compressed".into(),
                 },
                 CategoryRule {
                     id: "programs".into(),
                     name: "Programs".into(),
                     icon: "Cpu".into(),
-                    extensions: vec!["exe".into(), "msi".into(), "dmg".into(), "pkg".into(), "deb".into(), "rpm".into(), "appimage".into(), "iso".into(), "apk".into()],
+                    extensions: vec![
+                        "exe".into(),
+                        "msi".into(),
+                        "dmg".into(),
+                        "pkg".into(),
+                        "deb".into(),
+                        "rpm".into(),
+                        "appimage".into(),
+                        "iso".into(),
+                        "apk".into(),
+                    ],
                     default_subfolder: "Programs".into(),
                 },
                 CategoryRule {
                     id: "video".into(),
                     name: "Video".into(),
                     icon: "Film".into(),
-                    extensions: vec!["mp4".into(), "mkv".into(), "webm".into(), "avi".into(), "mov".into(), "flv".into(), "m4v".into(), "ts".into()],
+                    extensions: vec![
+                        "mp4".into(),
+                        "mkv".into(),
+                        "webm".into(),
+                        "avi".into(),
+                        "mov".into(),
+                        "flv".into(),
+                        "m4v".into(),
+                        "ts".into(),
+                    ],
                     default_subfolder: "Video".into(),
                 },
                 CategoryRule {
                     id: "music".into(),
                     name: "Music".into(),
                     icon: "Music".into(),
-                    extensions: vec!["mp3".into(), "flac".into(), "wav".into(), "aac".into(), "ogg".into(), "m4a".into(), "opus".into()],
+                    extensions: vec![
+                        "mp3".into(),
+                        "flac".into(),
+                        "wav".into(),
+                        "aac".into(),
+                        "ogg".into(),
+                        "m4a".into(),
+                        "opus".into(),
+                    ],
                     default_subfolder: "Music".into(),
                 },
                 CategoryRule {
                     id: "documents".into(),
                     name: "Documents".into(),
                     icon: "FileText".into(),
-                    extensions: vec!["pdf".into(), "epub".into(), "docx".into(), "xlsx".into(), "pptx".into(), "txt".into(), "md".into(), "csv".into()],
+                    extensions: vec![
+                        "pdf".into(),
+                        "epub".into(),
+                        "docx".into(),
+                        "xlsx".into(),
+                        "pptx".into(),
+                        "txt".into(),
+                        "md".into(),
+                        "csv".into(),
+                    ],
                     default_subfolder: "Documents".into(),
                 },
             ],
@@ -232,10 +280,13 @@ impl Default for AppSettings {
                 intercept_all_downloads: true,
                 min_file_size_kb: 256,
                 intercepted_extensions: vec![
-                    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG",
-                    "DEB", "RPM", "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI",
-                    "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
-                ].into_iter().map(String::from).collect(),
+                    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG", "DEB", "RPM",
+                    "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI", "MOV", "MP3", "FLAC", "WAV",
+                    "PDF", "DOCX", "XLSX", "PPTX", "TORRENT",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
                 ignored_domains: vec!["localhost".into(), "127.0.0.1".into()],
                 capture_streaming_media: true,
                 bypass_key: "Alt".into(),
@@ -296,18 +347,18 @@ pub fn resolve_path(p: &str) -> PathBuf {
 pub fn dirs_default_download_path() -> String {
     if let Some(user_dirs) = directories::UserDirs::new() {
         if let Some(dl) = user_dirs.download_dir() {
-            return dl.join("XDM").to_string_lossy().to_string();
+            return dl.join("ByteX").to_string_lossy().to_string();
         }
     }
     if let Some(base_dirs) = directories::BaseDirs::new() {
         return base_dirs
             .home_dir()
             .join("Downloads")
-            .join("XDM")
+            .join("ByteX")
             .to_string_lossy()
             .to_string();
     }
-    "~/Downloads/XDM".to_string()
+    "~/Downloads/ByteX".to_string()
 }
 
 pub fn ensure_directories_exist(settings: &AppSettings) {
@@ -335,20 +386,133 @@ pub fn ensure_directories_exist(settings: &AppSettings) {
     }
 }
 
+/// Moves legacy XDM app data into the ByteX directory without overwriting any
+/// files already present at the new location.
+pub fn migrate_legacy_data_dir(legacy: &std::path::Path, current: &std::path::Path) {
+    if legacy == current || !legacy.exists() {
+        return;
+    }
+    if !current.exists() && fs::rename(legacy, current).is_ok() {
+        return;
+    }
+    if fs::create_dir_all(current).is_err() {
+        return;
+    }
+
+    let Ok(entries) = fs::read_dir(legacy) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let source = entry.path();
+        let destination = current.join(entry.file_name());
+        if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            migrate_legacy_data_dir(&source, &destination);
+        } else if source
+            .file_name()
+            .is_some_and(|name| name == "downloads.json")
+            && destination.exists()
+        {
+            merge_download_histories(&source, &destination);
+        } else if !destination.exists() {
+            let _ = fs::rename(&source, &destination);
+        }
+    }
+    if fs::read_dir(legacy).is_ok_and(|mut entries| entries.next().is_none()) {
+        let _ = fs::remove_dir(legacy);
+    }
+}
+
+/// Combines valid history snapshots when both the old and new data directories
+/// contain one. Invalid or unsupported snapshots are left in place for recovery.
+fn merge_download_histories(legacy: &std::path::Path, current: &std::path::Path) {
+    let (Ok(legacy_raw), Ok(current_raw)) =
+        (fs::read_to_string(legacy), fs::read_to_string(current))
+    else {
+        return;
+    };
+    let (Ok(mut legacy_history), Ok(current_history)) = (
+        serde_json::from_str::<serde_json::Value>(&legacy_raw),
+        serde_json::from_str::<serde_json::Value>(&current_raw),
+    ) else {
+        return;
+    };
+    if legacy_history
+        .get("format_version")
+        .and_then(|v| v.as_u64())
+        != Some(1)
+        || current_history
+            .get("format_version")
+            .and_then(|v| v.as_u64())
+            != Some(1)
+    {
+        return;
+    }
+    let (Some(legacy_downloads), Some(current_downloads)) = (
+        legacy_history
+            .get_mut("downloads")
+            .and_then(serde_json::Value::as_array_mut),
+        current_history
+            .get("downloads")
+            .and_then(serde_json::Value::as_array),
+    ) else {
+        return;
+    };
+    let mut known_ids = current_downloads
+        .iter()
+        .filter_map(|download| {
+            download
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let legacy_downloads = legacy_downloads.clone();
+    let mut merged_downloads = current_downloads.clone();
+    for download in legacy_downloads {
+        let Some(id) = download
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+        else {
+            return;
+        };
+        if known_ids.insert(id) {
+            merged_downloads.push(download);
+        }
+    }
+    if let Some(downloads) = legacy_history
+        .get_mut("downloads")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        *downloads = merged_downloads;
+    }
+    if let Ok(merged) = serde_json::to_vec(&legacy_history) {
+        let temporary = current.with_extension("json.migration-tmp");
+        if fs::write(&temporary, merged).is_ok() && fs::rename(&temporary, current).is_ok() {
+            let _ = fs::remove_file(legacy);
+        } else {
+            let _ = fs::remove_file(temporary);
+        }
+    }
+}
+
 pub struct ConfigManager {
     config_path: PathBuf,
 }
 
 impl ConfigManager {
     pub fn new() -> Self {
-        let config_path = if let Some(proj) = ProjectDirs::from("com", "peivee", "XDownloadManager")
-        {
-            let dir = proj.config_dir().to_path_buf();
-            let _ = fs::create_dir_all(&dir);
-            dir.join("settings.json")
-        } else {
-            PathBuf::from("xdm_settings.json")
-        };
+        let config_path =
+            if let Some(proj) = ProjectDirs::from("com", "peivee", "ByteXDownloadManager") {
+                if let Some(legacy) = ProjectDirs::from("com", "peivee", "XDownloadManager") {
+                    migrate_legacy_data_dir(legacy.config_dir(), proj.config_dir());
+                }
+                let dir = proj.config_dir().to_path_buf();
+                let _ = fs::create_dir_all(&dir);
+                dir.join("settings.json")
+            } else {
+                PathBuf::from("xdm_settings.json")
+            };
         Self { config_path }
     }
 
@@ -383,18 +547,31 @@ impl ConfigManager {
             default
         };
 
+        if settings.custom_user_agent == LEGACY_DEFAULT_USER_AGENT {
+            settings.custom_user_agent = DEFAULT_USER_AGENT.to_string();
+            let _ = self.save(&settings);
+        }
+
         // If settings had a default_download_dir ending with pure "Downloads"
-        // (like on initial runs where dirs_default_download_path returned ~/Downloads without /XDM),
-        // or literal "~/Downloads/XDM", migrate to canonical ~/Downloads/XDM path.
+        // (like on initial runs where dirs_default_download_path returned ~/Downloads without /ByteX),
+        // migrate it to the current branded default while preserving all other saved paths.
         let resolved = resolve_path(&settings.default_download_dir);
         let path_str = resolved.to_string_lossy();
         if path_str.ends_with("/Downloads") || path_str.ends_with("\\Downloads") {
-            settings.default_download_dir = resolved.join("XDM").to_string_lossy().to_string();
-            settings.temp_segment_dir = format!("{}/.xdm_temp", settings.default_download_dir);
+            settings.default_download_dir = resolved.join("ByteX").to_string_lossy().to_string();
+            settings.temp_segment_dir = format!("{}/.bytex_temp", settings.default_download_dir);
             let _ = self.save(&settings);
         } else if settings.default_download_dir.starts_with("~/") {
             settings.default_download_dir = resolved.to_string_lossy().to_string();
-            settings.temp_segment_dir = format!("{}/.xdm_temp", settings.default_download_dir);
+            let temp_dir_name = if settings.default_download_dir.ends_with("/XDM")
+                || settings.default_download_dir.ends_with("\\XDM")
+            {
+                ".xdm_temp"
+            } else {
+                ".bytex_temp"
+            };
+            settings.temp_segment_dir =
+                format!("{}/{}", settings.default_download_dir, temp_dir_name);
             let _ = self.save(&settings);
         }
 

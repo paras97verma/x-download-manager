@@ -45,7 +45,7 @@
     ],
     "category": "Utility",
     "shortDescription": "ByteX Download Manager — fast, cross-platform downloads",
-    "longDescription": "ByteX Download Manager is a fast, native download manager for macOS, Windows, and Linux, with segmented HTTP/HTTPS downloads, BitTorrent and magnet links, FTP/SFTP, authenticated file hosting, and browser extensions for Chromium, Firefox, and Safari.",
+    "longDescription": "ByteX Download Manager is a fast, native download manager for macOS, Windows, and Linux, with segmented HTTP/HTTPS downloads, BitTorrent and magnet links, FTP/FTPS, authenticated file hosting, and browser extensions for Chromium, Firefox, and Safari.",
     "copyright": "Copyright © 2026 ~peivee. All rights reserved.",
     "macOS": {
       "minimumSystemVersion": "11.0",

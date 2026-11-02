@@ -34,6 +34,11 @@ body {
   font-size: 11px;
   color: #10b981;
 }
+.xdm-transfer-status {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #94a3b8;
+}
 .xdm-card {
   background: #111827;
   border: 1px solid #1e293b;

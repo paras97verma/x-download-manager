@@ -3,7 +3,10 @@ set -eu
 for APP_PATH in "/Applications/ByteX Download Manager.app" "/Applications/X Download Manager.app"; do
   if [ -d "$APP_PATH" ]; then
     /usr/bin/logger "ByteX installer: removing previous application at $APP_PATH"
-    APP_EXECUTABLE="$APP_PATH/Contents/MacOS/x-download-manager"
+    APP_EXECUTABLE="$APP_PATH/Contents/MacOS/bytex-download-manager"
+    if [ ! -x "$APP_EXECUTABLE" ]; then
+      APP_EXECUTABLE="$APP_PATH/Contents/MacOS/x-download-manager"
+    fi
     if [ -x "$APP_EXECUTABLE" ]; then
       CONSOLE_USER=$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)
       if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ "$CONSOLE_USER" != "loginwindow" ]; then

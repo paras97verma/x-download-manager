@@ -10,6 +10,7 @@
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -363,6 +364,10 @@ pub fn format_speed(bps: u64) -> String {
     }
 }
 
+fn configured_rate_limit(limit_bps: u64) -> Option<NonZeroU32> {
+    NonZeroU32::new(limit_bps.min(u32::MAX as u64) as u32)
+}
+
 /// Main entry-point for torrent/magnet execution.
 /// Drives the download from initial metadata resolution through piece completion.
 pub async fn execute_torrent_download(
@@ -445,12 +450,29 @@ pub async fn execute_torrent_download(
     let mut state_key = Sha256::new();
     state_key.update(save_dir.as_bytes());
     let state_key = hex::encode(state_key.finalize());
-    let persistence_root = directories::ProjectDirs::from("com", "peivee", "XDownloadManager")
+    let persistence_root = directories::ProjectDirs::from("com", "peivee", "ByteXDownloadManager")
         .map(|project| project.config_dir().join("torrent-state"))
         .unwrap_or_else(|| std::path::PathBuf::from(".xdm-torrent-state"));
     let session_state_dir = persistence_root.join(format!("{}-{}", &state_key[..16], item_id));
     std::fs::create_dir_all(&session_state_dir)
         .map_err(|e| format!("Could not create torrent resume state: {e}"))?;
+    let initial_settings = settings.read().clone();
+    let (initial_download_limit, initial_upload_limit) = {
+        let dls = downloads.read();
+        (
+            super::rate_limiter::download_rate_limit_bps(
+                initial_settings.speed_limiter_enabled,
+                initial_settings.global_max_download_kbps,
+                &dls,
+                true,
+            ),
+            super::rate_limiter::upload_rate_limit_bps(
+                initial_settings.speed_limiter_enabled,
+                initial_settings.global_max_upload_kbps,
+                &dls,
+            ),
+        )
+    };
     let session = librqbit::Session::new_with_opts(
         std::path::PathBuf::from(&save_dir),
         librqbit::SessionOptions {
@@ -458,6 +480,10 @@ pub async fn execute_torrent_download(
             persistence: Some(librqbit::SessionPersistenceConfig::Json {
                 folder: Some(session_state_dir),
             }),
+            ratelimits: librqbit::limits::LimitsConfig {
+                download_bps: configured_rate_limit(initial_download_limit),
+                upload_bps: configured_rate_limit(initial_upload_limit),
+            },
             ..Default::default()
         },
     )
@@ -513,6 +539,25 @@ pub async fn execute_torrent_download(
                 }
             }
             _ = tokio::time::sleep(Duration::from_millis(500)) => {
+                let current_settings = settings.read().clone();
+                let (download_limit, upload_limit) = {
+                    let dls = downloads.read();
+                    (
+                        super::rate_limiter::download_rate_limit_bps(
+                            current_settings.speed_limiter_enabled,
+                            current_settings.global_max_download_kbps,
+                            &dls,
+                            true,
+                        ),
+                        super::rate_limiter::upload_rate_limit_bps(
+                            current_settings.speed_limiter_enabled,
+                            current_settings.global_max_upload_kbps,
+                            &dls,
+                        ),
+                    )
+                };
+                session.ratelimits.set_download_bps(configured_rate_limit(download_limit));
+                session.ratelimits.set_upload_bps(configured_rate_limit(upload_limit));
                 let stats = handle.stats();
                 let mut dls = downloads.write();
                 if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {

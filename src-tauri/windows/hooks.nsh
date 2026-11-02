@@ -29,11 +29,17 @@
   ; Ask the old app to quit before removing files. Its local IPC handler exits the
   ; process after acknowledging this request, even when the window is in the tray.
   ${GetParent} $2 "$0"
-  IfFileExists "$2\x-download-manager.exe" 0 xdm_run_uninstaller
+  IfFileExists "$2\bytex-download-manager.exe" 0 xdm_try_legacy_prepare
+  Exec '"$2\bytex-download-manager.exe" --prepare-for-update'
+  Goto xdm_wait_previous_app
+  xdm_try_legacy_prepare:
+  IfFileExists "$2\x-download-manager.exe" 0 xdm_wait_previous_app
   Exec '"$2\x-download-manager.exe" --prepare-for-update'
+  xdm_wait_previous_app:
   Sleep 1000
   ; Older releases do not have the IPC quit command. Close any remaining old
   ; process before the uninstaller removes its executable and data files.
+  ExecWait 'taskkill /IM bytex-download-manager.exe /T'
   ExecWait 'taskkill /IM x-download-manager.exe /T'
   xdm_run_uninstaller:
   DetailPrint "Removing the previous ByteX Download Manager installation..."
@@ -47,12 +53,12 @@
 
 !macro NSIS_HOOK_POSTINSTALL
   ; Automatically register ByteX Download Manager Native Messaging Host & Browser Extensions on install
-  ExecWait '"$INSTDIR\x-download-manager.exe" --register-browsers-silent'
+  ExecWait '"$INSTDIR\bytex-download-manager.exe" --register-browsers-silent'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   ; Cleanly unregister browser extensions and Native Messaging Host keys before uninstalling
-  ExecWait '"$INSTDIR\x-download-manager.exe" --unregister-browsers-silent'
+  ExecWait '"$INSTDIR\bytex-download-manager.exe" --unregister-browsers-silent'
   DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.peivee.xdm"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.peivee.xdm"
   DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.peivee.xdm"

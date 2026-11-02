@@ -7,12 +7,6 @@
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
   let bypassKeyPressed = false;
 
-  runtimeAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (!message || message.type !== "XDM_CAPTURE_RESULT") return;
-    showCaptureToast(message);
-    sendResponse?.({ received: true });
-  });
-
   window.addEventListener("keydown", (e) => {
     if (e.altKey) {
       bypassKeyPressed = true;
@@ -58,13 +52,17 @@
       badge.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
+        badge.innerText = "Sending to ByteX…";
         runtimeAPI.runtime.sendMessage({
           type: "XDM_MANUAL_CAPTURE",
           url: src,
           referer: window.location.href,
           tabTitle: document.title,
+        }, (response) => {
+          badge.innerText = runtimeAPI.runtime.lastError || !response?.success
+            ? "ByteX handoff failed"
+            : response.duplicate ? "✓ Already in ByteX" : "✓ Sent to ByteX";
         });
-        badge.innerText = "✓ Sent to ByteX";
       });
 
       const parent = video.parentElement;
@@ -79,29 +77,5 @@
 
   setInterval(attachVideoBadges, 2500);
 
-  function showCaptureToast(message) {
-    const root = document.documentElement || document.body;
-    if (!root) return false;
 
-    document.getElementById("bytex-capture-toast")?.remove();
-    const host = document.createElement("div");
-    host.id = "bytex-capture-toast";
-    host.style.cssText = "all:initial;display:block;position:fixed;right:20px;bottom:20px;z-index:2147483647;pointer-events:none";
-    const shadow = host.attachShadow({ mode: "closed" });
-    const toast = document.createElement("div");
-    const filename = (message.filename || "Download").split(/[\\/]/).pop();
-    const status = message.duplicate
-      ? "Already added to ByteX"
-      : message.success
-      ? "Download started with ByteX"
-      : "ByteX could not start; browser download continues";
-    toast.textContent = `${message.success ? "✓" : "⚠"} ${status} · ${filename}`;
-    toast.style.cssText = "box-sizing:border-box;background:#102038;color:#f7fbff;border:1px solid #45d9cf;border-radius:10px;padding:12px 16px;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 28px #0008;max-width:min(420px,calc(100vw - 40px));overflow-wrap:anywhere;animation:bytex-toast-in .18s ease-out";
-    const style = document.createElement("style");
-    style.textContent = "@keyframes bytex-toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}";
-    shadow.append(style, toast);
-    root.appendChild(host);
-    setTimeout(() => host.remove(), 5000);
-    return true;
-  }
 })();

@@ -30,7 +30,6 @@ import { AppSettings, BrowserStatus, SiteCredential } from "../types/xdm";
 import {
   apiPickDirectory,
   apiPromptNotificationPermission,
-  apiSetAutostart,
   apiIsAutostartEnabled,
   apiOpenExtensionFolder,
   apiOpenBrowserUrl,
@@ -75,6 +74,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newCookies, setNewCookies] = useState("");
+  const usesFileHostCookies = ["usersdrive", "1fichier", "mediafire"].includes(newSiteType);
 
   const isMac =
     typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
@@ -105,17 +105,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleToggleAutostart = async (enabled: boolean) => {
+  const handleToggleAutostart = (enabled: boolean) => {
     setDraft({ ...draft, start_on_boot: enabled });
-    try {
-      await apiSetAutostart(enabled);
-    } catch (e) {
-      console.error("Failed to set autostart:", e);
-    }
   };
 
   const handleToggleNotifications = async (enabled: boolean) => {
-    setDraft({ ...draft, play_sound_on_complete: enabled, show_completion_dialog: enabled });
+    setDraft({ ...draft, show_completion_dialog: enabled });
     if (enabled) {
       try {
         const granted = await apiPromptNotificationPermission();
@@ -124,9 +119,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             "ByteX Download Manager",
             "Download completion notifications are active!"
           );
+        } else {
+          setDraft((prev) => ({ ...prev, show_completion_dialog: false }));
+          window.alert("ByteX could not get notification permission from the operating system. Enable notifications for ByteX in system settings, then try again.");
         }
       } catch (e) {
         console.error("Failed to prompt notification permission:", e);
+        setDraft((prev) => ({ ...prev, show_completion_dialog: false }));
+        window.alert("ByteX could not request notification permission from the operating system.");
       }
     }
   };
@@ -194,8 +194,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       id: `cred-${Date.now()}`,
       host_pattern: newHostPattern.trim(),
       site_type: newSiteType,
-      username: newUsername.trim(),
-      password_or_token: newPassword,
+      username: usesFileHostCookies ? "" : newUsername.trim(),
+      password_or_token: usesFileHostCookies ? "" : newPassword,
       cookies: newCookies.trim() || null,
       custom_headers: {},
       enabled: true,
@@ -350,13 +350,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-slate-700 transition">
                     <input
                       type="checkbox"
-                      checked={draft.play_sound_on_complete}
+                      checked={draft.show_completion_dialog}
                       onChange={(e) => handleToggleNotifications(e.target.checked)}
                       className="rounded bg-slate-950 border-slate-700 text-cyan-700"
                     />
                     <div>
                       <div className="font-semibold text-slate-200">OS Completion Notifications</div>
-                      <div className="text-[10px] text-slate-400">Requests native system alert permission</div>
+                      <div className="text-[10px] text-slate-400">Requires OS notification permission</div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer hover:border-slate-700 transition">
+                    <input
+                      type="checkbox"
+                      checked={draft.play_sound_on_complete}
+                      onChange={(e) => setDraft({ ...draft, play_sound_on_complete: e.target.checked })}
+                      className="rounded bg-slate-950 border-slate-700 text-cyan-700"
+                    />
+                    <div>
+                      <div className="font-semibold text-slate-200">Completion Sound</div>
+                      <div className="text-[10px] text-slate-400">Plays a short chime while ByteX is open</div>
                     </div>
                   </label>
 
@@ -469,7 +482,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Speed Limiter Tab */}
             {activeTab === "speed" && (
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white">Token-Bucket Bandwidth Speed Limiter</h3>
+                <h3 className="text-sm font-bold text-white">Global Bandwidth Speed Limiter</h3>
+                <p className="text-[11px] text-slate-400">Download bandwidth is shared across HTTP, FTP/FTPS, and active torrents. Upload limiting applies to BitTorrent seeding. Set either value to 0 for unlimited.</p>
                 <label className="flex items-center gap-2 p-3 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer">
                   <input
                     type="checkbox"
@@ -490,6 +504,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </label>
                     <input
                       type="number"
+                      min={0}
                       value={draft.global_max_download_kbps}
                       onChange={(e) => setDraft({ ...draft, global_max_download_kbps: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200"
@@ -502,6 +517,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </label>
                     <input
                       type="number"
+                      min={0}
                       value={draft.global_max_upload_kbps}
                       onChange={(e) => setDraft({ ...draft, global_max_upload_kbps: Number(e.target.value) })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-slate-200"
@@ -576,15 +592,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             )}
 
-            {/* Site Logins & Auth Vault */}
+            {/* Site Logins & Auth */}
             {activeTab === "logins" && (
               <div className="space-y-4">
                 <h3 className="text-sm font-bold text-white">
-                  Site Logins Vault (Usersdrive, 1fichier, MediaFire, FTP/SFTP, Basic & Bearer Auth)
+                  Saved Site Logins (Usersdrive, 1fichier, MediaFire, FTP/FTPS, HTTP Basic, Bearer & Cookie Auth)
                 </h3>
                 <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
                   <div className="text-xs font-semibold text-slate-200">Add New Site Authentication:</div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="text-[11px] text-slate-400">Entries are applied automatically when a download URL matches this host. Save Preferences to keep changes.</div>
+                  <div className="text-[11px] text-amber-300">Credentials are stored in the local app settings file and are not encrypted by this feature.</div>
+                  {usesFileHostCookies && <div className="text-[11px] text-slate-300">These file hosts use saved or browser session cookies. ByteX does not sign in to file-host accounts or solve captchas.</div>}
+                  <div className={`grid ${usesFileHostCookies ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
                     <input
                       type="text"
                       value={newHostPattern}
@@ -599,28 +618,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       <option value="usersdrive">Usersdrive Resolver</option>
                       <option value="ftp">FTP / FTPS Stream</option>
-                      <option value="sftp">SFTP (SSH)</option>
                       <option value="1fichier">1fichier</option>
                       <option value="mediafire">MediaFire</option>
                       <option value="http_basic">HTTP Basic Auth</option>
                       <option value="bearer">Bearer Token</option>
                     </select>
-                    <input
+                    {!usesFileHostCookies && <input
                       type="text"
                       value={newUsername}
                       onChange={(e) => setNewUsername(e.target.value)}
                       placeholder="Username / Account"
                       className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200"
-                    />
+                    />}
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <input
+                  <div className={`grid ${usesFileHostCookies ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
+                    {!usesFileHostCookies && <input
                       type="password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Password or Token"
+                      placeholder={newSiteType === "bearer" ? "Bearer Token" : "Password"}
                       className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200"
-                    />
+                    />}
                     <input
                       type="text"
                       value={newCookies}
@@ -1044,7 +1062,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                    Native multi-threaded download accelerator, BitTorrent swarm client, FTP/SFTP stream worker, and automated cross-browser interceptor.
+                    Native multi-threaded download accelerator, BitTorrent swarm client, FTP/FTPS worker, and automated cross-browser interceptor.
                   </p>
                 </div>
               </div>
@@ -1065,8 +1083,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Cancel
             </button>
             <button
-              onClick={() => {
-                onSave(draft);
+              onClick={async () => {
+                let settingsToSave = draft;
+                if (draft.show_completion_dialog) {
+                  try {
+                    const granted = await apiPromptNotificationPermission();
+                    if (!granted) {
+                      settingsToSave = { ...draft, show_completion_dialog: false };
+                      setDraft(settingsToSave);
+                      window.alert("The OS has not granted ByteX notification permission. Other preferences will be saved with completion notifications turned off.");
+                    }
+                  } catch (error) {
+                    settingsToSave = { ...draft, show_completion_dialog: false };
+                    setDraft(settingsToSave);
+                    console.error("Could not verify OS notification permission:", error);
+                  }
+                }
+                onSave(settingsToSave);
                 onClose();
               }}
               className="px-4 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-400 text-white text-xs font-semibold shadow transition"

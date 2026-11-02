@@ -97,7 +97,7 @@ export interface DownloadItem {
 export interface SiteCredential {
   id: string;
   host_pattern: string;
-  site_type: "usersdrive" | "1fichier" | "mediafire" | "ftp" | "sftp" | "http_basic" | "bearer" | "cookie";
+  site_type: "usersdrive" | "1fichier" | "mediafire" | "ftp" | "http_basic" | "bearer" | "cookie";
   username: string;
   password_or_token: string;
   cookies?: string | null;

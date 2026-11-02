@@ -342,7 +342,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
               className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
             >
               <span className="flex items-center gap-2">
-                <KeyRound className="w-3.5 h-3.5 text-amber-400" /> Site Logins & Auth Vault...
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" /> Site Logins & Auth Settings...
               </span>
             </button>
             <button
