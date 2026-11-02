@@ -14,9 +14,7 @@
   "permissions": [
     "downloads",
     "cookies",
-    "contextMenus",
     "storage",
-    "tabs",
     "nativeMessaging"
   ],
   "host_permissions": [
@@ -42,16 +40,5 @@
       "128": "icons/128x128.png"
     },
     "default_popup": "popup.html"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ]
+  }
 }

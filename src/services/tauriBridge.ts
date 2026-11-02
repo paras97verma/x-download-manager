@@ -4,6 +4,7 @@ import {
   AppSettings,
   BrowserStatus,
   DownloadItem,
+  DuplicateDownloadNotice,
   NewDownloadRequest,
   ThreadSegment,
 } from "../types/xdm";
@@ -32,6 +33,20 @@ export async function onNativeMenuAction(
   }
 }
 
+export async function onDuplicateDownloadDetected(
+  callback: (notice: DuplicateDownloadNotice) => void
+): Promise<UnlistenFn | (() => void)> {
+  if (!isTauriRuntime()) return () => {};
+  try {
+    return await listen<DuplicateDownloadNotice>("duplicate-download-detected", (event) => {
+      callback(event.payload);
+    });
+  } catch (err) {
+    console.warn("Failed to listen for duplicate-download-detected:", err);
+    return () => {};
+  }
+}
+
 export async function apiGetDownloads(): Promise<DownloadItem[]> {
   if (!isTauriRuntime()) return [];
   try {
@@ -42,10 +57,10 @@ export async function apiGetDownloads(): Promise<DownloadItem[]> {
   }
 }
 
-export async function apiAddDownload(req: NewDownloadRequest): Promise<DownloadItem | null> {
+export async function apiAddDownload(req: NewDownloadRequest, keepBoth = false): Promise<DownloadItem | null> {
   if (!isTauriRuntime()) return null;
   try {
-    return await invoke<DownloadItem>("add_download_task", { req });
+    return await invoke<DownloadItem>("add_download_task", { req, keepBoth });
   } catch (err) {
     console.error("Failed to add_download_task via Tauri:", err);
     throw err;

@@ -143,6 +143,16 @@ pub struct NewDownloadRequest {
     pub torrent_selected_files: Option<Vec<usize>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DuplicateDownloadNotice {
+    pub kind: String,
+    pub existing_download_id: Option<String>,
+    pub existing_filename: String,
+    pub existing_status: Option<DownloadStatus>,
+    pub existing_path: String,
+    pub request: NewDownloadRequest,
+}
+
 pub struct DownloadEngine {
     pub settings: Arc<RwLock<AppSettings>>,
     pub config_manager: ConfigManager,
@@ -188,6 +198,12 @@ fn normalize_restored_downloads(mut downloads: Vec<DownloadItem>) -> Vec<Downloa
             download
                 .transfer_log
                 .push("Paused while ByteX was updated; resume is available.".to_string());
+        } else if download.status == DownloadStatus::Queued {
+            download.status = DownloadStatus::Paused;
+            download.transfer_log.push(
+                "Restored from download history; resume manually to prevent an automatic restart."
+                    .to_string(),
+            );
         }
         download.speed_bps = 0;
         download.upload_speed_bps = 0;
@@ -316,6 +332,54 @@ impl DownloadEngine {
         "Compressed".to_string()
     }
 
+    fn filename_for_request(req: &NewDownloadRequest, protocol: &DownloadProtocol) -> String {
+        let candidate = req.filename.clone().unwrap_or_else(|| {
+            if *protocol == DownloadProtocol::Magnet {
+                if let Some(dn_pos) = req.url.find("dn=") {
+                    let rest = &req.url[dn_pos + 3..];
+                    let end = rest.find('&').unwrap_or(rest.len());
+                    return rest[..end].replace('+', " ");
+                }
+                return "Magnet_Download.torrent".to_string();
+            }
+            req.url
+                .split('?')
+                .next()
+                .unwrap_or(&req.url)
+                .rsplit('/')
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("downloaded_file.bin")
+                .to_string()
+        });
+        candidate
+            .replace('\\', "/")
+            .rsplit('/')
+            .next()
+            .filter(|name| !name.is_empty())
+            .unwrap_or("downloaded_file.bin")
+            .to_string()
+    }
+
+    /// Resolve the final output path for a new request without mutating the download list.
+    pub fn destination_path(&self, req: &NewDownloadRequest) -> PathBuf {
+        let settings = self.settings.read().clone();
+        let protocol = Self::detect_protocol(&req.url);
+        let filename = Self::filename_for_request(req, &protocol);
+        let category = req
+            .category
+            .clone()
+            .unwrap_or_else(|| Self::infer_category(&filename, &protocol, &settings));
+        let directory = req
+            .save_path
+            .as_deref()
+            .map(crate::config::resolve_path)
+            .unwrap_or_else(|| {
+                crate::config::resolve_path(&settings.default_download_dir).join(category)
+            });
+        directory.join(filename)
+    }
+
     pub fn add_download(&self, req: NewDownloadRequest) -> DownloadItem {
         let settings = self.settings.read().clone();
         let protocol = Self::detect_protocol(&req.url);
@@ -334,25 +398,7 @@ impl DownloadEngine {
             Some(path.to_string_lossy().to_string())
         });
 
-        let filename = req.filename.unwrap_or_else(|| {
-            if protocol == DownloadProtocol::Magnet {
-                if let Some(dn_pos) = req.url.find("dn=") {
-                    let rest = &req.url[dn_pos + 3..];
-                    let end = rest.find('&').unwrap_or(rest.len());
-                    return rest[..end].replace('+', " ");
-                }
-                return "Magnet_Download.torrent".to_string();
-            }
-            req.url
-                .split('?')
-                .next()
-                .unwrap_or(&req.url)
-                .rsplit('/')
-                .next()
-                .filter(|s| !s.is_empty())
-                .unwrap_or("downloaded_file.bin")
-                .to_string()
-        });
+        let filename = Self::filename_for_request(&req, &protocol);
 
         let category = req
             .category
@@ -365,6 +411,7 @@ impl DownloadEngine {
             .save_path
             .map(|p| {
                 crate::config::resolve_path(&p)
+                    .join(&filename)
                     .to_string_lossy()
                     .to_string()
             })
@@ -785,25 +832,66 @@ mod persistence_tests {
             speed_bps: 900,
             status: "receiving".into(),
         }];
+        let mut queued_item = item.clone();
+        queued_item.id = "queued-history-item".to_string();
+        queued_item.status = DownloadStatus::Queued;
         let path = std::env::temp_dir().join(format!("bytex-history-{}.json", Uuid::new_v4()));
 
-        write_download_history(&path, &[item]).expect("history should save");
+        write_download_history(&path, &[item, queued_item]).expect("history should save");
         let restored = restore_downloads(&path);
-        let restored = restored.first().expect("download should restore");
+        let restored_item = restored.first().expect("download should restore");
 
-        assert_eq!(restored.status, DownloadStatus::Paused);
-        assert_eq!(restored.downloaded_bytes, 786_432);
-        assert_eq!(restored.segments[0].downloaded_bytes, 600);
-        assert_eq!(restored.segments[0].status, "paused");
-        assert_eq!(restored.cookies.as_deref(), Some("session=kept"));
-        assert_eq!(restored.torrent_selected_files, Some(vec![0]));
+        assert_eq!(restored_item.status, DownloadStatus::Paused);
+        assert_eq!(restored_item.downloaded_bytes, 786_432);
+        assert_eq!(restored_item.segments[0].downloaded_bytes, 600);
+        assert_eq!(restored_item.segments[0].status, "paused");
+        assert_eq!(restored_item.cookies.as_deref(), Some("session=kept"));
+        assert_eq!(restored_item.torrent_selected_files, Some(vec![0]));
         assert_eq!(
-            restored.torrent_file_path.as_deref(),
+            restored_item.torrent_file_path.as_deref(),
             Some("/config/torrent-meta/resume-test.torrent")
         );
-        assert!(restored.torrent_meta.is_some());
+        assert!(restored_item.torrent_meta.is_some());
+
+        let restored_queued = restored
+            .iter()
+            .find(|item| item.id == "queued-history-item")
+            .expect("queued item should restore");
+        assert_eq!(restored_queued.status, DownloadStatus::Paused);
+        assert!(restored_queued
+            .transfer_log
+            .iter()
+            .any(|entry| entry.contains("resume manually")));
 
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(path.with_extension("json.bak"));
+    }
+
+    #[test]
+    fn explicit_save_path_is_a_directory_and_filename_paths_are_sanitized() {
+        let engine = DownloadEngine::new();
+        let directory = std::env::temp_dir().join(format!("bytex-save-dir-{}", Uuid::new_v4()));
+        let item = engine.add_download(NewDownloadRequest {
+            url: "https://example.com/report.zip".into(),
+            filename: Some("../report.zip".into()),
+            category: None,
+            save_path: Some(directory.to_string_lossy().to_string()),
+            threads_count: None,
+            queue_id: None,
+            start_immediately: false,
+            source_browser: None,
+            referer: None,
+            cookies: None,
+            user_agent: None,
+            custom_headers: None,
+            auth_username: None,
+            auth_password: None,
+            sequential_torrent: None,
+            torrent_file_data: None,
+            torrent_selected_files: None,
+        });
+
+        assert_eq!(item.filename, "report.zip");
+        assert_eq!(PathBuf::from(item.save_path), directory.join("report.zip"));
     }
 }

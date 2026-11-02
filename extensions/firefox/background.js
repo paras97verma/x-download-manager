@@ -1,10 +1,7 @@
 // ByteX Download Manager (XDM) — Background Service Worker / WebExtension Script
 // Works across Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Mozilla Firefox, and Apple Safari.
-// Features:
-// 1. Intercepts browser downloads (`downloads.onCreated`) matching configured extensions or size threshold
-// 2. Captures site cookies (including `xfss` for Usersdrive, session tokens for FTP/private hosts), Referer, and User-Agent
-// 3. Dispatches payload to XDM Desktop App via Local IPC Bridge (`http://127.0.0.1:45678/api/v1/intercept`)
-//    with automatic fallback to Native Messaging (`com.peivee.xdm`).
+// Intercepts browser-managed network downloads, sends them to ByteX, and resumes
+// the browser transfer if the app declines or cannot receive the handoff.
 
 const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
@@ -18,17 +15,15 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
 
 let state = {
   interceptEnabled: true,
-  minFileSizeKb: 256,
+  desktopIntegrationEnabled: true,
   interceptedExtensions: [
-    "ZIP", "RAR", "7Z", "TAR", "GZ", "XZ", "EXE", "MSI", "DMG", "PKG",
-    "DEB", "RPM", "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI",
-    "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
+    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG", "DEB", "RPM",
+    "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI", "MOV", "MP3", "FLAC", "WAV",
+    "PDF", "DOCX", "XLSX", "PPTX", "TORRENT",
   ],
   ignoredDomains: ["localhost", "127.0.0.1"],
   detectedBrowser: null,
 };
-const bypassTabs = new Set();
-
 runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
   state.interceptEnabled = settings.interceptEnabled !== false;
 });
@@ -37,126 +32,49 @@ runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
     state.interceptEnabled = changes.interceptEnabled.newValue !== false;
   }
 });
-runtimeAPI.tabs?.onRemoved?.addListener((tabId) => bypassTabs.delete(tabId));
 
-// Periodically sync settings from running XDM Desktop App
+// Periodically sync app integration state and the detected browser name.
+let lastSettingsSyncAt = 0;
+let settingsSyncPromise = null;
 async function syncWithDesktopApp() {
-  try {
-    const browser = detectBrowserFamily();
-    const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`, {}, 2000);
-    if (res.ok) {
-      const cfg = await res.json();
-      state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
-      state.interceptedExtensions = cfg.intercepted_extensions ?? state.interceptedExtensions;
-      state.ignoredDomains = cfg.ignored_domains ?? state.ignoredDomains;
-      state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
+  if (settingsSyncPromise) return settingsSyncPromise;
+  if (Date.now() - lastSettingsSyncAt < 3000) return;
+  settingsSyncPromise = (async () => {
+    try {
+      const browser = detectBrowserFamily();
+      const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`, {}, 2000);
+      if (res.ok) {
+        const cfg = await res.json();
+        state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
+        if (Array.isArray(cfg.intercepted_extensions)) {
+          state.interceptedExtensions = cfg.intercepted_extensions.map((ext) => String(ext).replace(/^\./, "").toUpperCase());
+        }
+        if (Array.isArray(cfg.ignored_domains)) state.ignoredDomains = cfg.ignored_domains;
+        state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
+      }
+    } catch (_) {
+      // Leave the app state unchanged while the desktop app is unavailable.
+    } finally {
+      lastSettingsSyncAt = Date.now();
     }
-  } catch (_) {
-    // Desktop app will be woken via Native Messaging when a download occurs
-  }
+  })();
+  try { await settingsSyncPromise; } finally { settingsSyncPromise = null; }
 }
 
 syncWithDesktopApp();
-setInterval(syncWithDesktopApp, 15000);
-
-// Create Context Menu Item ("Download with ByteX")
-runtimeAPI.runtime.onInstalled.addListener(() => {
-  if (runtimeAPI.contextMenus) {
-    runtimeAPI.contextMenus.removeAll(() => {
-      if (runtimeAPI.runtime.lastError) return;
-      runtimeAPI.contextMenus.create({
-        id: "xdm-download-link",
-        title: "Download with ByteX",
-        contexts: ["link", "video", "audio"],
-      }, () => {
-        void runtimeAPI.runtime.lastError;
-      });
-    });
-  }
-});
-
-if (runtimeAPI.contextMenus) {
-  runtimeAPI.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "xdm-download-link") {
-      const targetUrl = info.linkUrl || info.srcUrl;
-      if (targetUrl) {
-        dispatchToXdm({
-          url: targetUrl,
-          referer: info.pageUrl || (tab ? tab.url : ""),
-          tabTitle: tab ? tab.title : "",
-        }).then((result) => notifyCaptureResult(tab && tab.id, Boolean(result), targetUrl, result?.duplicate))
-          .catch(() => notifyCaptureResult(tab && tab.id, false, targetUrl));
-      }
-    }
-  });
-}
-
-// Listen for messages from content script or popup
-runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "XDM_BYPASS_STATE") {
-    const tabId = sender.tab && sender.tab.id;
-    if (Number.isInteger(tabId)) {
-      if (msg.bypass) bypassTabs.add(tabId);
-      else bypassTabs.delete(tabId);
-    }
-  } else if (msg.type === "XDM_MANUAL_CAPTURE") {
-    dispatchToXdm({
-      url: msg.url,
-      referer: msg.referer || (sender.tab ? sender.tab.url : ""),
-      tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
-    }).then(async (result) => {
-      const ok = Boolean(result);
-      notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url, result?.duplicate);
-      sendResponse({ success: ok, duplicate: Boolean(result?.duplicate) });
-    }).catch(async () => {
-      notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
-      sendResponse({ success: false });
-    });
-    return true;
-  }
-});
+setInterval(syncWithDesktopApp, 5000);
 
 function shouldInterceptDownload(downloadItem) {
-  if (!state.interceptEnabled || bypassTabs.has(downloadItem.tabId)) return false;
+  if (!state.interceptEnabled || !state.desktopIntegrationEnabled) return false;
   const url = downloadItem.finalUrl || downloadItem.url || "";
-  if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
-
-  const mime = (downloadItem.mime || "").toLowerCase();
-  const filename = (downloadItem.filename || "").toLowerCase();
-
-  // "Intercept late, not early":
-  // Never intercept HTML pages, landing templates, countdowns, captcha challenges, or error pages!
-  if (mime === "text/html" || mime === "application/xhtml+xml") {
-    return false;
-  }
-  if (filename.endsWith(".html") || filename.endsWith(".htm")) {
-    return false;
-  }
-
+  if (!url) return false;
   try {
     const parsed = new URL(url);
-    if (state.ignoredDomains.some((d) => parsed.hostname === d || parsed.hostname.endsWith(`.${d}`))) {
-      return false;
-    }
-
-    // Guard against intercepting web page navigations masquerading as downloads
-    const path = parsed.pathname.toLowerCase();
-    if (
-      (path === "" ||
-        path === "/" ||
-        path.endsWith(".php") ||
-        path.endsWith(".asp") ||
-        path.endsWith(".aspx") ||
-        path.endsWith(".jsp")) &&
-      (!mime || mime.includes("text") || !filename)
-    ) {
-      return false;
-    }
-
-    const extension = filename.split(".").pop().toUpperCase();
-    const extensionMatch = state.interceptedExtensions.some((value) => value.toUpperCase() === extension);
-    const sizeMatch = Number(downloadItem.totalBytes) >= state.minFileSizeKb * 1024;
-    return extensionMatch || sizeMatch;
+    if (state.ignoredDomains.some((domain) => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`))) return false;
+    if (!["http:", "https:", "ftp:"].includes(parsed.protocol)) return false;
+    const itemFilename = downloadItem.filename || decodeURIComponent(parsed.pathname.split("/").pop() || "");
+    const extension = itemFilename.split(/[\\/]/).pop()?.split(".").pop()?.toUpperCase();
+    return Boolean(extension && state.interceptedExtensions.includes(extension));
   } catch (_) {
     return false;
   }
@@ -193,7 +111,6 @@ async function getCookieHeaderForUrl(url, referer) {
 }
 
 async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
-  await syncWithDesktopApp();
   const cookies = await getCookieHeaderForUrl(url, referer);
 
   // Extract embedded FTP/HTTP user:password credentials if present
@@ -260,6 +177,7 @@ const interceptedDownloadIds = new Set();
 
 async function handleDownloadInterception(downloadItem) {
   if (downloadItem.id && interceptedDownloadIds.has(downloadItem.id)) return false;
+  await syncWithDesktopApp();
   if (!shouldInterceptDownload(downloadItem)) return false;
 
   if (downloadItem.id) {
@@ -270,12 +188,8 @@ async function handleDownloadInterception(downloadItem) {
     }
   }
 
-  // Stage 2 (Headers received): Immediately pause the browser download to freeze
-  // socket transmission before Stage 3 (Body streaming) can consume network bandwidth!
-  if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.pause) {
-    try {
-      await runtimeAPI.downloads.pause(downloadItem.id);
-    } catch (_) {}
+  if (downloadItem.id && runtimeAPI.downloads.pause) {
+    try { await runtimeAPI.downloads.pause(downloadItem.id); } catch (_) {}
   }
 
   const url = downloadItem.finalUrl || downloadItem.url;
@@ -288,21 +202,16 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (result) {
-    notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename, result.duplicate);
-    try {
-      await runtimeAPI.downloads.cancel(downloadItem.id);
-      if (runtimeAPI.downloads.erase) {
-        await runtimeAPI.downloads.erase({ id: downloadItem.id });
-      }
-    } catch (_) {}
+    if (downloadItem.id && runtimeAPI.downloads.cancel) {
+      try {
+        await runtimeAPI.downloads.cancel(downloadItem.id);
+        await runtimeAPI.downloads.erase?.({ id: downloadItem.id });
+      } catch (_) {}
+    }
     return true;
   } else {
-    // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
-    notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
-    if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
-      try {
-        await runtimeAPI.downloads.resume(downloadItem.id);
-      } catch (_) {}
+    if (downloadItem.id && runtimeAPI.downloads.resume) {
+      try { await runtimeAPI.downloads.resume(downloadItem.id); } catch (_) {}
     }
   }
   return false;
@@ -313,7 +222,6 @@ if (runtimeAPI.downloads) {
   if (runtimeAPI.downloads.onCreated) {
     runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
       handleDownloadInterception(downloadItem).catch(() => {
-        notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
         if (downloadItem.id && runtimeAPI.downloads.resume) {
           runtimeAPI.downloads.resume(downloadItem.id).catch(() => {});
         }
@@ -335,37 +243,4 @@ function detectBrowserFamily() {
   if (ua.includes("OPR/")) return "Opera";
   if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari";
   return "Chromium";
-}
-
-function notifyCaptureResult(tabId, success, filename, duplicate = false) {
-  const transfer = {
-    status: success ? (duplicate ? "duplicate" : "sent") : "failed",
-    filename: filename || "Download",
-    timestamp: Date.now(),
-  };
-  try {
-    const saved = runtimeAPI.storage.local.set({ lastTransfer: transfer });
-    saved?.catch?.(() => {});
-  } catch (_) {}
-
-  const actionApi = runtimeAPI.action || runtimeAPI.browserAction;
-  if (!actionApi?.setBadgeText) return;
-  const badgeOptions = { text: success ? "OK" : "!" };
-  const titleOptions = {
-    title: success
-      ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
-      : `ByteX handoff failed: ${transfer.filename}`,
-  };
-  if (Number.isInteger(tabId) && tabId >= 0) {
-    badgeOptions.tabId = tabId;
-    titleOptions.tabId = tabId;
-  }
-  try {
-    actionApi.setBadgeText(badgeOptions)?.catch?.(() => {});
-    actionApi.setBadgeBackgroundColor?.({
-      color: success ? "#059669" : "#dc2626",
-      ...(Number.isInteger(tabId) && tabId >= 0 ? { tabId } : {}),
-    })?.catch?.(() => {});
-    actionApi.setTitle?.(titleOptions)?.catch?.(() => {});
-  } catch (_) {}
 }

@@ -9,6 +9,7 @@ import { BrowserExtensionsModal } from "./components/BrowserExtensionsModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { SchedulerModal } from "./components/SchedulerModal";
 import { FilePropertiesModal } from "./components/FilePropertiesModal";
+import { DuplicateDownloadModal } from "./components/DuplicateDownloadModal";
 import {
   DEFAULT_SETTINGS,
   INITIAL_BROWSERS,
@@ -34,12 +35,14 @@ import {
   formatSpeed,
   isTauriRuntime,
   onNativeMenuAction,
+  onDuplicateDownloadDetected,
 } from "./services/tauriBridge";
 import {
   AppSettings,
   BrowserStatus,
   DownloadItem,
   NewDownloadRequest,
+  DuplicateDownloadNotice,
 } from "./types/xdm";
 
 export const App: React.FC = () => {
@@ -62,8 +65,26 @@ export const App: React.FC = () => {
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [rememberDeleteConfirmation, setRememberDeleteConfirmation] = useState(false);
   const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
+  const [duplicateNotices, setDuplicateNotices] = useState<DuplicateDownloadNotice[]>([]);
+  const duplicateNotice = duplicateNotices[0] || null;
+  const dismissDuplicateNotice = () => setDuplicateNotices((notices) => notices.slice(1));
 
   const previousStatusRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    onDuplicateDownloadDetected((notice) => {
+      setDuplicateNotices((notices) => [...notices, notice]);
+    }).then((cleanup) => {
+      if (disposed) cleanup();
+      else unlisten = cleanup;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Audio completion chime using Web Audio API
   const playNotificationChime = useCallback(() => {
@@ -289,8 +310,11 @@ export const App: React.FC = () => {
           return;
         }
       } catch (err) {
-        console.error("Failed to add download via Tauri:", err);
+        if (!String(err).toLowerCase().includes("duplicate")) {
+          console.error("Failed to add download via Tauri:", err);
+        }
       }
+      return;
     }
 
     const isMagnet = req.url.toLowerCase().startsWith("magnet:?");
@@ -340,6 +364,31 @@ export const App: React.FC = () => {
     setDownloads((prev) => [newItem, ...prev]);
     setSelectedIds(new Set([newItem.id]));
     setLastSelectedId(newItem.id);
+  };
+
+  const handleUseExistingDuplicate = () => {
+    if (duplicateNotice?.existing_download_id) {
+      const id = duplicateNotice.existing_download_id;
+      setSelectedIds(new Set([id]));
+      setLastSelectedId(id);
+    }
+    if (duplicateNotice?.existing_path) void apiShowInFolder(duplicateNotice.existing_path);
+    dismissDuplicateNotice();
+  };
+
+  const handleSaveDuplicateCopy = async () => {
+    if (!duplicateNotice) return;
+    try {
+      const item = await apiAddDownload(duplicateNotice.request, true);
+      if (item) {
+        setDownloads((prev) => [item, ...prev.filter((download) => download.id !== item.id)]);
+        setSelectedIds(new Set([item.id]));
+        setLastSelectedId(item.id);
+      }
+      dismissDuplicateNotice();
+    } catch (error) {
+      window.alert(`Could not start a separate copy: ${String(error)}`);
+    }
   };
 
   const handleTogglePauseResume = (item: DownloadItem) => {
@@ -802,6 +851,15 @@ export const App: React.FC = () => {
           settings={settings}
           onClose={() => setAddModalMode(null)}
           onAdd={handleAddDownload}
+        />
+      )}
+
+      {duplicateNotice && (
+        <DuplicateDownloadModal
+          notice={duplicateNotice}
+          onUseExisting={handleUseExistingDuplicate}
+          onSaveCopy={handleSaveDuplicateCopy}
+          onCancel={dismissDuplicateNotice}
         />
       )}
 
