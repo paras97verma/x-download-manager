@@ -98,11 +98,11 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
             };
 
             let detected = exe.is_some() || (*id == "safari" && cfg!(target_os = "macos"));
-            let is_connected = crate::browser::ipc_server::is_browser_connected(id, name)
-                || (*family == "chromium"
-                    && detected
-                    && detected_chromium_count == 1
-                    && chromium_engine_connected);
+            let is_connected = detected
+                && (crate::browser::ipc_server::is_browser_connected(id, name)
+                    || (*family == "chromium"
+                        && detected_chromium_count == 1
+                        && chromium_engine_connected));
             let status_message = if !detected {
                 "Browser not detected on this system".to_string()
             } else if is_connected {
@@ -133,7 +133,6 @@ pub fn detect_browsers(settings: &AppSettings) -> Vec<BrowserStatus> {
                 status_message,
             }
         })
-        .filter(|browser| browser.detected_installed)
         .collect()
 }
 

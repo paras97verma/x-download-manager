@@ -770,9 +770,9 @@ export const App: React.FC = () => {
             {(() => {
               const connected = browsers.filter(
                 (b) =>
-                  b.is_connected ||
-                  (b.detected_installed && b.extension_enabled && b.id === "dia") ||
-                  downloads.some((d) => d.source_browser && d.source_browser.toLowerCase().includes(b.id))
+                  b.detected_installed &&
+                  (b.is_connected ||
+                    downloads.some((d) => d.source_browser && d.source_browser.toLowerCase().includes(b.id)))
               );
               if (connected.length === 0) {
                 return (
