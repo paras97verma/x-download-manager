@@ -11,29 +11,15 @@
       <img class="xdm-logo" src="icons/128x128.png" alt="" />
       <div>
         <div class="xdm-title">ByteX Download Manager</div>
-        <div id="xdm-conn-status" class="xdm-subtitle">Checking Desktop Bridge...</div>
-        <div id="xdm-transfer-status" class="xdm-transfer-status" aria-live="polite">No recent handoff</div>
+        <div id="xdm-conn-status" class="xdm-subtitle">Checking desktop app…</div>
       </div>
     </div>
-
     <div class="xdm-card">
       <label class="xdm-toggle-row">
-        <span>Intercept Browser Downloads</span>
+        <span>App integration</span>
         <input type="checkbox" id="xdm-enable-toggle" checked />
       </label>
-      <div class="xdm-hint">Hold <strong id="xdm-bypass-key">Alt</strong> while clicking any link to bypass ByteX.</div>
-    </div>
-
-    <div class="xdm-card">
-      <div class="xdm-label">Quick Send URL / Usersdrive / Magnet</div>
-      <div class="xdm-input-row">
-        <input type="text" id="xdm-quick-url" placeholder="https://... or magnet:?xt=..." />
-        <button id="xdm-send-btn">Download</button>
-      </div>
-    </div>
-
-    <div class="xdm-footer">
-      ByteX • Cross-platform downloads
+      <div class="xdm-hint">When enabled, browser downloads are handed to ByteX.</div>
     </div>
   </div>
   <script src="popup.js"></script>

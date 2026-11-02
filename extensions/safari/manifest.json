@@ -7,7 +7,6 @@
   "author": "~peivee",
   "permissions": [
     "cookies",
-    "contextMenus",
     "storage",
     "tabs",
     "nativeMessaging"

@@ -1,5 +1,5 @@
 //! Local IPC HTTP & WebSocket Server (`http://127.0.0.1:45678`)
-//! Receives intercepted downloads, streaming video/audio URLs, cookies, referers, and auth headers
+//! Receives intercepted downloads, cookies, referers, and auth headers
 //! from ByteX Download Manager's Chrome, Firefox, and Safari browser extensions.
 
 use axum::{
@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
+use tauri::Manager;
 use tower_http::cors::CorsLayer;
 
 use crate::browser::{detect_browsers, BrowserStatus, SUPPORTED_BROWSERS};
@@ -225,6 +226,7 @@ async fn handle_intercept(
     let browser_name = resolve_browser_name(&payload.browser, &engine.settings.read());
     record_browser_heartbeat(&browser_name);
     if let Some((download_id, filename)) = find_duplicate_download(&engine, &payload.url) {
+        focus_main_window();
         return Json(serde_json::json!({
             "accepted": true,
             "duplicate": true,
@@ -268,12 +270,23 @@ async fn handle_intercept(
     };
 
     let created = engine.add_download(req.clone());
+    focus_main_window();
     let started = engine.start_download_execution(created, &req).await;
     Json(serde_json::json!({
         "accepted": true,
         "download_id": started.id,
         "filename": started.filename
     }))
+}
+
+fn focus_main_window() {
+    if let Some(app) = UPDATE_APP_HANDLE.get() {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }
 }
 
 async fn handle_list_downloads(

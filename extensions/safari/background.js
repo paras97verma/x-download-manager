@@ -1,9 +1,6 @@
 // ByteX Download Manager (XDM) — Safari Background Service Worker & Script
-// Features:
-// 1. Receives intercepted link downloads and streaming media from content.js
-// 2. Captures full authentication cookies, Referer, and User-Agent headers
-// 3. Dispatches payload to XDM Desktop App via Local IPC Bridge (http://127.0.0.1:45678/api/v1/intercept)
-//    with automatic fallback to Native Messaging (com.peivee.xdm).
+// Receives download links from the small Safari content script, sends them to
+// ByteX, and falls back to Safari if the app declines or cannot receive them.
 
 const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
@@ -17,24 +14,25 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
 
 let state = {
   interceptEnabled: true,
-  minFileSizeKb: 256,
-  interceptedExtensions: [
-    "ZIP", "RAR", "7Z", "TAR", "GZ", "XZ", "EXE", "MSI", "DMG", "PKG",
-    "DEB", "RPM", "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI",
-    "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
-  ],
-  ignoredDomains: ["localhost", "127.0.0.1"],
+  desktopIntegrationEnabled: true,
 };
 
-// Periodically sync settings from running XDM Desktop App and record heartbeat
+runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
+  state.interceptEnabled = settings.interceptEnabled !== false;
+});
+runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
+  if (areaName === "local" && changes.interceptEnabled) {
+    state.interceptEnabled = changes.interceptEnabled.newValue !== false;
+  }
+});
+
+// Periodically sync whether app integration is enabled.
 async function syncWithDesktopApp() {
   try {
     const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=safari`, {}, 2000);
     if (res.ok) {
       const cfg = await res.json();
-      state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
-      state.interceptedExtensions = cfg.intercepted_extensions ?? state.interceptedExtensions;
-      state.ignoredDomains = cfg.ignored_domains ?? state.ignoredDomains;
+      state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
     }
   } catch (_) {
     // Desktop app will be woken via Native Messaging when a download occurs
@@ -44,46 +42,13 @@ async function syncWithDesktopApp() {
 syncWithDesktopApp();
 setInterval(syncWithDesktopApp, 15000);
 
-// Create Context Menu Item ("Download with ByteX")
-runtimeAPI.runtime.onInstalled.addListener(() => {
-  if (runtimeAPI.contextMenus) {
-    try {
-      runtimeAPI.contextMenus.create({
-        id: "xdm-download-link",
-        title: "Download with ByteX",
-        contexts: ["link", "video", "audio", "image"],
-      });
-    } catch (_) {}
-  }
-});
-
-if (runtimeAPI.contextMenus) {
-  runtimeAPI.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "xdm-download-link") {
-      const targetUrl = info.linkUrl || info.srcUrl;
-      if (targetUrl) {
-        dispatchToXdm({
-          url: targetUrl,
-          referer: info.pageUrl || (tab ? tab.url : ""),
-          tabTitle: tab ? tab.title : "",
-        }).then((result) => {
-          recordTransferResult(Boolean(result), targetUrl, result?.duplicate);
-        }).catch(() => {
-          recordTransferResult(false, targetUrl);
-        });
-      }
-    }
-  });
-}
-
 // Listen for messages from content script or popup
 runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "XDM_BYPASS_STATE") {
-    sendResponse({ received: true });
-    return false;
-  }
-
   if (msg.type === "XDM_MANUAL_CAPTURE") {
+    if (!state.interceptEnabled || !state.desktopIntegrationEnabled) {
+      sendResponse({ success: false, disabled: true });
+      return false;
+    }
     dispatchToXdm({
       url: msg.url,
       filename: msg.filename || null,
@@ -93,11 +58,9 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })
       .then((result) => {
         const success = Boolean(result);
-        recordTransferResult(success, msg.filename || msg.url, result?.duplicate);
         sendResponse({ success, duplicate: Boolean(result?.duplicate) });
       })
       .catch(() => {
-        recordTransferResult(false, msg.filename || msg.url);
         sendResponse({ success: false });
       });
     return true; // Keep message port open for async response
@@ -211,17 +174,4 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   }
 
   return false;
-}
-
-function recordTransferResult(success, filename, duplicate = false) {
-  const transfer = {
-    status: success ? (duplicate ? "duplicate" : "sent") : "failed",
-    filename: filename || "Download",
-    timestamp: Date.now(),
-  };
-  try {
-    const saved = runtimeAPI.storage.local.set({ lastTransfer: transfer });
-    saved?.catch?.(() => {});
-  } catch (_) {}
-
 }

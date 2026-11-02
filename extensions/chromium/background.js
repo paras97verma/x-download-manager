@@ -1,10 +1,7 @@
 // ByteX Download Manager (XDM) — Background Service Worker / WebExtension Script
 // Works across Chromium (Chrome, Brave, Edge, Opera, Vivaldi), Mozilla Firefox, and Apple Safari.
-// Features:
-// 1. Intercepts browser downloads (`downloads.onCreated`) matching configured extensions or size threshold
-// 2. Captures site cookies (including `xfss` for Usersdrive, session tokens for FTP/private hosts), Referer, and User-Agent
-// 3. Dispatches payload to XDM Desktop App via Local IPC Bridge (`http://127.0.0.1:45678/api/v1/intercept`)
-//    with automatic fallback to Native Messaging (`com.peivee.xdm`).
+// Intercepts browser-managed network downloads, sends them to ByteX, and resumes
+// the browser transfer if the app declines or cannot receive the handoff.
 
 const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
@@ -18,17 +15,9 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
 
 let state = {
   interceptEnabled: true,
-  minFileSizeKb: 256,
-  interceptedExtensions: [
-    "ZIP", "RAR", "7Z", "TAR", "GZ", "XZ", "EXE", "MSI", "DMG", "PKG",
-    "DEB", "RPM", "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI",
-    "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
-  ],
-  ignoredDomains: ["localhost", "127.0.0.1"],
+  desktopIntegrationEnabled: true,
   detectedBrowser: null,
 };
-const bypassTabs = new Set();
-
 runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
   state.interceptEnabled = settings.interceptEnabled !== false;
 });
@@ -37,127 +26,34 @@ runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
     state.interceptEnabled = changes.interceptEnabled.newValue !== false;
   }
 });
-runtimeAPI.tabs?.onRemoved?.addListener((tabId) => bypassTabs.delete(tabId));
 
-// Periodically sync settings from running XDM Desktop App
+// Periodically sync app integration state and the detected browser name.
 async function syncWithDesktopApp() {
   try {
     const browser = detectBrowserFamily();
     const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`, {}, 2000);
     if (res.ok) {
       const cfg = await res.json();
-      state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
-      state.interceptedExtensions = cfg.intercepted_extensions ?? state.interceptedExtensions;
-      state.ignoredDomains = cfg.ignored_domains ?? state.ignoredDomains;
+      state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
       state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
     }
   } catch (_) {
-    // Desktop app will be woken via Native Messaging when a download occurs
+    // Leave the app state unchanged while the desktop app is unavailable.
   }
 }
 
 syncWithDesktopApp();
 setInterval(syncWithDesktopApp, 15000);
 
-// Create Context Menu Item ("Download with ByteX")
-runtimeAPI.runtime.onInstalled.addListener(() => {
-  if (runtimeAPI.contextMenus) {
-    runtimeAPI.contextMenus.removeAll(() => {
-      if (runtimeAPI.runtime.lastError) return;
-      runtimeAPI.contextMenus.create({
-        id: "xdm-download-link",
-        title: "Download with ByteX",
-        contexts: ["link", "video", "audio"],
-      }, () => {
-        // Read lastError in the callback so an unsupported context is harmless.
-        void runtimeAPI.runtime.lastError;
-      });
-    });
-  }
-});
-
-if (runtimeAPI.contextMenus) {
-  runtimeAPI.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === "xdm-download-link") {
-      const targetUrl = info.linkUrl || info.srcUrl;
-      if (targetUrl) {
-        dispatchToXdm({
-          url: targetUrl,
-          referer: info.pageUrl || (tab ? tab.url : ""),
-          tabTitle: tab ? tab.title : "",
-        }).then((result) => recordTransferResult(Boolean(result), targetUrl, result?.duplicate))
-          .catch(() => recordTransferResult(false, targetUrl));
-      }
-    }
-  });
-}
-
-// Listen for messages from content script or popup
-runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "XDM_BYPASS_STATE") {
-    const tabId = sender.tab && sender.tab.id;
-    if (Number.isInteger(tabId)) {
-      if (msg.bypass) bypassTabs.add(tabId);
-      else bypassTabs.delete(tabId);
-    }
-  } else if (msg.type === "XDM_MANUAL_CAPTURE") {
-    dispatchToXdm({
-      url: msg.url,
-      referer: msg.referer || (sender.tab ? sender.tab.url : ""),
-      tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
-    }).then(async (result) => {
-      const ok = Boolean(result);
-      recordTransferResult(ok, msg.filename || msg.url, result?.duplicate);
-      sendResponse({ success: ok, duplicate: Boolean(result?.duplicate) });
-    }).catch(async () => {
-      recordTransferResult(false, msg.filename || msg.url);
-      sendResponse({ success: false });
-    });
-    return true;
-  }
-});
-
 function shouldInterceptDownload(downloadItem) {
-  if (!state.interceptEnabled || bypassTabs.has(downloadItem.tabId)) return false;
+  if (!state.interceptEnabled || !state.desktopIntegrationEnabled) return false;
   const url = downloadItem.finalUrl || downloadItem.url || "";
-  if (!url || url.startsWith("blob:") || url.startsWith("data:")) return false;
-
-  const mime = (downloadItem.mime || "").toLowerCase();
-  const filename = (downloadItem.filename || "").toLowerCase();
-
-  // "Intercept late, not early":
-  // Never intercept HTML pages, landing templates, countdowns, captcha challenges, or error pages!
-  if (mime === "text/html" || mime === "application/xhtml+xml") {
-    return false;
-  }
-  if (filename.endsWith(".html") || filename.endsWith(".htm")) {
-    return false;
-  }
-
+  if (!url) return false;
   try {
     const parsed = new URL(url);
-    if (state.ignoredDomains.some((d) => parsed.hostname === d || parsed.hostname.endsWith(`.${d}`))) {
-      return false;
-    }
-
-    // Guard against intercepting web page navigations masquerading as downloads
-    const path = parsed.pathname.toLowerCase();
-    if (
-      (path === "" ||
-        path === "/" ||
-        path.endsWith(".php") ||
-        path.endsWith(".asp") ||
-        path.endsWith(".aspx") ||
-        path.endsWith(".jsp")) &&
-      (!mime || mime.includes("text") || !filename)
-    ) {
-      return false;
-    }
-
-    const extension = filename.split(".").pop().toUpperCase();
-    const extensionMatch = state.interceptedExtensions.some((value) => value.toUpperCase() === extension);
-    const sizeMatch = Number(downloadItem.totalBytes) >= state.minFileSizeKb * 1024;
-    return extensionMatch || sizeMatch;
+    // Only browser-managed network downloads can be fetched again by ByteX.
+    // Blob/data downloads are page-local and cannot be replayed by the app.
+    return ["http:", "https:", "ftp:"].includes(parsed.protocol);
   } catch (_) {
     return false;
   }
@@ -194,7 +90,6 @@ async function getCookieHeaderForUrl(url, referer) {
 }
 
 async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
-  await syncWithDesktopApp();
   const cookies = await getCookieHeaderForUrl(url, referer);
 
   // Extract embedded FTP/HTTP user:password credentials if present
@@ -271,6 +166,12 @@ async function handleDownloadInterception(downloadItem) {
     }
   }
 
+  // Freeze the browser transfer while ByteX confirms the handoff. If ByteX is
+  // disabled or unreachable, resume it so the browser still completes it.
+  if (downloadItem.id && runtimeAPI.downloads.pause) {
+    try { await runtimeAPI.downloads.pause(downloadItem.id); } catch (_) {}
+  }
+
   const url = downloadItem.finalUrl || downloadItem.url;
   const result = await dispatchToXdm({
     url,
@@ -281,16 +182,17 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (result) {
-    recordTransferResult(true, downloadItem.filename, result.duplicate);
-    // Cancel only after ByteX confirms acceptance, and avoid extra browser
-    // download state transitions during the handoff.
-    if (downloadItem.id && downloadItem.state === "in_progress" && runtimeAPI.downloads.cancel) {
-      try { await runtimeAPI.downloads.cancel(downloadItem.id); } catch (_) {}
+    if (downloadItem.id && runtimeAPI.downloads.cancel) {
+      try {
+        await runtimeAPI.downloads.cancel(downloadItem.id);
+        await runtimeAPI.downloads.erase?.({ id: downloadItem.id });
+      } catch (_) {}
     }
     return true;
   } else {
-    // On failed handoff the original browser download remains untouched.
-    recordTransferResult(false, downloadItem.filename);
+    if (downloadItem.id && runtimeAPI.downloads.resume) {
+      try { await runtimeAPI.downloads.resume(downloadItem.id); } catch (_) {}
+    }
   }
   return false;
 }
@@ -302,7 +204,9 @@ if (runtimeAPI.downloads) {
   if (runtimeAPI.downloads.onCreated) {
     runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
       handleDownloadInterception(downloadItem).catch(() => {
-        recordTransferResult(false, downloadItem.filename);
+        if (downloadItem.id && runtimeAPI.downloads.resume) {
+          runtimeAPI.downloads.resume(downloadItem.id).catch(() => {});
+        }
       });
     });
   }
@@ -334,17 +238,4 @@ function detectBrowserFamily() {
   if (ua.includes("Zen")) return "Zen";
   if (ua.includes("Safari") && !ua.includes("Chrome")) return "Safari";
   return "Chromium";
-}
-
-function recordTransferResult(success, filename, duplicate = false) {
-  const transfer = {
-    status: success ? (duplicate ? "duplicate" : "sent") : "failed",
-    filename: filename || "Download",
-    timestamp: Date.now(),
-  };
-  try {
-    const saved = runtimeAPI.storage.local.set({ lastTransfer: transfer });
-    saved?.catch?.(() => {});
-  } catch (_) {}
-
 }

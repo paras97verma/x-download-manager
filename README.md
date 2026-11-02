@@ -31,7 +31,7 @@ Get the latest verified build for your operating system and browser:
 
 ### Browser Extensions
 
-ByteX Download Manager seamlessly intercepts download links, streaming video/audio, and authentication cookies from all major browsers:
+ByteX Download Manager hands browser downloads to the desktop app across all three browser families. The extension keeps authenticated request cookies and referers with the download and provides a simple integration toggle:
 
 | Browser | Supported Browsers | Direct Download | Manual Installation |
 | :--- | :--- | :--- | :--- |
