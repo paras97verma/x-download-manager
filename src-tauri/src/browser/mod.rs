@@ -909,6 +909,17 @@ fn materialize_extension_bundle(base: &Path, family: &str) -> Result<PathBuf, St
             embedded_web_extension_files!("chromium").to_vec(),
         )
     };
+    if name == "chromium" {
+        files.push((
+            "request-capture.js",
+            include_bytes!("../../../extensions/chromium/request-capture.js").as_slice(),
+        ));
+    } else if name == "firefox" {
+        files.push((
+            "request-capture.js",
+            include_bytes!("../../../extensions/firefox/request-capture.js").as_slice(),
+        ));
+    }
     if name == "safari" {
         files.extend_from_slice(&[
             (
