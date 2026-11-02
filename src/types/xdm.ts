@@ -227,3 +227,12 @@ export interface NewDownloadRequest {
   torrent_file_data?: string;
   torrent_selected_files?: number[];
 }
+
+export interface DuplicateDownloadNotice {
+  kind: "existing_download" | "existing_file";
+  existing_download_id?: string | null;
+  existing_filename: string;
+  existing_status?: DownloadStatus | null;
+  existing_path: string;
+  request: NewDownloadRequest;
+}

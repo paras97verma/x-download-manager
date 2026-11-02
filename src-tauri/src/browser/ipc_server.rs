@@ -14,11 +14,11 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tower_http::cors::CorsLayer;
 
 use crate::browser::{detect_browsers, BrowserStatus, SUPPORTED_BROWSERS};
-use crate::engine::{DownloadEngine, NewDownloadRequest};
+use crate::engine::{DownloadEngine, DownloadItem, DuplicateDownloadNotice, NewDownloadRequest};
 
 static LAST_BROWSER_HEARTBEATS: OnceLock<RwLock<HashMap<String, Instant>>> = OnceLock::new();
 static UPDATE_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
@@ -115,7 +115,7 @@ fn normalized_download_url(value: &str) -> String {
     }
 }
 
-fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<(String, String)> {
+fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<DownloadItem> {
     let candidate = normalized_download_url(url);
     engine.downloads.read().iter().find_map(|download| {
         if download.status == crate::engine::DownloadStatus::Failed {
@@ -124,7 +124,7 @@ fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<(String
         let matches = std::iter::once(download.url.as_str())
             .chain(download.resolved_url.as_deref())
             .any(|existing| same_download_url(&candidate, existing));
-        matches.then(|| (download.id.clone(), download.filename.clone()))
+        matches.then(|| download.clone())
     })
 }
 
@@ -225,15 +225,6 @@ async fn handle_intercept(
     }
     let browser_name = resolve_browser_name(&payload.browser, &engine.settings.read());
     record_browser_heartbeat(&browser_name);
-    if let Some((download_id, filename)) = find_duplicate_download(&engine, &payload.url) {
-        focus_main_window();
-        return Json(serde_json::json!({
-            "accepted": true,
-            "duplicate": true,
-            "download_id": download_id,
-            "filename": filename
-        }));
-    }
     let is_torrent = payload.is_torrent.unwrap_or(false)
         || payload
             .url
@@ -251,7 +242,13 @@ async fn handle_intercept(
 
     let req = NewDownloadRequest {
         url: payload.url,
-        filename: payload.filename,
+        filename: payload.filename.map(|name| {
+            name.replace('\\', "/")
+                .rsplit('/')
+                .next()
+                .unwrap_or("downloaded_file.bin")
+                .to_string()
+        }),
         category,
         save_path: None,
         threads_count: None,
@@ -269,6 +266,61 @@ async fn handle_intercept(
         torrent_selected_files: None,
     };
 
+    if let Some(existing) = find_duplicate_download(&engine, &req.url) {
+        emit_duplicate_notice(DuplicateDownloadNotice {
+            kind: "existing_download".to_string(),
+            existing_download_id: Some(existing.id.clone()),
+            existing_filename: existing.filename.clone(),
+            existing_status: Some(existing.status.clone()),
+            existing_path: existing.save_path.clone(),
+            request: req,
+        });
+        focus_main_window();
+        return Json(serde_json::json!({
+            "accepted": true,
+            "duplicate": true,
+            "download_id": existing.id,
+            "filename": existing.filename
+        }));
+    }
+
+    let destination = engine.destination_path(&req);
+    if destination.exists() {
+        let existing = engine
+            .downloads
+            .read()
+            .iter()
+            .find(|item| crate::config::resolve_path(&item.save_path) == destination)
+            .cloned();
+        emit_duplicate_notice(DuplicateDownloadNotice {
+            kind: if existing.is_some() {
+                "existing_download"
+            } else {
+                "existing_file"
+            }
+            .to_string(),
+            existing_download_id: existing.as_ref().map(|item| item.id.clone()),
+            existing_filename: existing
+                .as_ref()
+                .map(|item| item.filename.clone())
+                .or_else(|| {
+                    destination
+                        .file_name()
+                        .map(|name| name.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| "Existing file".to_string()),
+            existing_status: existing.as_ref().map(|item| item.status.clone()),
+            existing_path: destination.to_string_lossy().to_string(),
+            request: req,
+        });
+        focus_main_window();
+        return Json(serde_json::json!({
+            "accepted": false,
+            "duplicate": true,
+            "reason": "A file with that name already exists"
+        }));
+    }
+
     let created = engine.add_download(req.clone());
     focus_main_window();
     let started = engine.start_download_execution(created, &req).await;
@@ -277,6 +329,14 @@ async fn handle_intercept(
         "download_id": started.id,
         "filename": started.filename
     }))
+}
+
+fn emit_duplicate_notice(notice: DuplicateDownloadNotice) {
+    if let Some(app) = UPDATE_APP_HANDLE.get() {
+        if let Err(error) = app.emit("duplicate-download-detected", notice) {
+            tracing::warn!(%error, "Could not show duplicate download dialog");
+        }
+    }
 }
 
 fn focus_main_window() {

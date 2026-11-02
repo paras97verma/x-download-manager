@@ -3,25 +3,40 @@
 (function () {
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
   let interceptEnabled = true;
+  let interceptedExtensions = [
+    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG", "DEB", "RPM",
+    "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI", "MOV", "MP3", "FLAC", "WAV",
+    "PDF", "DOCX", "XLSX", "PPTX", "TORRENT",
+  ];
+  let ignoredDomains = ["localhost", "127.0.0.1"];
 
-  runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
+  runtimeAPI.storage.local.get(["interceptEnabled", "appInterceptedExtensions", "appIgnoredDomains"], (settings) => {
     interceptEnabled = settings.interceptEnabled !== false;
+    if (Array.isArray(settings.appInterceptedExtensions)) interceptedExtensions = settings.appInterceptedExtensions;
+    if (Array.isArray(settings.appIgnoredDomains)) ignoredDomains = settings.appIgnoredDomains;
   });
   runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
     if (areaName === "local" && changes.interceptEnabled) {
       interceptEnabled = changes.interceptEnabled.newValue !== false;
     }
+    if (areaName === "local" && changes.appInterceptedExtensions) {
+      interceptedExtensions = changes.appInterceptedExtensions.newValue || [];
+    }
+    if (areaName === "local" && changes.appIgnoredDomains) {
+      ignoredDomains = changes.appIgnoredDomains.newValue || [];
+    }
   });
 
   function isDownloadLink(anchor) {
     if (!anchor?.href) return false;
-    if (anchor.hasAttribute("download")) return true;
     try {
       const url = new URL(anchor.href, window.location.href);
       if (!["http:", "https:", "ftp:"].includes(url.protocol)) return false;
+      if (ignoredDomains.some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`))) return false;
       const segment = url.pathname.split("/").pop() || "";
-      if (/\.[a-z0-9]{1,16}$/i.test(segment)) return true;
-      return /(?:download|attachment|export|dl)=?(?:1|true)?/i.test(url.search);
+      const downloadName = anchor.getAttribute("download") || segment;
+      const extension = downloadName.split(/[\\/]/).pop()?.split(".").pop()?.toUpperCase();
+      return Boolean(extension && interceptedExtensions.includes(extension));
     } catch (_) {
       return false;
     }

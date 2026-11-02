@@ -16,6 +16,12 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
 let state = {
   interceptEnabled: true,
   desktopIntegrationEnabled: true,
+  interceptedExtensions: [
+    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG", "DEB", "RPM",
+    "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI", "MOV", "MP3", "FLAC", "WAV",
+    "PDF", "DOCX", "XLSX", "PPTX", "TORRENT",
+  ],
+  ignoredDomains: ["localhost", "127.0.0.1"],
   detectedBrowser: null,
 };
 runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
@@ -28,22 +34,35 @@ runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
 });
 
 // Periodically sync app integration state and the detected browser name.
+let lastSettingsSyncAt = 0;
+let settingsSyncPromise = null;
 async function syncWithDesktopApp() {
-  try {
-    const browser = detectBrowserFamily();
-    const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`, {}, 2000);
-    if (res.ok) {
-      const cfg = await res.json();
-      state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
-      state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
+  if (settingsSyncPromise) return settingsSyncPromise;
+  if (Date.now() - lastSettingsSyncAt < 3000) return;
+  settingsSyncPromise = (async () => {
+    try {
+      const browser = detectBrowserFamily();
+      const res = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/status?browser=${encodeURIComponent(browser)}`, {}, 2000);
+      if (res.ok) {
+        const cfg = await res.json();
+        state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
+        if (Array.isArray(cfg.intercepted_extensions)) {
+          state.interceptedExtensions = cfg.intercepted_extensions.map((ext) => String(ext).replace(/^\./, "").toUpperCase());
+        }
+        if (Array.isArray(cfg.ignored_domains)) state.ignoredDomains = cfg.ignored_domains;
+        state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
+      }
+    } catch (_) {
+      // Leave the app state unchanged while the desktop app is unavailable.
+    } finally {
+      lastSettingsSyncAt = Date.now();
     }
-  } catch (_) {
-    // Leave the app state unchanged while the desktop app is unavailable.
-  }
+  })();
+  try { await settingsSyncPromise; } finally { settingsSyncPromise = null; }
 }
 
 syncWithDesktopApp();
-setInterval(syncWithDesktopApp, 15000);
+setInterval(syncWithDesktopApp, 5000);
 
 function shouldInterceptDownload(downloadItem) {
   if (!state.interceptEnabled || !state.desktopIntegrationEnabled) return false;
@@ -51,9 +70,13 @@ function shouldInterceptDownload(downloadItem) {
   if (!url) return false;
   try {
     const parsed = new URL(url);
+    if (state.ignoredDomains.some((domain) => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`))) return false;
     // Only browser-managed network downloads can be fetched again by ByteX.
     // Blob/data downloads are page-local and cannot be replayed by the app.
-    return ["http:", "https:", "ftp:"].includes(parsed.protocol);
+    if (!["http:", "https:", "ftp:"].includes(parsed.protocol)) return false;
+    const itemFilename = downloadItem.filename || decodeURIComponent(parsed.pathname.split("/").pop() || "");
+    const extension = itemFilename.split(/[\\/]/).pop()?.split(".").pop()?.toUpperCase();
+    return Boolean(extension && state.interceptedExtensions.includes(extension));
   } catch (_) {
     return false;
   }
@@ -156,6 +179,7 @@ const interceptedDownloadIds = new Set();
 
 async function handleDownloadInterception(downloadItem) {
   if (downloadItem.id && interceptedDownloadIds.has(downloadItem.id)) return false;
+  await syncWithDesktopApp();
   if (!shouldInterceptDownload(downloadItem)) return false;
 
   if (downloadItem.id) {

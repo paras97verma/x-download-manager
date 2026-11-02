@@ -5,7 +5,7 @@ pub mod menu;
 pub mod scheduler;
 
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
 
 use crate::browser::{
     auto_register_all_detected_browsers, configure_browser_integration, detect_browsers,
@@ -14,7 +14,7 @@ use crate::browser::{
 use crate::config::AppSettings;
 use crate::engine::{
     ftp_auth::{resolve_usersdrive_or_filehost, ResolvedAuthDownload},
-    DownloadEngine, DownloadItem, DownloadStatus, NewDownloadRequest,
+    DownloadEngine, DownloadItem, DownloadStatus, DuplicateDownloadNotice, NewDownloadRequest,
 };
 
 #[tauri::command]
@@ -24,12 +24,126 @@ fn get_downloads(engine: State<'_, Arc<DownloadEngine>>) -> Vec<DownloadItem> {
 
 #[tauri::command]
 async fn add_download_task(
-    req: NewDownloadRequest,
+    mut req: NewDownloadRequest,
+    keep_both: Option<bool>,
     engine: State<'_, Arc<DownloadEngine>>,
+    app: tauri::AppHandle,
 ) -> Result<DownloadItem, String> {
+    if keep_both.unwrap_or(false) {
+        req = unique_copy_request(engine.inner(), req);
+    } else {
+        if let Some(existing) = find_download_by_url(engine.inner(), &req.url) {
+            let notice = DuplicateDownloadNotice {
+                kind: "existing_download".to_string(),
+                existing_download_id: Some(existing.id.clone()),
+                existing_filename: existing.filename.clone(),
+                existing_status: Some(existing.status.clone()),
+                existing_path: existing.save_path.clone(),
+                request: req,
+            };
+            let _ = app.emit("duplicate-download-detected", notice);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            return Err("Duplicate download detected. Choose an action in ByteX.".to_string());
+        }
+        let destination = engine.destination_path(&req);
+        let existing = find_download_at_path(engine.inner(), &destination);
+        if destination.exists() || existing.is_some() {
+            let notice = DuplicateDownloadNotice {
+                kind: if existing.is_some() {
+                    "existing_download"
+                } else {
+                    "existing_file"
+                }
+                .to_string(),
+                existing_download_id: existing.as_ref().map(|item| item.id.clone()),
+                existing_filename: existing
+                    .as_ref()
+                    .map(|item| item.filename.clone())
+                    .or_else(|| {
+                        destination
+                            .file_name()
+                            .map(|name| name.to_string_lossy().to_string())
+                    })
+                    .unwrap_or_else(|| "Existing file".to_string()),
+                existing_status: existing.as_ref().map(|item| item.status.clone()),
+                existing_path: destination.to_string_lossy().to_string(),
+                request: req,
+            };
+            let _ = app.emit("duplicate-download-detected", notice);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+            return Err("Duplicate file detected. Choose an action in ByteX.".to_string());
+        }
+    }
     let item = engine.add_download(req.clone());
     let started = engine.inner().start_download_execution(item, &req).await;
     Ok(started)
+}
+
+fn find_download_at_path(engine: &DownloadEngine, path: &std::path::Path) -> Option<DownloadItem> {
+    engine
+        .downloads
+        .read()
+        .iter()
+        .find(|item| crate::config::resolve_path(&item.save_path) == path)
+        .cloned()
+}
+
+fn normalize_download_url(value: &str) -> String {
+    match url::Url::parse(value.trim()) {
+        Ok(mut parsed) => {
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        Err(_) => value.trim().to_string(),
+    }
+}
+
+fn find_download_by_url(engine: &DownloadEngine, url: &str) -> Option<DownloadItem> {
+    let candidate = normalize_download_url(url);
+    engine.downloads.read().iter().find_map(|item| {
+        if item.status == DownloadStatus::Failed {
+            return None;
+        }
+        let same_url = std::iter::once(item.url.as_str())
+            .chain(item.resolved_url.as_deref())
+            .any(|existing| normalize_download_url(existing) == candidate);
+        same_url.then(|| item.clone())
+    })
+}
+
+fn unique_copy_request(engine: &DownloadEngine, mut req: NewDownloadRequest) -> NewDownloadRequest {
+    let original = engine.destination_path(&req);
+    let parent = original
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let stem = original
+        .file_stem()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string());
+    let extension = original
+        .extension()
+        .map(|value| value.to_string_lossy().to_string());
+    for index in 2u32.. {
+        let filename = match &extension {
+            Some(extension) => format!("{stem} ({index}).{extension}"),
+            None => format!("{stem} ({index})"),
+        };
+        let candidate = parent.join(&filename);
+        if !candidate.exists() && find_download_at_path(engine, &candidate).is_none() {
+            req.filename = Some(filename);
+            req.save_path = Some(parent.to_string_lossy().to_string());
+            return req;
+        }
+    }
+    req
 }
 
 #[tauri::command]
@@ -578,7 +692,9 @@ fn format_speed_bps(bps: u64) -> String {
 }
 
 fn compact_speed_bps(bps: u64) -> String {
-    if bps >= 1_000_000_000 {
+    if bps >= 10_000_000_000 {
+        format!("{:.0}G", bps as f64 / 1_000_000_000.0)
+    } else if bps >= 1_000_000_000 {
         format!("{:.1}G", bps as f64 / 1_000_000_000.0)
     } else if bps >= 10_000_000 {
         format!("{:.0}M", bps as f64 / 1_000_000.0)
@@ -592,21 +708,23 @@ fn compact_speed_bps(bps: u64) -> String {
 }
 
 fn build_speed_tray_icon(download_bps: u64, upload_bps: u64) -> tauri::image::Image<'static> {
-    const SIZE: usize = 64;
+    const SIZE: usize = 32;
     let mut rgba = vec![0u8; SIZE * SIZE * 4];
     for pixel in rgba.as_chunks_mut::<4>().0 {
-        pixel.copy_from_slice(&[10, 17, 30, 255]);
+        pixel.copy_from_slice(&[0, 0, 0, 0]);
     }
 
     fn paint(rgba: &mut [u8], x: usize, y: usize, color: [u8; 4]) {
-        if x < 64 && y < 64 {
-            let offset = (y * 64 + x) * 4;
+        if x < 32 && y < 32 {
+            let offset = (y * 32 + x) * 4;
             rgba[offset..offset + 4].copy_from_slice(&color);
         }
     }
 
     fn draw_text(rgba: &mut [u8], text: &str, y: usize, color: [u8; 4]) {
-        for (index, character) in text.chars().take(6).enumerate() {
+        let characters: Vec<char> = text.chars().take(5).collect();
+        let left = (32usize.saturating_sub(characters.len() * 4)) / 2;
+        for (index, character) in characters.into_iter().enumerate() {
             let rows: [u8; 5] = match character {
                 '0' => [7, 5, 5, 5, 7],
                 '1' => [2, 6, 2, 2, 7],
@@ -626,50 +744,32 @@ fn build_speed_tray_icon(download_bps: u64, upload_bps: u64) -> tauri::image::Im
                 '.' => [0, 0, 0, 0, 2],
                 _ => [0; 5],
             };
-            let left = 7 + index * 9;
             for (row, bits) in rows.iter().enumerate() {
                 for col in 0..3 {
                     if bits & (1 << (2 - col)) != 0 {
-                        for scale_y in 0..2 {
-                            for scale_x in 0..2 {
-                                paint(rgba, left + col * 2 + scale_x, y + row * 2 + scale_y, color);
-                            }
-                        }
+                        paint(rgba, left + index * 4 + col, y + row, color);
                     }
                 }
             }
         }
     }
 
-    for x in 4..60 {
-        paint(&mut rgba, x, 31, [38, 55, 77, 255]);
+    for x in 9..23 {
+        paint(&mut rgba, x, 15, [90, 107, 127, 255]);
     }
     draw_text(
         &mut rgba,
         &format!("D{}", compact_speed_bps(download_bps)),
-        8,
+        4,
         [75, 224, 216, 255],
     );
     draw_text(
         &mut rgba,
         &format!("U{}", compact_speed_bps(upload_bps)),
-        39,
+        22,
         [102, 231, 166, 255],
     );
     tauri::image::Image::new_owned(rgba, SIZE as u32, SIZE as u32)
-}
-
-#[cfg(all(test, not(target_os = "macos")))]
-mod tray_speed_tests {
-    use super::compact_speed_bps;
-
-    #[test]
-    fn formats_rates_for_the_compact_tray_icon() {
-        assert_eq!(compact_speed_bps(0), "0");
-        assert_eq!(compact_speed_bps(320_000), "320K");
-        assert_eq!(compact_speed_bps(1_500_000), "1.5M");
-        assert_eq!(compact_speed_bps(2_400_000_000), "2.4G");
-    }
 }
 
 pub fn run_app() {
@@ -752,9 +852,9 @@ pub fn run_app() {
                         None::<&str>,
                     ) {
                         if let Ok(menu) = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i]) {
-                            let mut builder = tauri::tray::TrayIconBuilder::new()
+                            let mut builder = tauri::tray::TrayIconBuilder::with_id("speed-indicator")
                                 .menu(&menu)
-                                .title("↓ 0 B/s ↑ 0 B/s")
+                                .title("")
                                 .show_menu_on_left_click(false)
                                 .on_menu_event(|app, event| match event.id.as_ref() {
                                     "quit" => {
@@ -910,20 +1010,10 @@ pub fn run_app() {
                             "ByteX Download Manager — Idle".to_string()
                         };
 
-                        let short_title = if active_count > 0 {
-                            format!(
-                                "↓ {} ↑ {}",
-                                format_speed_bps(total_down_bps),
-                                format_speed_bps(total_torrent_up_bps)
-                            )
-                        } else {
-                            String::new()
-                        };
-
                         // Update the status item/tray icon and its live rates on every OS.
-                        if let Some(tray) = app_handle.tray_by_id("") {
+                        if let Some(tray) = app_handle.tray_by_id("speed-indicator") {
                             let _ = tray.set_tooltip(Some(&tooltip));
-                            let _ = tray.set_title(Some(&short_title));
+                            let _ = tray.set_title(Some(""));
                             let _ = tray.set_icon(Some(build_speed_tray_icon(
                                 total_down_bps,
                                 total_torrent_up_bps,
@@ -933,9 +1023,9 @@ pub fn run_app() {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let badge = (active_count > 0).then(|| {
                                 format!(
-                                    "↓ {} ↑ {}",
-                                    format_speed_bps(total_down_bps),
-                                    format_speed_bps(total_torrent_up_bps)
+                                    "↓{} ↑{}",
+                                    compact_speed_bps(total_down_bps),
+                                    compact_speed_bps(total_torrent_up_bps)
                                 )
                             });
                             let _ = window.set_badge_label(badge);
@@ -1033,5 +1123,26 @@ pub fn run_app() {
     }
     if let Err(error) = shutdown_engine.persist_downloads() {
         tracing::error!(%error, "Could not persist download history during shutdown");
+    }
+}
+
+#[cfg(test)]
+mod tray_speed_tests {
+    use super::{build_speed_tray_icon, compact_speed_bps};
+
+    #[test]
+    fn formats_rates_for_the_compact_tray_icon() {
+        assert_eq!(compact_speed_bps(0), "0");
+        assert_eq!(compact_speed_bps(320_000), "320K");
+        assert_eq!(compact_speed_bps(1_500_000), "1.5M");
+        assert_eq!(compact_speed_bps(2_400_000_000), "2.4G");
+        assert_eq!(compact_speed_bps(12_000_000_000), "12G");
+    }
+
+    #[test]
+    fn tray_speed_indicator_uses_a_compact_icon() {
+        let icon = build_speed_tray_icon(320_000, 12_000);
+        assert_eq!(icon.width(), 32);
+        assert_eq!(icon.height(), 32);
     }
 }

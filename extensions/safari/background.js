@@ -15,6 +15,12 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
 let state = {
   interceptEnabled: true,
   desktopIntegrationEnabled: true,
+  interceptedExtensions: [
+    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG", "DEB", "RPM",
+    "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI", "MOV", "MP3", "FLAC", "WAV",
+    "PDF", "DOCX", "XLSX", "PPTX", "TORRENT",
+  ],
+  ignoredDomains: ["localhost", "127.0.0.1"],
 };
 
 runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
@@ -33,6 +39,15 @@ async function syncWithDesktopApp() {
     if (res.ok) {
       const cfg = await res.json();
       state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
+      if (Array.isArray(cfg.intercepted_extensions)) {
+        state.interceptedExtensions = cfg.intercepted_extensions.map((ext) => String(ext).replace(/^\./, "").toUpperCase());
+      }
+      if (Array.isArray(cfg.ignored_domains)) state.ignoredDomains = cfg.ignored_domains;
+      const saved = runtimeAPI.storage.local.set({
+        appInterceptedExtensions: state.interceptedExtensions,
+        appIgnoredDomains: state.ignoredDomains,
+      });
+      saved?.catch?.(() => {});
     }
   } catch (_) {
     // Desktop app will be woken via Native Messaging when a download occurs
@@ -40,10 +55,19 @@ async function syncWithDesktopApp() {
 }
 
 syncWithDesktopApp();
-setInterval(syncWithDesktopApp, 15000);
+setInterval(syncWithDesktopApp, 5000);
 
 // Listen for messages from content script or popup
 runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "GET_INTERCEPT_SETTINGS") {
+    sendResponse({
+      interceptEnabled: state.interceptEnabled,
+      desktopIntegrationEnabled: state.desktopIntegrationEnabled,
+      interceptedExtensions: state.interceptedExtensions,
+      ignoredDomains: state.ignoredDomains,
+    });
+    return false;
+  }
   if (msg.type === "XDM_MANUAL_CAPTURE") {
     if (!state.interceptEnabled || !state.desktopIntegrationEnabled) {
       sendResponse({ success: false, disabled: true });
