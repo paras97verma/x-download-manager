@@ -251,6 +251,25 @@ impl DownloadEngine {
             });
 
         let mut headers = req.custom_headers.unwrap_or_default();
+        if let Some(username) = &req.auth_username {
+            headers.insert("X-XDM-FTP-Username".to_string(), username.clone());
+        }
+        if let Some(password) = &req.auth_password {
+            headers.insert("X-XDM-FTP-Password".to_string(), password.clone());
+        }
+        if let (Some(username), Some(password)) = (&req.auth_username, &req.auth_password) {
+            headers
+                .entry("Authorization".to_string())
+                .or_insert_with(|| {
+                    format!(
+                        "Basic {}",
+                        base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            format!("{}:{}", username, password)
+                        )
+                    )
+                });
+        }
         if let Some(ua) = req.user_agent {
             headers.insert("User-Agent".to_string(), ua);
         }
@@ -350,6 +369,15 @@ impl DownloadEngine {
             tauri::async_runtime::spawn(async move {
                 if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
                     let _ = ftp_auth::execute_ftp_download(id_clone, dls_arc, st_arc, rx).await;
+                } else if proto == DownloadProtocol::Sftp {
+                    let mut dls = dls_arc.write();
+                    if let Some(d) = dls.iter_mut().find(|d| d.id == id_clone) {
+                        let message = "SFTP is not supported by this build; use FTP/FTPS or HTTPS."
+                            .to_string();
+                        d.status = DownloadStatus::Failed;
+                        d.error_message = Some(message.clone());
+                        d.transfer_log.push(format!("[ERROR] {}", message));
+                    }
                 } else if proto == DownloadProtocol::BitTorrent || proto == DownloadProtocol::Magnet
                 {
                     let _ = torrent::execute_torrent_download(id_clone, dls_arc, st_arc, rx).await;

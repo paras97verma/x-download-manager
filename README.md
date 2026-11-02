@@ -15,15 +15,15 @@ Get the latest verified build for your operating system and browser:
 
 ### Desktop Installers
 
-| Operating System | Architecture | Package Format | Download Link (v1.0.0) | Latest Release |
+| Operating System | Architecture | Package Format | Direct Download | Latest Release |
 | :--- | :--- | :--- | :--- | :--- |
-| **macOS** | Universal (Apple Silicon & Intel) | `.pkg` Installer | [⬇️ **Download for macOS (.pkg)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/X-Download-Manager_1.0.0_universal.pkg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
-| **macOS** | Universal (Apple Silicon & Intel) | `.dmg` Installer | [⬇️ **Download for macOS (.dmg)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_universal.dmg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
-| **Windows** | 64-bit (x64) | `.exe` (NSIS Installer) | [⬇️ **Download for Windows (.exe)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_x64-setup.exe) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
-| **Windows** | 64-bit (x64) | `.msi` (WiX Installer) | [⬇️ **Download for Windows (.msi)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_x64_en-US.msi) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
-| **Linux** | 64-bit (x86_64) | `.AppImage` (Universal) | [⬇️ **Download for Linux (.AppImage)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_amd64.AppImage) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
-| **Linux (Debian/Ubuntu)** | 64-bit (x86_64) | `.deb` Package | [⬇️ **Download for Ubuntu/Debian (.deb)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager_1.0.0_amd64.deb) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
-| **Linux (Fedora/RHEL)** | 64-bit (x86_64) | `.rpm` Package | [⬇️ **Download for Fedora/RHEL (.rpm)**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/x-download-manager-1.0.0-1.x86_64.rpm) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **macOS** | Universal (Apple Silicon & Intel) | `.pkg` Installer | [⬇️ **Download for macOS (.pkg)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/X-Download-Manager_universal.pkg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **macOS** | Universal (Apple Silicon & Intel) | `.dmg` Installer | [⬇️ **Download for macOS (.dmg)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/x-download-manager_universal.dmg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Windows** | 64-bit (x64) | `.exe` (NSIS Installer) | [⬇️ **Download for Windows (.exe)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/x-download-manager_x64-setup.exe) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Windows** | 64-bit (x64) | `.msi` (WiX Installer) | [⬇️ **Download for Windows (.msi)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/x-download-manager_x64_en-US.msi) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Linux** | 64-bit (x86_64) | `.AppImage` (Universal) | [⬇️ **Download for Linux (.AppImage)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/x-download-manager_amd64.AppImage) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Linux (Debian/Ubuntu)** | 64-bit (x86_64) | `.deb` Package | [⬇️ **Download for Ubuntu/Debian (.deb)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/x-download-manager_amd64.deb) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
+| **Linux (Fedora/RHEL)** | 64-bit (x86_64) | `.rpm` Package | [⬇️ **Download for Fedora/RHEL (.rpm)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/x-download-manager-1.x86_64.rpm) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest) |
 
 > 📦 **All Releases & Checksums**: View all versions, release notes, and build artifacts on the **[GitHub Releases Page](https://github.com/paras97verma/x-download-manager/releases)**.
 
@@ -33,11 +33,11 @@ Get the latest verified build for your operating system and browser:
 
 X Download Manager seamlessly intercepts download links, streaming video/audio, and authentication cookies from all major browsers:
 
-| Browser | Supported Browsers | Direct Download (v1.0.0) | Manual Installation |
+| Browser | Supported Browsers | Direct Download | Manual Installation |
 | :--- | :--- | :--- | :--- |
-| **Chromium** | Chrome, Arc, Dia, Brave, Edge, Opera, Opera GX, Vivaldi, Thorium, Ungoogled Chromium, Yandex | [⬇️ **`xdm-extension-chromium.zip`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-chromium.zip) | `chrome://extensions` → Enable *Developer mode* → *Load unpacked* |
-| **Firefox** | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | [⬇️ **`xdm-extension-firefox.xpi`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-firefox.xpi) | Click to install in Firefox/Zen, or load via `about:debugging` |
-| **Safari / WebKit** | Apple Safari (macOS), Orion Browser | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/download/v1.0.0/xdm-extension-safari.zip) | Safari Settings → Advanced → Show Develop menu → Develop → Allow Unsigned Extensions → Add Temporary Extension... |
+| **Chromium** | Chrome, Arc, Dia, Brave, Edge, Opera, Opera GX, Vivaldi, Thorium, Ungoogled Chromium, Yandex | [⬇️ **`xdm-extension-chromium.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest/download/xdm-extension-chromium.zip) | `chrome://extensions` → Enable *Developer mode* → *Load unpacked* |
+| **Firefox** | Mozilla Firefox, Zen Browser, LibreWolf, Waterfox, Floorp | [⬇️ **`xdm-extension-firefox.xpi`**](https://github.com/paras97verma/x-download-manager/releases/latest/download/xdm-extension-firefox.xpi) | Click to install in Firefox/Zen, or load via `about:debugging` |
+| **Safari / WebKit** | Apple Safari (macOS), Orion Browser | [⬇️ **`xdm-extension-safari.zip`**](https://github.com/paras97verma/x-download-manager/releases/latest/download/xdm-extension-safari.zip) | Safari Settings → Advanced → Show Develop menu → Develop → Allow Unsigned Extensions → Add Temporary Extension... |
 
 ---
 

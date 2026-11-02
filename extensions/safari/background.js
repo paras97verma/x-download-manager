@@ -178,7 +178,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
       body: JSON.stringify(payload),
     });
     if (resp.ok) {
-      return true;
+      const result = await resp.json().catch(() => null);
+      return result?.accepted === true && Boolean(result?.download_id);
     }
   } catch (err) {
     console.warn("XDM Safari bridge HTTP fetch failed:", err);

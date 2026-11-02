@@ -46,6 +46,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [authUser, setAuthUser] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [cookies, setCookies] = useState("");
+  const [referer, setReferer] = useState("");
+  const [userAgent, setUserAgent] = useState("");
+  const [headersText, setHeadersText] = useState("");
   const [sequentialTorrent, setSequentialTorrent] = useState(true);
 
   // Torrent file metadata state (uTorrent / Vuze parity)
@@ -233,6 +236,16 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     const finalUrl = url.trim() || (torrentMeta ? `magnet:?xt=urn:btih:${torrentMeta.info_hash}` : "");
     if (!finalUrl && !torrentMeta) return;
 
+    const customHeaders = Object.fromEntries(
+      headersText
+        .split("\n")
+        .map((line) => {
+          const colon = line.indexOf(":");
+          return colon > 0 ? [line.slice(0, colon).trim(), line.slice(colon + 1).trim()] : null;
+        })
+        .filter((entry): entry is [string, string] => Boolean(entry && entry[0] && entry[1]))
+    );
+
     onAdd({
       url: finalUrl,
       filename: filename.trim() || undefined,
@@ -244,6 +257,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
       auth_username: authUser.trim() || undefined,
       auth_password: authPass.trim() || undefined,
       cookies: cookies.trim() || undefined,
+      referer: referer.trim() || undefined,
+      user_agent: userAgent.trim() || undefined,
+      custom_headers: Object.keys(customHeaders).length ? customHeaders : undefined,
       sequential_torrent: sequentialTorrent,
     });
     onClose();
@@ -575,6 +591,28 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs"
                 />
               </div>
+
+              {(settings.ui_mode || "simple") === "advanced" && (
+                <details className="rounded-xl border border-slate-800 bg-slate-900/60">
+                  <summary className="cursor-pointer px-3.5 py-2.5 text-xs font-semibold text-indigo-300">
+                    Advanced request options — Referer, User-Agent, custom headers
+                  </summary>
+                  <div className="grid grid-cols-2 gap-3 border-t border-slate-800 p-3.5">
+                    <label className="text-[11px] text-slate-400">
+                      Referer
+                      <input value={referer} onChange={(e) => setReferer(e.target.value)} placeholder="https://example.com/page" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200" />
+                    </label>
+                    <label className="text-[11px] text-slate-400">
+                      User-Agent
+                      <input value={userAgent} onChange={(e) => setUserAgent(e.target.value)} placeholder="Use XDM default" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-200" />
+                    </label>
+                    <label className="col-span-2 text-[11px] text-slate-400">
+                      Additional HTTP headers (one per line, Name: value)
+                      <textarea value={headersText} onChange={(e) => setHeadersText(e.target.value)} rows={3} placeholder={'Accept: application/octet-stream\nX-Api-Key: …'} className="mt-1 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-slate-200" />
+                    </label>
+                  </div>
+                </details>
+              )}
             </div>
           )}
         </div>
