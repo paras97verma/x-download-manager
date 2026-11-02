@@ -12,9 +12,7 @@
     "contextMenus",
     "storage",
     "tabs",
-    "nativeMessaging",
-    "scripting",
-    "notifications"
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -40,8 +38,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

@@ -88,9 +88,12 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
     })
       .then((result) => {
-        sendResponse({ success: Boolean(result), duplicate: Boolean(result?.duplicate) });
+        const success = Boolean(result);
+        notifyCaptureResult(sender.tab && sender.tab.id, success, msg.filename || msg.url, result?.duplicate);
+        sendResponse({ success, duplicate: Boolean(result?.duplicate) });
       })
       .catch(() => {
+        notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
         sendResponse({ success: false });
       });
     return true; // Keep message port open for async response
@@ -207,15 +210,34 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
 }
 
 function notifyCaptureResult(tabId, success, filename, duplicate = false) {
-  if (!Number.isInteger(tabId) || tabId < 0 || !runtimeAPI.tabs?.sendMessage) return;
+  const transfer = {
+    status: success ? (duplicate ? "duplicate" : "sent") : "failed",
+    filename: filename || "Download",
+    timestamp: Date.now(),
+  };
   try {
-    const result = runtimeAPI.tabs.sendMessage(tabId, {
-      type: "XDM_CAPTURE_RESULT",
-      success,
-      duplicate,
-      filename: filename || "Download",
-      url: filename || "",
-    });
-    if (result && result.catch) result.catch(() => {});
+    const saved = runtimeAPI.storage.local.set({ lastTransfer: transfer });
+    saved?.catch?.(() => {});
+  } catch (_) {}
+
+  const actionApi = runtimeAPI.action || runtimeAPI.browserAction;
+  if (!actionApi?.setBadgeText) return;
+  const badgeOptions = { text: success ? "OK" : "!" };
+  const titleOptions = {
+    title: success
+      ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
+      : `ByteX handoff failed; browser download continues: ${transfer.filename}`,
+  };
+  if (Number.isInteger(tabId) && tabId >= 0) {
+    badgeOptions.tabId = tabId;
+    titleOptions.tabId = tabId;
+  }
+  try {
+    actionApi.setBadgeText(badgeOptions)?.catch?.(() => {});
+    actionApi.setBadgeBackgroundColor?.({
+      color: success ? "#059669" : "#dc2626",
+      ...(badgeOptions.tabId ? { tabId: badgeOptions.tabId } : {}),
+    })?.catch?.(() => {});
+    actionApi.setTitle?.(titleOptions)?.catch?.(() => {});
   } catch (_) {}
 }

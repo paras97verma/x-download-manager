@@ -3,15 +3,7 @@
 
 (function () {
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
-  const XDM_IPC_URL = "http://127.0.0.1:45678";
   let bypassKeyPressed = false;
-
-  runtimeAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (!message || message.type !== "XDM_CAPTURE_RESULT") return false;
-    showXdmCaptureToast(message.url || "", message.filename || "", message.success, message.duplicate);
-    sendResponse?.({ received: true });
-    return false;
-  });
 
   // Track Alt / Option key to allow users to bypass XDM when desired
   window.addEventListener(
@@ -131,75 +123,7 @@
     return false;
   }
 
-  function showXdmCaptureToast(url, filename, success, duplicate = false) {
-    try {
-      const existing = document.getElementById("xdm-capture-toast");
-      if (existing) existing.remove();
-
-      const toast = document.createElement("div");
-      toast.id = "xdm-capture-toast";
-      const name = filename || url.split("/").pop().split("?")[0] || "Download";
-
-      // Build DOM structure securely without innerHTML to eliminate DOM XSS risk
-      const container = document.createElement("div");
-      container.style.cssText = "display:flex;align-items:center;gap:8px;";
-
-      const logo = document.createElement("div");
-      logo.style.cssText =
-        "width:18px;height:18px;border-radius:4px;background:#45d9cf;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px;";
-      logo.textContent = "B";
-
-      const textCol = document.createElement("div");
-
-      const titleEl = document.createElement("div");
-      titleEl.style.cssText = "font-weight:bold;font-size:12px;color:#ffffff;";
-      titleEl.textContent = duplicate
-        ? "Already added to ByteX"
-        : success
-        ? "Download started in ByteX"
-        : "ByteX could not start; browser download resumed";
-
-      const nameEl = document.createElement("div");
-      nameEl.style.cssText =
-        "font-size:10px;color:#94a3b8;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-      nameEl.textContent = name;
-
-      textCol.appendChild(titleEl);
-      textCol.appendChild(nameEl);
-      container.appendChild(logo);
-      container.appendChild(textCol);
-      toast.appendChild(container);
-
-      toast.style.cssText = [
-        "position: fixed",
-        "bottom: 24px",
-        "right: 24px",
-        "z-index: 2147483647",
-        "background: rgba(15, 23, 42, 0.95)",
-        "backdrop-filter: blur(8px)",
-        "border: 1px solid rgba(69, 217, 207, 0.55)",
-        "border-radius: 12px",
-        "padding: 10px 14px",
-        "box-shadow: 0 10px 30px rgba(0,0,0,0.6)",
-        "font-family: -apple-system, BlinkMacSystemFont, sans-serif",
-        "color: #ffffff",
-        "transition: all 0.3s ease",
-        "pointer-events: none",
-        "animation: xdmSlideIn 0.25s ease-out",
-      ].join(";");
-
-      const root = document.documentElement || document.body;
-      if (!root) return;
-      root.appendChild(toast);
-      setTimeout(() => {
-        toast.style.opacity = "0";
-        toast.style.transform = "translateY(10px)";
-        setTimeout(() => toast.remove(), 300);
-      }, 3500);
-    } catch (_) {}
-  }
-
-  function captureDownload(targetUrl, filename, anchor, fallback) {
+  function captureDownload(targetUrl, filename, anchor, fallback, onResult) {
     const payload = {
       type: "XDM_MANUAL_CAPTURE",
       url: targetUrl,
@@ -209,43 +133,17 @@
       tabTitle: document.title,
     };
 
-    // 1. Send via Extension Messaging to background script
     try {
-      runtimeAPI.runtime.sendMessage(payload, (res) => {
-        if (!runtimeAPI.runtime.lastError && res && res.success) {
-          showXdmCaptureToast(targetUrl, filename, true, res.duplicate);
-        } else fallbackDirectIpc(payload).then((result) => finishCapture(Boolean(result), targetUrl, filename, fallback, result?.duplicate));
+      runtimeAPI.runtime.sendMessage(payload, (response) => {
+        if (runtimeAPI.runtime.lastError || !response?.success) {
+          if (fallback) fallback();
+        } else if (onResult) {
+          onResult(response);
+        }
       });
     } catch (_) {
-      fallbackDirectIpc(payload).then((result) => finishCapture(Boolean(result), targetUrl, filename, fallback, result?.duplicate));
+      if (fallback) fallback();
     }
-  }
-
-  function finishCapture(success, url, filename, fallback, duplicate = false) {
-    showXdmCaptureToast(url, filename, success, duplicate);
-    if (!success && fallback) fallback();
-  }
-
-  // Direct Localhost IPC fallback in case background script is sleeping
-  function fallbackDirectIpc(payload) {
-    try {
-      return fetch(`${XDM_IPC_URL}/api/v1/intercept`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: payload.url,
-          filename: payload.filename,
-          referer: payload.referer,
-          cookies: payload.cookies,
-          user_agent: navigator.userAgent,
-          browser: /orion/i.test(navigator.userAgent || "") ? "Orion" : "Safari",
-          tab_title: payload.tabTitle,
-        }),
-      }).then((response) => response.json()).then((result) => result && result.accepted === true && result.download_id
-        ? { duplicate: Boolean(result.duplicate) }
-        : null).catch(() => null);
-    } catch (_) {}
-    return Promise.resolve(false);
   }
 
   // 1. Intercept standard <a> link clicks
@@ -320,8 +218,14 @@
       badge.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        captureDownload(src, null, null);
-        badge.innerText = "✓ Sent to ByteX";
+        badge.innerText = "Sending to ByteX…";
+        captureDownload(src, null, null, () => {
+          badge.innerText = "Browser download continues";
+        }, (response) => {
+          badge.innerText = response.duplicate ? "✓ Already in ByteX" : "✓ Sent to ByteX";
+        });
+        // The page control is only an immediate acknowledgement. The extension
+        // toolbar badge and popup show the confirmed handoff result.
       });
 
       const parent = media.parentElement;

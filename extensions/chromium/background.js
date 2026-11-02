@@ -63,7 +63,8 @@ if (runtimeAPI.contextMenus) {
           url: targetUrl,
           referer: info.pageUrl || (tab ? tab.url : ""),
           tabTitle: tab ? tab.title : "",
-        });
+        }).then((result) => notifyCaptureResult(tab && tab.id, Boolean(result), targetUrl, result?.duplicate))
+          .catch(() => notifyCaptureResult(tab && tab.id, false, targetUrl));
       }
     }
   });
@@ -80,10 +81,10 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
     }).then(async (result) => {
       const ok = Boolean(result);
-      await notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url, result?.duplicate);
+      notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url, result?.duplicate);
       sendResponse({ success: ok, duplicate: Boolean(result?.duplicate) });
     }).catch(async () => {
-      await notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
+      notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
       sendResponse({ success: false });
     });
     return true;
@@ -276,17 +277,17 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (result) {
-    await notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename, result.duplicate);
+    notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename, result.duplicate);
     try {
-      runtimeAPI.downloads.cancel(downloadItem.id);
+      await runtimeAPI.downloads.cancel(downloadItem.id);
       if (runtimeAPI.downloads.erase) {
-        runtimeAPI.downloads.erase({ id: downloadItem.id });
+        await runtimeAPI.downloads.erase({ id: downloadItem.id });
       }
     } catch (_) {}
     return true;
   } else {
     // If desktop XDM was unreachable or disabled, unpause to let the browser resume seamlessly
-    await notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
+    notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
     if (downloadItem.id && runtimeAPI.downloads && runtimeAPI.downloads.resume) {
       try {
         await runtimeAPI.downloads.resume(downloadItem.id);
@@ -297,16 +298,17 @@ async function handleDownloadInterception(downloadItem) {
 }
 
 // "Intercept late, not early":
-// Prefer `downloads.onDeterminingFilename` because the browser has followed all redirects,
-// negotiated session cookies, and determined the final CDN URL and true MIME type.
+// Use onCreated for handoff so the browser's filename-determination event can complete
+// normally. The DownloadItem includes the resolved URL on supported browsers.
 if (runtimeAPI.downloads) {
-  if (runtimeAPI.downloads.onDeterminingFilename) {
-    runtimeAPI.downloads.onDeterminingFilename.addListener((downloadItem) => {
-      handleDownloadInterception(downloadItem);
-    });
-  } else if (runtimeAPI.downloads.onCreated) {
+  if (runtimeAPI.downloads.onCreated) {
     runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
-      handleDownloadInterception(downloadItem);
+      handleDownloadInterception(downloadItem).catch(() => {
+        notifyCaptureResult(downloadItem.tabId, false, downloadItem.filename);
+        if (downloadItem.id && runtimeAPI.downloads.resume) {
+          runtimeAPI.downloads.resume(downloadItem.id).catch(() => {});
+        }
+      });
     });
   }
 }
@@ -339,74 +341,35 @@ function detectBrowserFamily() {
   return "Chromium";
 }
 
-async function notifyCaptureResult(tabId, success, filename, duplicate = false) {
-  const message = {
-    type: "XDM_CAPTURE_RESULT",
-    success,
-    duplicate,
+function notifyCaptureResult(tabId, success, filename, duplicate = false) {
+  const transfer = {
+    status: success ? (duplicate ? "duplicate" : "sent") : "failed",
     filename: filename || "Download",
+    timestamp: Date.now(),
   };
-  let delivered = false;
+  try {
+    const saved = runtimeAPI.storage.local.set({ lastTransfer: transfer });
+    saved?.catch?.(() => {});
+  } catch (_) {}
 
-  if (Number.isInteger(tabId) && tabId >= 0 && runtimeAPI.tabs?.sendMessage) {
-    try {
-      const response = await runtimeAPI.tabs.sendMessage(tabId, message);
-      delivered = response?.received === true;
-    } catch (_) {
-      // A page may not have a live content script. Inject the toast below.
-    }
-
-    if (!delivered && runtimeAPI.scripting?.executeScript) {
-      try {
-        const result = await runtimeAPI.scripting.executeScript({
-          target: { tabId },
-          func: renderCaptureToast,
-          args: [message],
-        });
-        delivered = result?.some((frame) => frame.result === true) === true;
-      } catch (_) {
-        // Restricted browser pages do not permit content-script injection.
-      }
-    }
+  const actionApi = runtimeAPI.action || runtimeAPI.browserAction;
+  if (!actionApi?.setBadgeText) return;
+  const badgeOptions = { text: success ? "OK" : "!" };
+  const titleOptions = {
+    title: success
+      ? `${duplicate ? "Already in" : "Sent to"} ByteX: ${transfer.filename}`
+      : `ByteX handoff failed; browser download continues: ${transfer.filename}`,
+  };
+  if (Number.isInteger(tabId) && tabId >= 0) {
+    badgeOptions.tabId = tabId;
+    titleOptions.tabId = tabId;
   }
-
-  if (!delivered && runtimeAPI.notifications?.create) {
-    const status = duplicate
-      ? "Already added to ByteX"
-      : success
-      ? "Download started with ByteX"
-      : "ByteX could not start; the browser download continues";
-    try {
-      await runtimeAPI.notifications.create(`bytex-${Date.now()}`, {
-        type: "basic",
-        iconUrl: "icons/128x128.png",
-        title: "ByteX Download Manager",
-        message: `${status}: ${filename || "Download"}`,
-      });
-    } catch (_) {}
-  }
-}
-
-function renderCaptureToast(message) {
-  const root = document.documentElement || document.body;
-  if (!root) return false;
-
-  document.getElementById("bytex-capture-toast")?.remove();
-  const host = document.createElement("div");
-  host.id = "bytex-capture-toast";
-  host.style.cssText = "all:initial;display:block;position:fixed;right:20px;bottom:20px;z-index:2147483647;pointer-events:none";
-  const shadow = host.attachShadow({ mode: "closed" });
-  const toast = document.createElement("div");
-  const filename = (message.filename || "Download").split(/[\\/]/).pop();
-  const status = message.duplicate
-    ? "Already added to ByteX"
-    : message.success
-    ? "Download started with ByteX"
-    : "ByteX could not start; browser download continues";
-  toast.textContent = `${message.success ? "✓" : "⚠"} ${status} · ${filename}`;
-  toast.style.cssText = "box-sizing:border-box;background:#102038;color:#f7fbff;border:1px solid #45d9cf;border-radius:10px;padding:12px 16px;font:600 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-shadow:0 8px 28px #0008;max-width:min(420px,calc(100vw - 40px));overflow-wrap:anywhere";
-  shadow.appendChild(toast);
-  root.appendChild(host);
-  setTimeout(() => host.remove(), 5000);
-  return true;
+  try {
+    actionApi.setBadgeText(badgeOptions)?.catch?.(() => {});
+    actionApi.setBadgeBackgroundColor?.({
+      color: success ? "#059669" : "#dc2626",
+      ...(Number.isInteger(tabId) && tabId >= 0 ? { tabId } : {}),
+    })?.catch?.(() => {});
+    actionApi.setTitle?.(titleOptions)?.catch?.(() => {});
+  } catch (_) {}
 }

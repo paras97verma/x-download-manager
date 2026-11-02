@@ -17,9 +17,7 @@
     "contextMenus",
     "storage",
     "tabs",
-    "nativeMessaging",
-    "scripting",
-    "notifications"
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -31,7 +29,9 @@
     "128": "icons/128x128.png"
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "action": {
     "default_title": "ByteX Download Manager",
@@ -45,8 +45,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
