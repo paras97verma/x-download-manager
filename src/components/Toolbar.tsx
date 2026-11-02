@@ -7,11 +7,7 @@ import {
   Square,
   Trash2,
   CalendarClock,
-  Gauge,
-  Puzzle,
   Settings,
-  KeyRound,
-  Search,
   Sparkles,
 } from "lucide-react";
 import { AppSettings } from "../types/xdm";
@@ -27,10 +23,7 @@ interface ToolbarProps {
   onOpenSettings: (initialTab?: string) => void;
   onToggleUiMode: () => void;
   uiMode: "simple" | "advanced";
-  settings: AppSettings;
-  onToggleSpeedLimiter: () => void;
-  searchQuery: string;
-  onSearchChange: (q: string) => void;
+  settings?: AppSettings;
   selectedCount?: number;
   appVersion?: string;
 }
@@ -45,10 +38,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenSettings,
   onToggleUiMode,
   uiMode,
-  settings,
-  onToggleSpeedLimiter,
-  searchQuery,
-  onSearchChange,
   selectedCount = 0,
   appVersion,
 }) => {
@@ -135,36 +124,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </button>
       </div>
 
-      {/* Right Search + Tools */}
+      {/* Right Controls */}
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <div className="relative">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search..."
-            className="w-24 sm:w-36 lg:w-44 focus:w-48 bg-slate-900 border border-slate-700/80 rounded-lg pl-8 pr-2 py-1 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-all"
-          />
-        </div>
-
-        <button
-          onClick={onToggleSpeedLimiter}
-          className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs font-medium transition shrink-0 ${
-            settings.speed_limiter_enabled
-              ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-              : "bg-slate-800/70 border-slate-700/70 text-slate-300 hover:bg-slate-800"
-          }`}
-          title="Speed Limiter"
-        >
-          <Gauge className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">
-            {settings.speed_limiter_enabled
-              ? `${(settings.global_max_download_kbps / 1024).toFixed(0)} MB/s`
-              : "Uncapped"}
-          </span>
-        </button>
-
         <button
           onClick={onToggleUiMode}
           className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg border text-xs font-semibold transition shrink-0 ${
@@ -185,15 +146,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         >
           <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
           <span className="hidden sm:inline">Queues</span>
-        </button>
-
-        <button
-          onClick={() => onOpenSettings("logins")}
-          className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-xs font-medium transition shrink-0"
-          title="Site Password & Cookie Vault (Usersdrive, FTP)"
-        >
-          <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden md:inline">Vault</span>
         </button>
 
         <button

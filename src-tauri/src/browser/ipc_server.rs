@@ -26,7 +26,16 @@ fn get_heartbeat_map() -> &'static RwLock<HashMap<String, Instant>> {
 pub fn record_browser_heartbeat(browser: &str) {
     let b = browser.trim().to_lowercase();
     if !b.is_empty() {
-        get_heartbeat_map().write().insert(b, Instant::now());
+        let mut map = get_heartbeat_map().write();
+        map.insert(b.clone(), Instant::now());
+        #[cfg(target_os = "macos")]
+        {
+            if (b == "chrome" || b == "chromium")
+                && std::path::Path::new("/Applications/Dia.app").exists()
+            {
+                map.insert("dia".to_string(), Instant::now());
+            }
+        }
     }
 }
 
@@ -35,7 +44,7 @@ pub fn is_browser_connected(browser_id: &str, display_name: &str) -> bool {
     let b_id = browser_id.to_lowercase();
     let d_name = display_name.to_lowercase();
     for (k, instant) in map.iter() {
-        if instant.elapsed().as_secs() < 90
+        if instant.elapsed().as_secs() < 3600
             && (k == &b_id
                 || k.contains(&b_id)
                 || b_id.contains(k)
@@ -43,6 +52,16 @@ pub fn is_browser_connected(browser_id: &str, display_name: &str) -> bool {
                 || d_name.contains(k))
         {
             return true;
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if b_id == "dia" && std::path::Path::new("/Applications/Dia.app").exists() {
+            for (k, instant) in map.iter() {
+                if instant.elapsed().as_secs() < 3600 && (k == "chrome" || k == "chromium") {
+                    return true;
+                }
+            }
         }
     }
     false

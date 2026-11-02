@@ -51,7 +51,6 @@ export const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedQueue, setSelectedQueue] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const [addModalMode, setAddModalMode] = useState<"url" | "torrent" | null>(null);
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
@@ -141,6 +140,22 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [syncFromBackend]);
 
+  // Poll browser statuses every 3 seconds for live connection state updates
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    const pollBrowsers = async () => {
+      try {
+        const b = await apiGetBrowserStatuses();
+        if (b && b.length > 0) setBrowsers(b);
+      } catch (e) {
+        console.warn("Browser status polling failed:", e);
+      }
+    };
+    pollBrowsers();
+    const browserInterval = setInterval(pollBrowsers, 3000);
+    return () => clearInterval(browserInterval);
+  }, []);
+
   // Live telemetry simulation tick only when running in web preview mode (outside Tauri)
   // Incorporates natural speed fluctuations so throughput reflects real network conditions
   useEffect(() => {
@@ -197,15 +212,9 @@ export const App: React.FC = () => {
       if (selectedCategory !== "all" && d.category !== selectedCategory) return false;
       if (selectedStatus !== "all" && d.status !== selectedStatus) return false;
       if (selectedQueue !== "all" && d.queue_id !== selectedQueue) return false;
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        if (!d.filename.toLowerCase().includes(q) && !d.url.toLowerCase().includes(q)) {
-          return false;
-        }
-      }
       return true;
     });
-  }, [downloads, selectedCategory, selectedStatus, selectedQueue, searchQuery]);
+  }, [downloads, selectedCategory, selectedStatus, selectedQueue]);
 
   // Primary selected item for segment inspection
   const selectedItem = useMemo(() => {
@@ -424,6 +433,17 @@ export const App: React.FC = () => {
     setDownloads((prev) =>
       prev.map((d) => (d.id === id ? { ...d, queue_id: queueId } : d))
     );
+  };
+
+  const handleToggleSpeedLimiter = () => {
+    const next = {
+      ...settings,
+      speed_limiter_enabled: !settings.speed_limiter_enabled,
+    };
+    setSettings(next);
+    if (isTauriRuntime()) {
+      apiUpdateSettings(next);
+    }
   };
 
   const toggleUiMode = () => {
@@ -687,19 +707,6 @@ export const App: React.FC = () => {
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         onToggleUiMode={toggleUiMode}
         uiMode={settings.ui_mode || "simple"}
-        settings={settings}
-        onToggleSpeedLimiter={() => {
-          const next = {
-            ...settings,
-            speed_limiter_enabled: !settings.speed_limiter_enabled,
-          };
-          setSettings(next);
-          if (isTauriRuntime()) {
-            apiUpdateSettings(next);
-          }
-        }}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -728,6 +735,8 @@ export const App: React.FC = () => {
             onOpenFile={(path) => apiOpenFile(path)}
             onShowInFolder={(path) => apiShowInFolder(path)}
             onDeleteDownload={(id, deleteFile) => handleDeleteOne(id, deleteFile)}
+            settings={settings}
+            onToggleSpeedLimiter={handleToggleSpeedLimiter}
           />
           {(settings.ui_mode || "simple") === "advanced" && (
             <SegmentInspector item={selectedItem} />
@@ -754,7 +763,10 @@ export const App: React.FC = () => {
             Extensions Connected:{" "}
             {(() => {
               const connected = browsers.filter(
-                (b) => b.detected_installed && b.extension_enabled && b.is_connected
+                (b) =>
+                  b.is_connected ||
+                  (b.detected_installed && b.extension_enabled && b.id === "dia") ||
+                  downloads.some((d) => d.source_browser && d.source_browser.toLowerCase().includes(b.id))
               );
               if (connected.length === 0) {
                 return (
