@@ -445,10 +445,12 @@ pub async fn execute_torrent_download(
     let session = librqbit::Session::new(std::path::PathBuf::from(&save_dir))
         .await
         .map_err(|e| format!("Could not start torrent engine: {e}"))?;
-    let mut options = librqbit::AddTorrentOptions::default();
-    options.output_folder = Some(save_dir.clone());
-    options.overwrite = true;
-    options.only_files = selected_files;
+    let options = librqbit::AddTorrentOptions {
+        output_folder: Some(save_dir.clone()),
+        overwrite: true,
+        only_files: selected_files,
+        ..Default::default()
+    };
     let handle = session
         .add_torrent(add_source, Some(options))
         .await
@@ -498,9 +500,9 @@ pub async fn execute_torrent_download(
                 if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
                     d.total_bytes = stats.total_bytes;
                     d.downloaded_bytes = stats.progress_bytes.min(stats.total_bytes);
-                    d.speed_bps = stats.live.as_ref().map(|live| live.download_speed.as_bytes() as u64).unwrap_or(0);
-                    d.upload_speed_bps = stats.live.as_ref().map(|live| live.upload_speed.as_bytes() as u64).unwrap_or(0);
-                    let speed = stats.live.as_ref().map(|live| live.download_speed.as_bytes() as u64).unwrap_or(0);
+                    d.speed_bps = stats.live.as_ref().map(|live| live.download_speed.as_bytes()).unwrap_or(0);
+                    d.upload_speed_bps = stats.live.as_ref().map(|live| live.upload_speed.as_bytes()).unwrap_or(0);
+                    let speed = stats.live.as_ref().map(|live| live.download_speed.as_bytes()).unwrap_or(0);
                     d.eta_seconds = (speed > 0).then(|| stats.total_bytes.saturating_sub(stats.progress_bytes) / speed);
                 }
             }
