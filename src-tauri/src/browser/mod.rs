@@ -8,7 +8,7 @@ pub mod ipc_server;
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::AppSettings;
 
@@ -823,61 +823,188 @@ pub fn get_or_create_extension_dir(family: &str) -> Result<PathBuf, String> {
             PathBuf::from("extensions")
         };
 
-    let target_dir = if family.eq_ignore_ascii_case("firefox") {
-        base.join("firefox")
+    materialize_extension_bundle(&base, family)
+}
+
+fn materialize_extension_bundle(base: &Path, family: &str) -> Result<PathBuf, String> {
+    macro_rules! embedded_web_extension_files {
+        ($family:literal) => {
+            &[
+                (
+                    "manifest.json",
+                    include_bytes!(concat!("../../../extensions/", $family, "/manifest.json"))
+                        .as_slice(),
+                ),
+                (
+                    "background.js",
+                    include_bytes!(concat!("../../../extensions/", $family, "/background.js"))
+                        .as_slice(),
+                ),
+                (
+                    "content.js",
+                    include_bytes!(concat!("../../../extensions/", $family, "/content.js"))
+                        .as_slice(),
+                ),
+                (
+                    "popup.html",
+                    include_bytes!(concat!("../../../extensions/", $family, "/popup.html"))
+                        .as_slice(),
+                ),
+                (
+                    "popup.js",
+                    include_bytes!(concat!("../../../extensions/", $family, "/popup.js"))
+                        .as_slice(),
+                ),
+                (
+                    "styles.css",
+                    include_bytes!(concat!("../../../extensions/", $family, "/styles.css"))
+                        .as_slice(),
+                ),
+                (
+                    "icons/16x16.png",
+                    include_bytes!(concat!("../../../extensions/", $family, "/icons/16x16.png"))
+                        .as_slice(),
+                ),
+                (
+                    "icons/32x32.png",
+                    include_bytes!(concat!("../../../extensions/", $family, "/icons/32x32.png"))
+                        .as_slice(),
+                ),
+                (
+                    "icons/48x48.png",
+                    include_bytes!(concat!("../../../extensions/", $family, "/icons/48x48.png"))
+                        .as_slice(),
+                ),
+                (
+                    "icons/128x128.png",
+                    include_bytes!(concat!(
+                        "../../../extensions/",
+                        $family,
+                        "/icons/128x128.png"
+                    ))
+                    .as_slice(),
+                ),
+            ]
+        };
+    }
+
+    let (name, mut files) = if family.eq_ignore_ascii_case("firefox") {
+        ("firefox", embedded_web_extension_files!("firefox").to_vec())
     } else if family.eq_ignore_ascii_case("safari") {
-        base.join("safari")
+        ("safari", embedded_web_extension_files!("safari").to_vec())
     } else {
-        base.join("chromium")
+        (
+            "chromium",
+            embedded_web_extension_files!("chromium").to_vec(),
+        )
     };
+    if name == "safari" {
+        files.extend_from_slice(&[
+            (
+                "macos-wrapper/Info.plist",
+                include_bytes!("../../../extensions/safari/macos-wrapper/Info.plist"),
+            ),
+            (
+                "macos-wrapper/SafariWebExtensionHandler.swift",
+                include_bytes!(
+                    "../../../extensions/safari/macos-wrapper/SafariWebExtensionHandler.swift"
+                ),
+            ),
+            (
+                "macos-wrapper/project.yml",
+                include_bytes!("../../../extensions/safari/macos-wrapper/project.yml"),
+            ),
+        ]);
+    }
 
-    fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
-
-    if family.eq_ignore_ascii_case("firefox") {
-        let manifest = include_str!("../../../extensions/firefox/manifest.json");
-        let bg = include_str!("../../../extensions/firefox/background.js");
-        let content = include_str!("../../../extensions/firefox/content.js");
-        let popup_html = include_str!("../../../extensions/firefox/popup.html");
-        let popup_js = include_str!("../../../extensions/firefox/popup.js");
-        let styles = include_str!("../../../extensions/firefox/styles.css");
-
-        let _ = fs::write(target_dir.join("manifest.json"), manifest);
-        let _ = fs::write(target_dir.join("background.js"), bg);
-        let _ = fs::write(target_dir.join("content.js"), content);
-        let _ = fs::write(target_dir.join("popup.html"), popup_html);
-        let _ = fs::write(target_dir.join("popup.js"), popup_js);
-        let _ = fs::write(target_dir.join("styles.css"), styles);
-    } else if family.eq_ignore_ascii_case("safari") {
-        let manifest = include_str!("../../../extensions/safari/manifest.json");
-        let bg = include_str!("../../../extensions/safari/background.js");
-        let content = include_str!("../../../extensions/safari/content.js");
-        let popup_html = include_str!("../../../extensions/safari/popup.html");
-        let popup_js = include_str!("../../../extensions/safari/popup.js");
-        let styles = include_str!("../../../extensions/safari/styles.css");
-
-        let _ = fs::write(target_dir.join("manifest.json"), manifest);
-        let _ = fs::write(target_dir.join("background.js"), bg);
-        let _ = fs::write(target_dir.join("content.js"), content);
-        let _ = fs::write(target_dir.join("popup.html"), popup_html);
-        let _ = fs::write(target_dir.join("popup.js"), popup_js);
-        let _ = fs::write(target_dir.join("styles.css"), styles);
-    } else {
-        let manifest = include_str!("../../../extensions/chromium/manifest.json");
-        let bg = include_str!("../../../extensions/chromium/background.js");
-        let content = include_str!("../../../extensions/chromium/content.js");
-        let popup_html = include_str!("../../../extensions/chromium/popup.html");
-        let popup_js = include_str!("../../../extensions/chromium/popup.js");
-        let styles = include_str!("../../../extensions/chromium/styles.css");
-
-        let _ = fs::write(target_dir.join("manifest.json"), manifest);
-        let _ = fs::write(target_dir.join("background.js"), bg);
-        let _ = fs::write(target_dir.join("content.js"), content);
-        let _ = fs::write(target_dir.join("popup.html"), popup_html);
-        let _ = fs::write(target_dir.join("popup.js"), popup_js);
-        let _ = fs::write(target_dir.join("styles.css"), styles);
+    let target_dir = base.join(name);
+    fs::create_dir_all(&target_dir).map_err(|e| {
+        format!(
+            "Could not create {name} extension directory {}: {e}",
+            target_dir.display()
+        )
+    })?;
+    for (relative_path, contents) in files {
+        let destination = target_dir.join(relative_path);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "Could not create extension directory {}: {e}",
+                    parent.display()
+                )
+            })?;
+        }
+        fs::write(&destination, contents).map_err(|e| {
+            format!(
+                "Could not install extension file {}: {e}",
+                destination.display()
+            )
+        })?;
     }
 
     Ok(target_dir)
+}
+
+#[cfg(test)]
+mod extension_bundle_tests {
+    use super::materialize_extension_bundle;
+    use std::fs;
+
+    #[test]
+    fn bundled_manual_install_folders_include_every_manifest_icon() {
+        let base = std::env::temp_dir().join(format!("bytex-extensions-{}", uuid::Uuid::new_v4()));
+
+        for family in ["chromium", "firefox", "safari"] {
+            let directory = materialize_extension_bundle(&base, family)
+                .expect("extension bundle should be materialized");
+            let manifest: serde_json::Value = serde_json::from_slice(
+                &fs::read(directory.join("manifest.json")).expect("manifest should exist"),
+            )
+            .expect("manifest should be valid JSON");
+
+            for icons in [
+                manifest.get("icons"),
+                manifest
+                    .get("action")
+                    .and_then(|action| action.get("default_icon")),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                for path in icons
+                    .as_object()
+                    .expect("icons should be an object")
+                    .values()
+                {
+                    let relative_path = path.as_str().expect("icon paths should be strings");
+                    assert!(
+                        directory.join(relative_path).is_file(),
+                        "{family} bundle is missing {relative_path}"
+                    );
+                }
+            }
+
+            assert!(directory.join("background.js").is_file());
+            assert!(directory.join("content.js").is_file());
+            let icon_path = directory.join("icons/16x16.png");
+            fs::write(&icon_path, b"stale icon").expect("stale icon should be replaceable");
+            materialize_extension_bundle(&base, family)
+                .expect("extension update should refresh existing files");
+            assert_eq!(
+                &fs::read(icon_path).expect("updated icon should exist")[..8],
+                b"\x89PNG\r\n\x1a\n"
+            );
+            if family == "safari" {
+                assert!(directory.join("macos-wrapper/Info.plist").is_file());
+                assert!(directory
+                    .join("macos-wrapper/SafariWebExtensionHandler.swift")
+                    .is_file());
+                assert!(directory.join("macos-wrapper/project.yml").is_file());
+            }
+        }
+
+        let _ = fs::remove_dir_all(base);
+    }
 }
 
 #[cfg(target_os = "windows")]
