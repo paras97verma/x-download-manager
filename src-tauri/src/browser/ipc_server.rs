@@ -117,6 +117,12 @@ fn normalized_download_url(value: &str) -> String {
 
 fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<DownloadItem> {
     let candidate = normalized_download_url(url);
+    let active_ids = engine
+        .active_cancellations
+        .read()
+        .keys()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
     engine.downloads.read().iter().find_map(|download| {
         let actively_managed = matches!(
             download.status,
@@ -128,7 +134,14 @@ fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<Downloa
                 | crate::engine::DownloadStatus::Seeding
         );
         let output_still_exists = crate::config::resolve_path(&download.save_path).exists();
-        if !actively_managed && !output_still_exists {
+        // A stale record with deleted partial output must not claim a browser
+        // retry as a duplicate. Keep guarding active requests that have not
+        // created their output yet.
+        let pending_without_output = download.status == crate::engine::DownloadStatus::Queued
+            || (actively_managed
+                && download.downloaded_bytes == 0
+                && active_ids.contains(&download.id));
+        if !output_still_exists && !pending_without_output {
             return None;
         }
         let matches = std::iter::once(download.url.as_str())

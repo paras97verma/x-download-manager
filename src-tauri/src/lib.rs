@@ -108,6 +108,12 @@ fn normalize_download_url(value: &str) -> String {
 
 fn find_download_by_url(engine: &DownloadEngine, url: &str) -> Option<DownloadItem> {
     let candidate = normalize_download_url(url);
+    let active_ids = engine
+        .active_cancellations
+        .read()
+        .keys()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
     engine.downloads.read().iter().find_map(|item| {
         let actively_managed = matches!(
             item.status,
@@ -122,8 +128,9 @@ fn find_download_by_url(engine: &DownloadEngine, url: &str) -> Option<DownloadIt
         // A stale active record must not block a fresh download after the user
         // deleted its partial output. Keep protecting zero-byte queued/starting
         // requests, which may not have created their destination yet.
-        let active_without_output = actively_managed && item.downloaded_bytes == 0;
-        if !output_still_exists && !active_without_output {
+        let pending_without_output = item.status == DownloadStatus::Queued
+            || (actively_managed && item.downloaded_bytes == 0 && active_ids.contains(&item.id));
+        if !output_still_exists && !pending_without_output {
             return None;
         }
         let same_url = std::iter::once(item.url.as_str())
@@ -328,6 +335,7 @@ async fn delete_download(
         let _ = std::fs::remove_file(crate::config::resolve_path(&path));
     }
     engine.downloads.write().retain(|d| d.id != id);
+    engine.persist_downloads()?;
     Ok(())
 }
 

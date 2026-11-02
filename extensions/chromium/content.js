@@ -7,6 +7,33 @@
   const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
   let bypassKeyPressed = false;
 
+  runtimeAPI.runtime.onMessage.addListener((message) => {
+    if (message?.type !== "XDM_HANDOFF_CONFIRMED") return false;
+    const host = document.createElement("div");
+    host.setAttribute("aria-live", "polite");
+    host.style.cssText = "all:initial;position:fixed;inset:16px 16px auto auto;z-index:2147483647";
+    const shadow = host.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = `
+      .toast { font: 600 13px/1.4 -apple-system,BlinkMacSystemFont,sans-serif; color:#f8fafc;
+        background:#111827; border:1px solid #22d3ee; border-radius:10px; padding:12px 16px;
+        box-shadow:0 12px 32px #0008; max-width:min(380px,calc(100vw - 32px)); }
+      .title { color:#67e8f9; margin-bottom:3px; }
+    `;
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = "Download intercepted by ByteX";
+    const detail = document.createElement("div");
+    detail.textContent = `${message.filename || "Download"} is downloading in ByteX.`;
+    toast.append(title, detail);
+    shadow.append(style, toast);
+    document.documentElement.append(host);
+    window.setTimeout(() => host.remove(), 7000);
+    return false;
+  });
+
   window.addEventListener("keydown", (e) => {
     if (e.altKey) {
       bypassKeyPressed = true;
