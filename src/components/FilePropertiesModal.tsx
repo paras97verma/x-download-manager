@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   X,
   FileText,
@@ -25,12 +25,21 @@ import {
 interface FilePropertiesModalProps {
   item: DownloadItem;
   onClose: () => void;
+  onUpdateUrl: (id: string, url: string) => Promise<void>;
 }
 
-export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, onClose }) => {
+export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, onClose, onUpdateUrl }) => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(item.checksum_sha256 || null);
   const [isHashing, setIsHashing] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState(item.url);
+  const [isUpdatingUrl, setIsUpdatingUrl] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSourceUrl(item.url);
+    setUrlError(null);
+  }, [item.id, item.url]);
 
   const copyToClipboard = (text: string, fieldName: string) => {
     navigator.clipboard?.writeText(text);
@@ -49,6 +58,18 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
       console.error("Failed to verify checksum:", e);
     } finally {
       setIsHashing(false);
+    }
+  };
+
+  const handleUpdateUrl = async () => {
+    setIsUpdatingUrl(true);
+    setUrlError(null);
+    try {
+      await onUpdateUrl(item.id, sourceUrl.trim());
+    } catch (error) {
+      setUrlError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsUpdatingUrl(false);
     }
   };
 
@@ -134,9 +155,26 @@ export const FilePropertiesModal: React.FC<FilePropertiesModalProps> = ({ item, 
                 {copiedField === "url" ? "Copied" : "Copy URL"}
               </button>
             </div>
-            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono break-all select-text">
-              {item.url}
-            </div>
+            <input
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              disabled={item.status === "completed" || isUpdatingUrl}
+              aria-label="Download source URL"
+              className="w-full p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-200 font-mono focus:outline-none focus:border-cyan-500 disabled:opacity-60"
+            />
+            {item.status !== "completed" && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] text-amber-300/80">Updating clears partial data and restarts from this link.</span>
+                <button
+                  onClick={handleUpdateUrl}
+                  disabled={isUpdatingUrl || !sourceUrl.trim() || sourceUrl.trim() === item.url}
+                  className="shrink-0 px-2.5 py-1 rounded bg-cyan-700 hover:bg-cyan-600 disabled:opacity-40 text-white text-[10px] font-semibold"
+                >
+                  {isUpdatingUrl ? "Restarting…" : "Update Link & Restart"}
+                </button>
+              </div>
+            )}
+            {urlError && <p role="alert" className="text-[10px] text-rose-300">{urlError}</p>}
           </div>
 
           {/* Save Path */}

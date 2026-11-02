@@ -78,6 +78,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const isMac =
     typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
+  const bypassKey = isMac ? "Option" : "Alt";
   const modKey = isMac ? "⌘" : "Ctrl+";
 
   const tabs = [
@@ -1010,7 +1011,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     { key: "Delete / ⌫", action: "Delete Selected", desc: "Removes selected download task from list" },
                     { key: "Enter / Double Click", action: "Open File", desc: "Opens the completed file in default OS application" },
                     { key: "Esc", action: "Deselect All / Close Dialog", desc: "Clears selection or dismisses open modals" },
-                    { key: "Hold [Alt]", action: "Bypass Browser Interception", desc: "Click link while holding Alt to let browser download normally" },
+                    { key: `Hold [${bypassKey}]`, action: "Bypass Browser Interception", desc: `Click a link while holding ${bypassKey} to let the browser download normally` },
                   ].map((s) => (
                     <div key={s.key} className="px-4 py-2.5 flex items-center justify-between gap-4 text-xs">
                       <div>

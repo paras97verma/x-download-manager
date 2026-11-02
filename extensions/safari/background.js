@@ -61,8 +61,8 @@ if (runtimeAPI.contextMenus) {
           url: targetUrl,
           referer: info.pageUrl || (tab ? tab.url : ""),
           tabTitle: tab ? tab.title : "",
-        }).then((success) => {
-          notifyCaptureResult(tab && tab.id, success, targetUrl);
+        }).then((result) => {
+          notifyCaptureResult(tab && tab.id, Boolean(result), targetUrl, result?.duplicate);
         }).catch(() => {
           notifyCaptureResult(tab && tab.id, false, targetUrl);
         });
@@ -87,8 +87,8 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       cookies: msg.cookies || null,
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
     })
-      .then((ok) => {
-        sendResponse({ success: ok });
+      .then((result) => {
+        sendResponse({ success: Boolean(result), duplicate: Boolean(result?.duplicate) });
       })
       .catch(() => {
         sendResponse({ success: false });
@@ -183,7 +183,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
     });
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
-      return result?.accepted === true && Boolean(result?.download_id);
+      return result?.accepted === true && result?.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null;
     }
   } catch (err) {
     console.warn("XDM Safari bridge HTTP fetch failed:", err);
@@ -193,7 +195,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return result?.accepted === true && Boolean(result?.download_id);
+      return result?.accepted === true && result?.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null;
     } catch (_) {
       return false;
     }
@@ -202,12 +206,13 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   return false;
 }
 
-function notifyCaptureResult(tabId, success, filename) {
+function notifyCaptureResult(tabId, success, filename, duplicate = false) {
   if (!Number.isInteger(tabId) || tabId < 0 || !runtimeAPI.tabs?.sendMessage) return;
   try {
     const result = runtimeAPI.tabs.sendMessage(tabId, {
       type: "XDM_CAPTURE_RESULT",
       success,
+      duplicate,
       filename: filename || "Download",
       url: filename || "",
     });

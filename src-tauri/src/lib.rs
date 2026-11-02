@@ -33,6 +33,114 @@ async fn add_download_task(
 }
 
 #[tauri::command]
+async fn update_download_url(
+    id: String,
+    url: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<DownloadItem, String> {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err("Download URL cannot be empty".to_string());
+    }
+    let protocol = DownloadEngine::detect_protocol(&url);
+    let supported_url = if protocol == crate::engine::DownloadProtocol::Magnet {
+        url.to_lowercase().starts_with("magnet:?")
+    } else {
+        url::Url::parse(&url)
+            .map(|parsed| matches!(parsed.scheme(), "http" | "https" | "ftp" | "ftps" | "sftp"))
+            .unwrap_or(false)
+    };
+    if !supported_url {
+        return Err("Unsupported download URL".to_string());
+    }
+
+    let (save_path, old_torrent_path, current_status, downloaded_bytes) = engine
+        .downloads
+        .read()
+        .iter()
+        .find(|download| download.id == id)
+        .map(|download| {
+            (
+                download.save_path.clone(),
+                download.torrent_file_path.clone(),
+                download.status.clone(),
+                download.downloaded_bytes,
+            )
+        })
+        .ok_or_else(|| "Download not found".to_string())?;
+    if current_status == DownloadStatus::Completed {
+        return Err("A completed download cannot have its source URL changed".to_string());
+    }
+
+    let cancel = { engine.active_cancellations.write().remove(&id) };
+    if let Some(cancel) = cancel {
+        let _ = cancel.send(true);
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+    if downloaded_bytes > 0 {
+        let resolved_path = crate::config::resolve_path(&save_path);
+        match std::fs::symlink_metadata(&resolved_path) {
+            Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(&resolved_path)
+                .map_err(|e| format!("Could not clear partial download: {e}"))?,
+            Ok(_) => std::fs::remove_file(&resolved_path)
+                .map_err(|e| format!("Could not clear partial download: {e}"))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("Could not access partial download: {e}")),
+        }
+    }
+    if let Some(path) = old_torrent_path {
+        let _ = std::fs::remove_file(crate::config::resolve_path(&path));
+    }
+
+    let updated = {
+        let mut downloads = engine.downloads.write();
+        let download = downloads
+            .iter_mut()
+            .find(|download| download.id == id)
+            .ok_or_else(|| "Download not found".to_string())?;
+        download.url = url;
+        download.resolved_url = None;
+        download.protocol = protocol;
+        download.total_bytes = 0;
+        download.downloaded_bytes = 0;
+        download.speed_bps = 0;
+        download.upload_speed_bps = 0;
+        download.eta_seconds = None;
+        download.status = DownloadStatus::Paused;
+        download.segments.clear();
+        download.torrent_meta = None;
+        download.torrent_file_path = None;
+        download.torrent_selected_files = None;
+        download.completed_at = None;
+        download.error_message = None;
+        download
+            .transfer_log
+            .push("Source URL changed; restarting from the new source.".to_string());
+        download.clone()
+    };
+    let req = NewDownloadRequest {
+        url: updated.url.clone(),
+        filename: Some(updated.filename.clone()),
+        category: Some(updated.category.clone()),
+        save_path: Some(updated.save_path.clone()),
+        threads_count: Some(updated.threads_count),
+        queue_id: Some(updated.queue_id.clone()),
+        start_immediately: true,
+        source_browser: updated.source_browser.clone(),
+        referer: updated.referer.clone(),
+        cookies: updated.cookies.clone(),
+        user_agent: updated.custom_headers.get("User-Agent").cloned(),
+        custom_headers: Some(updated.custom_headers.clone()),
+        auth_username: None,
+        auth_password: None,
+        sequential_torrent: None,
+        torrent_file_data: None,
+        torrent_selected_files: None,
+    };
+    Ok(engine.inner().start_download_execution(updated, &req).await)
+}
+
+#[tauri::command]
 fn pause_download(id: String, engine: State<'_, Arc<DownloadEngine>>) -> Result<(), String> {
     if let Some(tx) = engine.active_cancellations.write().remove(&id) {
         let _ = tx.send(true);
@@ -469,6 +577,103 @@ fn format_speed_bps(bps: u64) -> String {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn compact_speed_bps(bps: u64) -> String {
+    if bps >= 1_000_000_000 {
+        format!("{:.1}G", bps as f64 / 1_000_000_000.0)
+    } else if bps >= 10_000_000 {
+        format!("{:.0}M", bps as f64 / 1_000_000.0)
+    } else if bps >= 1_000_000 {
+        format!("{:.1}M", bps as f64 / 1_000_000.0)
+    } else if bps >= 1_000 {
+        format!("{:.0}K", bps as f64 / 1_000.0)
+    } else {
+        bps.to_string()
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_speed_tray_icon(download_bps: u64, upload_bps: u64) -> tauri::image::Image<'static> {
+    const SIZE: usize = 64;
+    let mut rgba = vec![0u8; SIZE * SIZE * 4];
+    for pixel in rgba.chunks_exact_mut(4) {
+        pixel.copy_from_slice(&[10, 17, 30, 255]);
+    }
+
+    fn paint(rgba: &mut [u8], x: usize, y: usize, color: [u8; 4]) {
+        if x < 64 && y < 64 {
+            let offset = (y * 64 + x) * 4;
+            rgba[offset..offset + 4].copy_from_slice(&color);
+        }
+    }
+
+    fn draw_text(rgba: &mut [u8], text: &str, y: usize, color: [u8; 4]) {
+        for (index, character) in text.chars().take(6).enumerate() {
+            let rows: [u8; 5] = match character {
+                '0' => [7, 5, 5, 5, 7],
+                '1' => [2, 6, 2, 2, 7],
+                '2' => [7, 1, 7, 4, 7],
+                '3' => [7, 1, 7, 1, 7],
+                '4' => [5, 5, 7, 1, 1],
+                '5' => [7, 4, 7, 1, 7],
+                '6' => [7, 4, 7, 5, 7],
+                '7' => [7, 1, 2, 2, 2],
+                '8' => [7, 5, 7, 5, 7],
+                '9' => [7, 5, 7, 1, 7],
+                'D' => [6, 5, 5, 5, 6],
+                'U' => [5, 5, 5, 5, 7],
+                'K' => [5, 5, 6, 5, 5],
+                'M' => [5, 7, 7, 5, 5],
+                'G' => [7, 4, 5, 5, 7],
+                '.' => [0, 0, 0, 0, 2],
+                _ => [0; 5],
+            };
+            let left = 7 + index * 9;
+            for (row, bits) in rows.iter().enumerate() {
+                for col in 0..3 {
+                    if bits & (1 << (2 - col)) != 0 {
+                        for scale_y in 0..2 {
+                            for scale_x in 0..2 {
+                                paint(rgba, left + col * 2 + scale_x, y + row * 2 + scale_y, color);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for x in 4..60 {
+        paint(&mut rgba, x, 31, [38, 55, 77, 255]);
+    }
+    draw_text(
+        &mut rgba,
+        &format!("D{}", compact_speed_bps(download_bps)),
+        8,
+        [75, 224, 216, 255],
+    );
+    draw_text(
+        &mut rgba,
+        &format!("U{}", compact_speed_bps(upload_bps)),
+        39,
+        [102, 231, 166, 255],
+    );
+    tauri::image::Image::new_owned(rgba, SIZE as u32, SIZE as u32)
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod tray_speed_tests {
+    use super::compact_speed_bps;
+
+    #[test]
+    fn formats_rates_for_the_compact_tray_icon() {
+        assert_eq!(compact_speed_bps(0), "0");
+        assert_eq!(compact_speed_bps(320_000), "320K");
+        assert_eq!(compact_speed_bps(1_500_000), "1.5M");
+        assert_eq!(compact_speed_bps(2_400_000_000), "2.4G");
+    }
+}
+
 pub fn run_app() {
     let engine = Arc::new(DownloadEngine::new());
 
@@ -503,57 +708,65 @@ pub fn run_app() {
                 let _ = app.set_menu(native_menu);
             }
 
-            // Setup Tray Icon & Context Menu
-            if let Ok(show_i) = tauri::menu::MenuItem::with_id(
-                app,
-                "show",
-                "Show ByteX Download Manager",
-                true,
-                None::<&str>,
-            ) {
-                if let Ok(quit_i) =
-                    tauri::menu::MenuItem::with_id(app, "quit", "Quit ByteX", true, None::<&str>)
-                {
-                    if let Ok(menu) = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i]) {
-                        let mut builder = tauri::tray::TrayIconBuilder::new()
-                            .menu(&menu)
-                            .show_menu_on_left_click(false)
-                            .on_menu_event(|app, event| match event.id.as_ref() {
-                                "quit" => {
-                                    app.exit(0);
-                                }
-                                "show" => {
-                                    use tauri::Manager;
-                                    if let Some(window) = app.get_webview_window("main") {
-                                        let _ = window.show();
-                                        let _ = window.unminimize();
-                                        let _ = window.set_focus();
+            // Keep the macOS Dock as the app's only persistent icon. Windows and Linux use a tray icon.
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Setup Tray Icon & Context Menu
+                if let Ok(show_i) = tauri::menu::MenuItem::with_id(
+                    app,
+                    "show",
+                    "Show ByteX Download Manager",
+                    true,
+                    None::<&str>,
+                ) {
+                    if let Ok(quit_i) = tauri::menu::MenuItem::with_id(
+                        app,
+                        "quit",
+                        "Quit ByteX",
+                        true,
+                        None::<&str>,
+                    ) {
+                        if let Ok(menu) = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i]) {
+                            let mut builder = tauri::tray::TrayIconBuilder::new()
+                                .menu(&menu)
+                                .show_menu_on_left_click(false)
+                                .on_menu_event(|app, event| match event.id.as_ref() {
+                                    "quit" => {
+                                        app.exit(0);
                                     }
-                                }
-                                _ => {}
-                            })
-                            .on_tray_icon_event(|tray, event| {
-                                if let tauri::tray::TrayIconEvent::Click {
-                                    button: tauri::tray::MouseButton::Left,
-                                    button_state: tauri::tray::MouseButtonState::Up,
-                                    ..
-                                } = event
-                                {
-                                    let app = tray.app_handle();
-                                    use tauri::Manager;
-                                    if let Some(window) = app.get_webview_window("main") {
-                                        let _ = window.show();
-                                        let _ = window.unminimize();
-                                        let _ = window.set_focus();
+                                    "show" => {
+                                        use tauri::Manager;
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.unminimize();
+                                            let _ = window.set_focus();
+                                        }
                                     }
-                                }
-                            });
+                                    _ => {}
+                                })
+                                .on_tray_icon_event(|tray, event| {
+                                    if let tauri::tray::TrayIconEvent::Click {
+                                        button: tauri::tray::MouseButton::Left,
+                                        button_state: tauri::tray::MouseButtonState::Up,
+                                        ..
+                                    } = event
+                                    {
+                                        let app = tray.app_handle();
+                                        use tauri::Manager;
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let _ = window.show();
+                                            let _ = window.unminimize();
+                                            let _ = window.set_focus();
+                                        }
+                                    }
+                                });
 
-                        if let Some(icon) = app.default_window_icon() {
-                            builder = builder.icon(icon.clone());
+                            if let Some(icon) = app.default_window_icon() {
+                                builder = builder.icon(icon.clone());
+                            }
+
+                            let _ = builder.build(app);
                         }
-
-                        let _ = builder.build(app);
                     }
                 }
             }
@@ -574,40 +787,86 @@ pub fn run_app() {
                     loop {
                         ticker.tick().await;
 
-                        let (active_count, total_speed_bps): (usize, u64) = {
+                        let (active_count, total_down_bps, total_torrent_up_bps): (
+                            usize,
+                            u64,
+                            u64,
+                        ) = {
                             let dls = tray_engine.downloads.read();
                             let active: Vec<_> = dls
                                 .iter()
-                                .filter(|d| d.status == crate::engine::DownloadStatus::Downloading)
+                                .filter(|d| {
+                                    matches!(
+                                        d.status,
+                                        crate::engine::DownloadStatus::Connecting
+                                            | crate::engine::DownloadStatus::Authenticating
+                                            | crate::engine::DownloadStatus::Downloading
+                                            | crate::engine::DownloadStatus::Merging
+                                            | crate::engine::DownloadStatus::Seeding
+                                    )
+                                })
                                 .collect();
-                            (active.len(), active.iter().map(|d| d.speed_bps).sum())
+                            let down = active
+                                .iter()
+                                .filter(|d| d.status != crate::engine::DownloadStatus::Seeding)
+                                .map(|d| d.speed_bps)
+                                .sum();
+                            let up = active
+                                .iter()
+                                .filter(|d| {
+                                    matches!(
+                                        d.protocol,
+                                        crate::engine::DownloadProtocol::BitTorrent
+                                            | crate::engine::DownloadProtocol::Magnet
+                                    )
+                                })
+                                .map(|d| d.upload_speed_bps)
+                                .sum();
+                            (active.len(), down, up)
                         };
 
+                        #[cfg(not(target_os = "macos"))]
                         let tooltip = if active_count > 0 {
                             format!(
-                                "ByteX Download Manager — {} active — ↓ {}",
+                                "ByteX Download Manager — {} active — ↓ {} — ↑ {} torrent",
                                 active_count,
-                                format_speed_bps(total_speed_bps)
+                                format_speed_bps(total_down_bps),
+                                format_speed_bps(total_torrent_up_bps)
                             )
                         } else {
                             "ByteX Download Manager — Idle".to_string()
                         };
 
+                        #[cfg(not(target_os = "macos"))]
                         let short_title = if active_count > 0 {
-                            format!("↓ {}", format_speed_bps(total_speed_bps))
+                            format!(
+                                "↓ {} ↑ {}",
+                                format_speed_bps(total_down_bps),
+                                format_speed_bps(total_torrent_up_bps)
+                            )
                         } else {
                             String::new()
                         };
 
-                        // Update default tray icon (id = "" in Tauri 2)
+                        // Update default tray icon (id = "" in Tauri 2) on Windows/Linux.
+                        #[cfg(not(target_os = "macos"))]
                         if let Some(tray) = app_handle.tray_by_id("") {
                             let _ = tray.set_tooltip(Some(&tooltip));
                             let _ = tray.set_title(Some(&short_title));
+                            let _ = tray.set_icon(Some(build_speed_tray_icon(
+                                total_down_bps,
+                                total_torrent_up_bps,
+                            )));
                         }
                         #[cfg(target_os = "macos")]
                         if let Some(window) = app_handle.get_webview_window("main") {
-                            let badge = (active_count > 0)
-                                .then(|| format!("↓ {}", format_speed_bps(total_speed_bps)));
+                            let badge = (active_count > 0).then(|| {
+                                format!(
+                                    "↓ {} ↑ {}",
+                                    format_speed_bps(total_down_bps),
+                                    format_speed_bps(total_torrent_up_bps)
+                                )
+                            });
                             let _ = window.set_badge_label(badge);
                         }
                     }
@@ -657,6 +916,7 @@ pub fn run_app() {
         .invoke_handler(tauri::generate_handler![
             get_downloads,
             add_download_task,
+            update_download_url,
             pause_download,
             resume_download,
             delete_download,

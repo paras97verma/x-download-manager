@@ -20,6 +20,7 @@ let state = {
     "MOV", "MP3", "FLAC", "WAV", "PDF", "DOCX", "XLSX", "PPTX", "TORRENT"
   ],
   ignoredDomains: ["localhost", "127.0.0.1"],
+  detectedBrowser: null,
 };
 
 // Periodically sync settings from running XDM Desktop App
@@ -32,6 +33,7 @@ async function syncWithDesktopApp() {
       state.minFileSizeKb = cfg.min_file_size_kb ?? state.minFileSizeKb;
       state.interceptedExtensions = cfg.intercepted_extensions ?? state.interceptedExtensions;
       state.ignoredDomains = cfg.ignored_domains ?? state.ignoredDomains;
+      state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
     }
   } catch (_) {
     // Desktop app will be woken via Native Messaging when a download occurs
@@ -76,9 +78,10 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       url: msg.url,
       referer: msg.referer || (sender.tab ? sender.tab.url : ""),
       tabTitle: msg.tabTitle || (sender.tab ? sender.tab.title : ""),
-    }).then(async (ok) => {
-      await notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url);
-      sendResponse({ success: ok });
+    }).then(async (result) => {
+      const ok = Boolean(result);
+      await notifyCaptureResult(sender.tab && sender.tab.id, ok, msg.filename || msg.url, result?.duplicate);
+      sendResponse({ success: ok, duplicate: Boolean(result?.duplicate) });
     }).catch(async () => {
       await notifyCaptureResult(sender.tab && sender.tab.id, false, msg.filename || msg.url);
       sendResponse({ success: false });
@@ -178,6 +181,7 @@ async function getCookieHeaderForUrl(url, referer) {
 }
 
 async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
+  await syncWithDesktopApp();
   const cookies = await getCookieHeaderForUrl(url, referer);
 
   // Extract embedded FTP/HTTP user:password credentials if present
@@ -205,7 +209,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     auth_password: authPass,
     is_torrent: isTorrent,
     user_agent: navigator.userAgent,
-    browser: detectBrowserFamily(),
+    browser: state.detectedBrowser || detectBrowserFamily(),
     tab_title: tabTitle || null,
   };
 
@@ -218,7 +222,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     });
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
-      return result?.accepted === true && Boolean(result?.download_id);
+      return result?.accepted === true && result?.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null;
     }
   } catch (_) {
     // Fallback to Native Messaging
@@ -228,7 +234,9 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return result?.accepted === true && Boolean(result?.download_id);
+      return result?.accepted === true && result?.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null;
     } catch (_) {
       return false;
     }
@@ -259,7 +267,7 @@ async function handleDownloadInterception(downloadItem) {
   }
 
   const url = downloadItem.finalUrl || downloadItem.url;
-  const accepted = await dispatchToXdm({
+  const result = await dispatchToXdm({
     url,
     filename: downloadItem.filename || null,
     fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
@@ -267,8 +275,8 @@ async function handleDownloadInterception(downloadItem) {
     referer: downloadItem.referrer || null,
   });
 
-  if (accepted) {
-    await notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename);
+  if (result) {
+    await notifyCaptureResult(downloadItem.tabId, true, downloadItem.filename, result.duplicate);
     try {
       runtimeAPI.downloads.cancel(downloadItem.id);
       if (runtimeAPI.downloads.erase) {
@@ -327,10 +335,11 @@ function detectBrowserFamily() {
   return "Chromium";
 }
 
-async function notifyCaptureResult(tabId, success, filename) {
+async function notifyCaptureResult(tabId, success, filename, duplicate = false) {
   const message = {
     type: "XDM_CAPTURE_RESULT",
     success,
+    duplicate,
     filename: filename || "Download",
   };
   let delivered = false;
@@ -358,7 +367,9 @@ async function notifyCaptureResult(tabId, success, filename) {
   }
 
   if (!delivered && runtimeAPI.notifications?.create) {
-    const status = success
+    const status = duplicate
+      ? "Already added to ByteX"
+      : success
       ? "Download started with ByteX"
       : "ByteX could not start; the browser download continues";
     try {
@@ -383,7 +394,9 @@ function renderCaptureToast(message) {
   const shadow = host.attachShadow({ mode: "closed" });
   const toast = document.createElement("div");
   const filename = (message.filename || "Download").split(/[\\/]/).pop();
-  const status = message.success
+  const status = message.duplicate
+    ? "Already added to ByteX"
+    : message.success
     ? "Download started with ByteX"
     : "ByteX could not start; browser download continues";
   toast.textContent = `${message.success ? "✓" : "⚠"} ${status} · ${filename}`;

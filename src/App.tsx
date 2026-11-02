@@ -13,6 +13,7 @@ import {
   DEFAULT_SETTINGS,
   INITIAL_BROWSERS,
   apiAddDownload,
+  apiUpdateDownloadUrl,
   apiDeleteDownload,
   apiGetBrowserStatuses,
   apiGetDownloads,
@@ -933,6 +934,11 @@ export const App: React.FC = () => {
         <FilePropertiesModal
           item={propertiesItem}
           onClose={() => setPropertiesItem(null)}
+          onUpdateUrl={async (id, url) => {
+            const updated = await apiUpdateDownloadUrl(id, url);
+            setDownloads((prev) => prev.map((download) => download.id === id ? updated : download));
+            setPropertiesItem(updated);
+          }}
         />
       )}
 

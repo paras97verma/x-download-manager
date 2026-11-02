@@ -15,6 +15,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use tower_http::cors::CorsLayer;
 
+use crate::browser::{detect_browsers, BrowserStatus, SUPPORTED_BROWSERS};
 use crate::engine::{DownloadEngine, NewDownloadRequest};
 
 static LAST_BROWSER_HEARTBEATS: OnceLock<RwLock<HashMap<String, Instant>>> = OnceLock::new();
@@ -69,6 +70,68 @@ pub struct IpcStatusResponse {
     pub intercepted_extensions: Vec<String>,
     pub ignored_domains: Vec<String>,
     pub bypass_key: String,
+    pub browser_name: Option<String>,
+}
+
+fn resolve_browser_name(hint: &str, settings: &crate::config::AppSettings) -> String {
+    let matching_hint = SUPPORTED_BROWSERS
+        .iter()
+        .find(|(id, name, _)| id.eq_ignore_ascii_case(hint) || name.eq_ignore_ascii_case(hint));
+    let chromium_hint = matching_hint
+        .map(|(_, _, family)| *family == "chromium")
+        .unwrap_or_else(|| hint.to_lowercase().contains("chrom"));
+    if chromium_hint {
+        let detected: Vec<BrowserStatus> = detect_browsers(settings)
+            .into_iter()
+            .filter(|b| b.family == "chromium" && b.detected_installed)
+            .collect();
+        let candidates: Vec<(&str, &str)> = detected
+            .iter()
+            .map(|b| (b.id.as_str(), b.display_name.as_str()))
+            .collect();
+        return choose_chromium_name(hint, matching_hint.map(|(_, name, _)| *name), &candidates);
+    }
+    matching_hint
+        .map(|(_, name, _)| (*name).to_string())
+        .unwrap_or_else(|| hint.to_string())
+}
+
+fn choose_chromium_name(
+    hint: &str,
+    canonical_hint: Option<&str>,
+    installed: &[(&str, &str)],
+) -> String {
+    if installed.len() == 1 {
+        return installed[0].1.to_string();
+    }
+    canonical_hint.unwrap_or(hint).to_string()
+}
+
+fn normalized_download_url(value: &str) -> String {
+    match url::Url::parse(value.trim()) {
+        Ok(mut parsed) => {
+            parsed.set_fragment(None);
+            parsed.to_string()
+        }
+        Err(_) => value.trim().to_string(),
+    }
+}
+
+fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<(String, String)> {
+    let candidate = normalized_download_url(url);
+    engine.downloads.read().iter().find_map(|download| {
+        if download.status == crate::engine::DownloadStatus::Failed {
+            return None;
+        }
+        let matches = std::iter::once(download.url.as_str())
+            .chain(download.resolved_url.as_deref())
+            .any(|existing| same_download_url(&candidate, existing));
+        matches.then(|| (download.id.clone(), download.filename.clone()))
+    })
+}
+
+fn same_download_url(normalized_candidate: &str, existing: &str) -> bool {
+    normalized_download_url(existing) == normalized_candidate
 }
 
 pub async fn start_browser_ipc_server(engine: Arc<DownloadEngine>, port: u16) {
@@ -95,6 +158,9 @@ async fn handle_status(
         record_browser_heartbeat(browser);
     }
     let st = engine.settings.read();
+    let browser_name = params
+        .get("browser")
+        .map(|hint| resolve_browser_name(hint, &st));
     Json(IpcStatusResponse {
         app: "ByteX Download Manager".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
@@ -103,6 +169,7 @@ async fn handle_status(
         intercepted_extensions: st.browser.intercepted_extensions.clone(),
         ignored_domains: st.browser.ignored_domains.clone(),
         bypass_key: st.browser.bypass_key.clone(),
+        browser_name,
     })
 }
 
@@ -115,7 +182,16 @@ async fn handle_intercept(
             serde_json::json!({ "accepted": false, "reason": "Download interception is disabled" }),
         );
     }
-    record_browser_heartbeat(&payload.browser);
+    let browser_name = resolve_browser_name(&payload.browser, &engine.settings.read());
+    record_browser_heartbeat(&browser_name);
+    if let Some((download_id, filename)) = find_duplicate_download(&engine, &payload.url) {
+        return Json(serde_json::json!({
+            "accepted": true,
+            "duplicate": true,
+            "download_id": download_id,
+            "filename": filename
+        }));
+    }
     let is_torrent = payload.is_torrent.unwrap_or(false)
         || payload
             .url
@@ -139,7 +215,7 @@ async fn handle_intercept(
         threads_count: None,
         queue_id: Some("main-queue".to_string()),
         start_immediately: true,
-        source_browser: Some(payload.browser),
+        source_browser: Some(browser_name),
         referer: payload.referer,
         cookies: payload.cookies,
         user_agent: payload.user_agent,
@@ -165,4 +241,50 @@ async fn handle_list_downloads(
 ) -> Json<serde_json::Value> {
     let list = engine.downloads.read().clone();
     Json(serde_json::json!({ "downloads": list }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{choose_chromium_name, normalized_download_url, same_download_url};
+
+    #[test]
+    fn normalizes_equivalent_download_urls() {
+        assert_eq!(
+            normalized_download_url("HTTPS://Example.com:443/file.zip#download"),
+            normalized_download_url("https://example.com/file.zip")
+        );
+    }
+
+    #[test]
+    fn preserves_distinct_download_queries() {
+        assert_ne!(
+            normalized_download_url("https://example.com/file.zip?token=one"),
+            normalized_download_url("https://example.com/file.zip?token=two")
+        );
+    }
+
+    #[test]
+    fn duplicate_capture_matches_normalized_urls() {
+        let candidate = normalized_download_url("https://Example.com/file.zip#download");
+        assert!(same_download_url(
+            &candidate,
+            "https://example.com:443/file.zip"
+        ));
+    }
+
+    #[test]
+    fn identifies_unique_installed_chromium_browser() {
+        assert_eq!(
+            choose_chromium_name("Chromium", None, &[("dia", "Dia Browser")]),
+            "Dia Browser"
+        );
+        assert_eq!(
+            choose_chromium_name(
+                "Chromium",
+                Some("Google Chrome"),
+                &[("chrome", "Google Chrome"), ("dia", "Dia Browser")]
+            ),
+            "Google Chrome"
+        );
+    }
 }

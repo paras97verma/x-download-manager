@@ -8,7 +8,7 @@
 
   runtimeAPI.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || message.type !== "XDM_CAPTURE_RESULT") return false;
-    showXdmCaptureToast(message.url || "", "", message.success);
+    showXdmCaptureToast(message.url || "", message.filename || "", message.success, message.duplicate);
     sendResponse?.({ received: true });
     return false;
   });
@@ -131,7 +131,7 @@
     return false;
   }
 
-  function showXdmCaptureToast(url, filename, success) {
+  function showXdmCaptureToast(url, filename, success, duplicate = false) {
     try {
       const existing = document.getElementById("xdm-capture-toast");
       if (existing) existing.remove();
@@ -153,7 +153,11 @@
 
       const titleEl = document.createElement("div");
       titleEl.style.cssText = "font-weight:bold;font-size:12px;color:#ffffff;";
-      titleEl.textContent = success ? "Download started in ByteX" : "ByteX could not start; browser download resumed";
+      titleEl.textContent = duplicate
+        ? "Already added to ByteX"
+        : success
+        ? "Download started in ByteX"
+        : "ByteX could not start; browser download resumed";
 
       const nameEl = document.createElement("div");
       nameEl.style.cssText =
@@ -209,16 +213,16 @@
     try {
       runtimeAPI.runtime.sendMessage(payload, (res) => {
         if (!runtimeAPI.runtime.lastError && res && res.success) {
-          showXdmCaptureToast(targetUrl, filename, true);
-        } else fallbackDirectIpc(payload).then((ok) => finishCapture(ok, targetUrl, filename, fallback));
+          showXdmCaptureToast(targetUrl, filename, true, res.duplicate);
+        } else fallbackDirectIpc(payload).then((result) => finishCapture(Boolean(result), targetUrl, filename, fallback, result?.duplicate));
       });
     } catch (_) {
-      fallbackDirectIpc(payload).then((ok) => finishCapture(ok, targetUrl, filename, fallback));
+      fallbackDirectIpc(payload).then((result) => finishCapture(Boolean(result), targetUrl, filename, fallback, result?.duplicate));
     }
   }
 
-  function finishCapture(success, url, filename, fallback) {
-    showXdmCaptureToast(url, filename, success);
+  function finishCapture(success, url, filename, fallback, duplicate = false) {
+    showXdmCaptureToast(url, filename, success, duplicate);
     if (!success && fallback) fallback();
   }
 
@@ -237,7 +241,9 @@
           browser: /orion/i.test(navigator.userAgent || "") ? "Orion" : "Safari",
           tab_title: payload.tabTitle,
         }),
-      }).then((response) => response.json()).then((result) => result && result.accepted === true && Boolean(result.download_id)).catch(() => false);
+      }).then((response) => response.json()).then((result) => result && result.accepted === true && result.download_id
+        ? { duplicate: Boolean(result.duplicate) }
+        : null).catch(() => null);
     } catch (_) {}
     return Promise.resolve(false);
   }

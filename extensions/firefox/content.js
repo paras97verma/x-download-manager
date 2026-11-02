@@ -90,7 +90,9 @@
     const shadow = host.attachShadow({ mode: "closed" });
     const toast = document.createElement("div");
     const filename = (message.filename || "Download").split(/[\\/]/).pop();
-    const status = message.success
+    const status = message.duplicate
+      ? "Already added to ByteX"
+      : message.success
       ? "Download started with ByteX"
       : "ByteX could not start; browser download continues";
     toast.textContent = `${message.success ? "✓" : "⚠"} ${status} · ${filename}`;
