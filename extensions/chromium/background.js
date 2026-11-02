@@ -16,11 +16,6 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
 let state = {
   interceptEnabled: true,
   desktopIntegrationEnabled: true,
-  interceptedExtensions: [
-    "ZIP", "RAR", "7Z", "TAR", "GZ", "EXE", "MSI", "DMG", "PKG", "DEB", "RPM",
-    "APPIMAGE", "ISO", "MP4", "MKV", "WEBM", "AVI", "MOV", "MP3", "FLAC", "WAV",
-    "PDF", "DOCX", "XLSX", "PPTX", "TORRENT",
-  ],
   ignoredDomains: ["localhost", "127.0.0.1"],
   detectedBrowser: null,
 };
@@ -51,9 +46,6 @@ async function syncWithDesktopApp() {
       if (res.ok) {
         const cfg = await res.json();
         state.desktopIntegrationEnabled = cfg.intercept_enabled !== false;
-        if (Array.isArray(cfg.intercepted_extensions)) {
-          state.interceptedExtensions = cfg.intercepted_extensions.map((ext) => String(ext).replace(/^\./, "").toUpperCase());
-        }
         if (Array.isArray(cfg.ignored_domains)) state.ignoredDomains = cfg.ignored_domains;
         state.detectedBrowser = cfg.browser_name || state.detectedBrowser;
       }
@@ -117,12 +109,12 @@ function shouldInterceptDownload(downloadItem) {
   try {
     const parsed = new URL(url);
     if (state.ignoredDomains.some((domain) => parsed.hostname === domain || parsed.hostname.endsWith(`.${domain}`))) return false;
-    // Only browser-managed network downloads can be fetched again by ByteX.
-    // Blob/data downloads are page-local and cannot be replayed by the app.
+    // The browser's download event already identifies an actual download, so
+    // filename and extension filters would miss extensionless or uncommon files.
+    // ByteX can fetch HTTP, HTTPS, and FTP URLs; page-local data/blob URLs cannot
+    // be replayed by its network download engine.
     if (!["http:", "https:", "ftp:"].includes(parsed.protocol)) return false;
-    const itemFilename = downloadItem.filename || decodeURIComponent(parsed.pathname.split("/").pop() || "");
-    const extension = itemFilename.split(/[\\/]/).pop()?.split(".").pop()?.toUpperCase();
-    return Boolean(extension && state.interceptedExtensions.includes(extension));
+    return true;
   } catch (_) {
     return false;
   }
@@ -197,7 +189,7 @@ async function getCookieHeaderForUrl(url, referer) {
     } catch (_) {}
   }
 
-  // Intercept late: merge cookies from landing page (Referer) and resolved CDN stream URL
+  // Intercept late: merge cookies from landing page (Referer) and resolved download URL.
   if (referer) {
     await collectCookies(referer);
   }
