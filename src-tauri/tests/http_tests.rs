@@ -103,6 +103,8 @@ async fn test_http_download_client_sends_saved_site_auth() {
     engine.settings.write().site_credentials = vec![credential];
     let item = engine.add_download(NewDownloadRequest {
         url: format!("http://{address}/file.zip"),
+        final_url: None,
+        redirect_chain: Vec::new(),
         filename: Some("file.zip".into()),
         category: None,
         save_path: Some(
@@ -119,6 +121,9 @@ async fn test_http_download_client_sends_saved_site_auth() {
         cookies: None,
         user_agent: None,
         custom_headers: None,
+        request_method: "GET".to_string(),
+        request_body: None,
+        browser_intercepted: false,
         auth_username: None,
         auth_password: None,
         sequential_torrent: None,

@@ -255,6 +255,8 @@ async fn update_download_url(
     };
     let req = NewDownloadRequest {
         url: updated.url.clone(),
+        final_url: updated.resolved_url.clone(),
+        redirect_chain: updated.redirect_chain.clone(),
         filename: Some(updated.filename.clone()),
         category: Some(updated.category.clone()),
         save_path: Some(updated.save_path.clone()),
@@ -266,6 +268,9 @@ async fn update_download_url(
         cookies: updated.cookies.clone(),
         user_agent: updated.custom_headers.get("User-Agent").cloned(),
         custom_headers: Some(updated.custom_headers.clone()),
+        request_method: updated.request_method.clone(),
+        request_body: updated.request_body.clone(),
+        browser_intercepted: updated.browser_intercepted,
         auth_username: None,
         auth_password: None,
         sequential_torrent: None,

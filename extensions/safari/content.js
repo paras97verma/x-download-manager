@@ -33,6 +33,9 @@
       const url = new URL(anchor.href, window.location.href);
       if (!["http:", "https:", "ftp:"].includes(url.protocol)) return false;
       if (ignoredDomains.some((domain) => url.hostname === domain || url.hostname.endsWith(`.${domain}`))) return false;
+      // An explicit download attribute identifies a download even when the
+      // URL and supplied filename have no extension.
+      if (anchor.hasAttribute("download")) return true;
       const segment = url.pathname.split("/").pop() || "";
       const downloadName = anchor.getAttribute("download") || segment;
       const extension = downloadName.split(/[\\/]/).pop()?.split(".").pop()?.toUpperCase();
@@ -55,7 +58,6 @@
       url: originalUrl,
       filename: anchor.getAttribute("download") || null,
       referer: window.location.href,
-      cookies: document.cookie || null,
       tabTitle: document.title,
     }, (response) => {
       if (runtimeAPI.runtime.lastError || !response?.success) {

@@ -18,7 +18,9 @@ use tauri::{Emitter, Manager};
 use tower_http::cors::CorsLayer;
 
 use crate::browser::{detect_browsers, BrowserStatus, SUPPORTED_BROWSERS};
-use crate::engine::{DownloadEngine, DownloadItem, DuplicateDownloadNotice, NewDownloadRequest};
+use crate::engine::{
+    DownloadEngine, DownloadItem, DownloadRedirect, DuplicateDownloadNotice, NewDownloadRequest,
+};
 
 static LAST_BROWSER_HEARTBEATS: OnceLock<RwLock<HashMap<String, Instant>>> = OnceLock::new();
 static UPDATE_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
@@ -50,6 +52,9 @@ pub fn is_browser_connected(browser_id: &str, display_name: &str) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserInterceptPayload {
     pub url: String,
+    pub original_url: Option<String>,
+    pub final_url: Option<String>,
+    pub redirects: Option<Vec<DownloadRedirect>>,
     pub filename: Option<String>,
     pub file_size: Option<u64>,
     pub mime_type: Option<String>,
@@ -57,6 +62,12 @@ pub struct BrowserInterceptPayload {
     pub cookies: Option<String>,
     pub user_agent: Option<String>,
     pub headers: Option<HashMap<String, String>>,
+    pub method: Option<String>,
+    pub body_base64: Option<String>,
+    pub request_replayable: Option<bool>,
+    pub request_unavailable_reason: Option<String>,
+    pub response_headers: Option<HashMap<String, String>>,
+    pub response_status: Option<u16>,
     pub browser: String, // "chrome" | "firefox" | "safari" | "brave" | "edge"
     pub tab_title: Option<String>,
     pub auth_username: Option<String>,
@@ -134,6 +145,9 @@ fn find_duplicate_download(engine: &DownloadEngine, url: &str) -> Option<Downloa
                 | crate::engine::DownloadStatus::Seeding
         );
         let output_still_exists = crate::config::resolve_path(&download.save_path).exists();
+        if download.status == crate::engine::DownloadStatus::Failed {
+            return None;
+        }
         // A stale record with deleted partial output must not claim a browser
         // retry as a duplicate. Keep guarding active requests that have not
         // created their output yet.
@@ -155,6 +169,59 @@ fn same_download_url(normalized_candidate: &str, existing: &str) -> bool {
     normalized_download_url(existing) == normalized_candidate
 }
 
+fn redacted_duplicate_request(mut request: NewDownloadRequest) -> NewDownloadRequest {
+    if request.source_browser.is_none() {
+        return request;
+    }
+    request.cookies = None;
+    request.referer = None;
+    request.auth_username = None;
+    request.auth_password = None;
+    request.request_body = None;
+    if let Some(headers) = request.custom_headers.as_mut() {
+        headers.retain(|name, _| {
+            let lower = name.to_ascii_lowercase();
+            !(lower == "cookie"
+                || lower == "authorization"
+                || lower == "proxy-authorization"
+                || lower.starts_with("x-auth")
+                || lower.starts_with("x-api-")
+                || lower.contains("token")
+                || lower.contains("secret")
+                || lower.contains("key")
+                || lower.contains("session")
+                || lower.contains("csrf")
+                || lower.contains("signature")
+                || lower.contains("credential")
+                || lower.contains("password")
+                || lower.contains("ticket")
+                || lower.starts_with("x-xdm-ftp-"))
+        });
+    }
+    redact_url_for_notice(&mut request.url);
+    if let Some(url) = request.final_url.as_mut() {
+        redact_url_for_notice(url);
+    }
+    for redirect in &mut request.redirect_chain {
+        redact_url_for_notice(&mut redirect.from_url);
+        redact_url_for_notice(&mut redirect.to_url);
+    }
+    request
+}
+
+fn redact_url_for_notice(value: &mut String) {
+    if let Ok(mut parsed) = url::Url::parse(value) {
+        if !parsed.username().is_empty() || parsed.password().is_some() || parsed.query().is_some()
+        {
+            let _ = parsed.set_username("");
+            let _ = parsed.set_password(None);
+            parsed.set_query(None);
+            parsed.set_fragment(None);
+            *value = parsed.to_string();
+        }
+    }
+}
+
 pub async fn start_browser_ipc_server(
     engine: Arc<DownloadEngine>,
     port: u16,
@@ -162,11 +229,13 @@ pub async fn start_browser_ipc_server(
 ) {
     let _ = UPDATE_APP_HANDLE.set(app_handle);
     let app = Router::new()
-        .route("/api/v1/status", get(handle_status))
+        .route(
+            "/api/v1/status",
+            get(handle_status).layer(CorsLayer::permissive()),
+        )
         .route("/api/v1/intercept", post(handle_intercept))
         .route("/api/v1/prepare-update", post(handle_prepare_update))
         .route("/api/v1/downloads", get(handle_list_downloads))
-        .layer(CorsLayer::permissive())
         .with_state(engine);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
@@ -239,13 +308,64 @@ async fn handle_status(
 
 async fn handle_intercept(
     State(engine): State<Arc<DownloadEngine>>,
+    headers: HeaderMap,
     Json(payload): Json<BrowserInterceptPayload>,
 ) -> Json<serde_json::Value> {
+    // Browser extensions use the Native Messaging host, which makes a direct
+    // web page unable to submit credentials to this loopback endpoint.
+    if headers.contains_key(axum::http::header::ORIGIN) {
+        return Json(serde_json::json!({
+            "accepted": false,
+            "reason": "Use the ByteX browser extension Native Messaging channel"
+        }));
+    }
     if !engine.settings.read().browser.intercept_all_downloads {
         return Json(
             serde_json::json!({ "accepted": false, "reason": "Download interception is disabled" }),
         );
     }
+    if payload.request_replayable == Some(false) {
+        return Json(serde_json::json!({
+            "accepted": false,
+            "reason": payload.request_unavailable_reason.unwrap_or_else(|| "The browser did not expose the original request body".to_string())
+        }));
+    }
+    let method = payload.method.unwrap_or_else(|| "GET".to_string());
+    if reqwest::Method::from_bytes(method.as_bytes()).is_err() {
+        return Json(serde_json::json!({ "accepted": false, "reason": "Unsupported HTTP method" }));
+    }
+    if matches!(method.as_str(), "POST" | "PUT" | "PATCH") && payload.body_base64.is_none() {
+        return Json(serde_json::json!({
+            "accepted": false,
+            "reason": "The browser did not expose the complete request body, so ByteX left the browser download in control"
+        }));
+    }
+    if let Some(encoded) = payload.body_base64.as_deref() {
+        use base64::Engine as _;
+        if base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map(|body| body.len() > 1024 * 1024)
+            .unwrap_or(true)
+        {
+            return Json(serde_json::json!({
+                "accepted": false,
+                "reason": "The captured request body is invalid or exceeds the 1 MiB replay limit"
+            }));
+        }
+    }
+    let final_url = payload
+        .final_url
+        .clone()
+        .unwrap_or_else(|| payload.url.clone());
+    let Ok(parsed_final_url) = url::Url::parse(&final_url) else {
+        return Json(serde_json::json!({ "accepted": false, "reason": "Invalid download URL" }));
+    };
+    if !matches!(parsed_final_url.scheme(), "http" | "https" | "ftp") {
+        return Json(
+            serde_json::json!({ "accepted": false, "reason": "ByteX can safely hand off HTTP, HTTPS, and FTP downloads; this protocol remains in the browser" }),
+        );
+    }
+
     let browser_name = resolve_browser_name(&payload.browser, &engine.settings.read());
     record_browser_heartbeat(&browser_name);
     let is_torrent = payload.is_torrent.unwrap_or(false)
@@ -264,7 +384,9 @@ async fn handle_intercept(
     };
 
     let req = NewDownloadRequest {
-        url: payload.url,
+        url: payload.original_url.unwrap_or_else(|| payload.url.clone()),
+        final_url: payload.final_url.or(Some(final_url)),
+        redirect_chain: payload.redirects.unwrap_or_default(),
         filename: payload.filename.map(|name| {
             name.replace('\\', "/")
                 .rsplit('/')
@@ -282,6 +404,9 @@ async fn handle_intercept(
         cookies: payload.cookies,
         user_agent: payload.user_agent,
         custom_headers: payload.headers,
+        request_method: method,
+        request_body: payload.body_base64,
+        browser_intercepted: true,
         auth_username: payload.auth_username,
         auth_password: payload.auth_password,
         sequential_torrent: if is_torrent { Some(true) } else { None },
@@ -296,7 +421,7 @@ async fn handle_intercept(
             existing_filename: existing.filename.clone(),
             existing_status: Some(existing.status.clone()),
             existing_path: existing.save_path.clone(),
-            request: req,
+            request: redacted_duplicate_request(req.clone()),
         });
         focus_main_window();
         return Json(serde_json::json!({
@@ -334,7 +459,7 @@ async fn handle_intercept(
                 .unwrap_or_else(|| "Existing file".to_string()),
             existing_status: existing.as_ref().map(|item| item.status.clone()),
             existing_path: destination.to_string_lossy().to_string(),
-            request: req,
+            request: redacted_duplicate_request(req.clone()),
         });
         focus_main_window();
         return Json(serde_json::json!({
@@ -345,13 +470,54 @@ async fn handle_intercept(
     }
 
     let created = engine.add_download(req.clone());
+    let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+    let started = engine
+        .start_download_execution_with_ack(created, &req, ack_tx)
+        .await;
+    let handoff = tokio::time::timeout(std::time::Duration::from_secs(20), ack_rx).await;
+    match handoff {
+        Ok(Ok(Ok(()))) => {}
+        Ok(Ok(Err(reason))) => {
+            discard_unaccepted_download(&engine, &started.id).await;
+            return Json(serde_json::json!({ "accepted": false, "reason": reason }));
+        }
+        Ok(Err(_)) => {
+            discard_unaccepted_download(&engine, &started.id).await;
+            return Json(
+                serde_json::json!({ "accepted": false, "reason": "ByteX could not confirm the transfer" }),
+            );
+        }
+        Err(_) => {
+            discard_unaccepted_download(&engine, &started.id).await;
+            return Json(
+                serde_json::json!({ "accepted": false, "reason": "ByteX did not receive a valid response in time" }),
+            );
+        }
+    }
     focus_main_window();
-    let started = engine.start_download_execution(created, &req).await;
     Json(serde_json::json!({
         "accepted": true,
         "download_id": started.id,
         "filename": started.filename
     }))
+}
+
+async fn discard_unaccepted_download(engine: &DownloadEngine, id: &str) {
+    if let Some(cancel) = engine.active_cancellations.write().remove(id) {
+        let _ = cancel.send(true);
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let path = engine
+        .downloads
+        .read()
+        .iter()
+        .find(|item| item.id == id)
+        .map(|item| crate::config::resolve_path(&item.save_path));
+    if let Some(path) = path {
+        let _ = std::fs::remove_file(path);
+    }
+    engine.downloads.write().retain(|item| item.id != id);
+    let _ = engine.persist_downloads();
 }
 
 fn emit_duplicate_notice(notice: DuplicateDownloadNotice) {

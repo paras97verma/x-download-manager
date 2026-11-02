@@ -1,6 +1,6 @@
-//! FTP / FTPS & Authenticated File-Sharing Resolver (Usersdrive, 1fichier, MediaFire, etc.)
+//! FTP & Authenticated File-Sharing Resolver (Usersdrive, 1fichier, MediaFire, etc.)
 //! Supports:
-//! - Anonymous & Authenticated FTP/FTPS transfers with `REST` byte-offset resumption
+//! - Anonymous & Authenticated FTP transfers with guarded `REST` byte-offset resumption
 //! - Automatic Site Credential matching from ByteX's saved site logins (`*.usersdrive.com`, etc.)
 //! - Usersdrive (`https://usersdrive.com/<id>.html`) 2-step form/cookie resolution and direct CDN extraction
 //! - Cookie, Bearer Token, and Basic Auth injection
@@ -292,6 +292,9 @@ pub async fn download_via_ftp(
     settings: &AppSettings,
 ) -> Result<u64, String> {
     let parsed = url::Url::parse(ftp_url).map_err(|e| format!("Invalid FTP URL: {}", e))?;
+    if parsed.scheme() == "ftps" {
+        return Err("FTPS is not supported by the current FTP transport; the request was not sent because credentials could be exposed".to_string());
+    }
     let host = parsed.host_str().ok_or("Missing FTP host")?;
     let port = parsed.port().unwrap_or(21);
     let remote_path = parsed.path();
@@ -320,7 +323,7 @@ pub async fn download_via_ftp(
     ftp_stream
         .login(&username, &password)
         .await
-        .map_err(|e| format!("FTP authentication failed for user {}: {}", username, e))?;
+        .map_err(|e| format!("FTP authentication failed: {}", e))?;
 
     ftp_stream
         .transfer_type(suppaftp::types::FileType::Binary)
@@ -377,7 +380,18 @@ pub async fn execute_ftp_download(
     item_id: String,
     downloads: std::sync::Arc<parking_lot::RwLock<Vec<crate::engine::DownloadItem>>>,
     settings: std::sync::Arc<parking_lot::RwLock<AppSettings>>,
+    cancel_rx: tokio::sync::watch::Receiver<bool>,
+) -> Result<u64, String> {
+    let mut no_ack = None;
+    execute_ftp_download_with_ack(item_id, downloads, settings, cancel_rx, &mut no_ack).await
+}
+
+pub async fn execute_ftp_download_with_ack(
+    item_id: String,
+    downloads: std::sync::Arc<parking_lot::RwLock<Vec<crate::engine::DownloadItem>>>,
+    settings: std::sync::Arc<parking_lot::RwLock<AppSettings>>,
     mut cancel_rx: tokio::sync::watch::Receiver<bool>,
+    startup_ack: &mut Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
 ) -> Result<u64, String> {
     let (item_snapshot, current_settings) = {
         let dls = downloads.read();
@@ -389,8 +403,14 @@ pub async fn execute_ftp_download(
         (found, settings.read().clone())
     };
 
-    let ftp_url = &item_snapshot.url;
+    let ftp_url = item_snapshot
+        .resolved_url
+        .as_deref()
+        .unwrap_or(&item_snapshot.url);
     let parsed = url::Url::parse(ftp_url).map_err(|e| format!("Invalid FTP URL: {}", e))?;
+    if parsed.scheme() == "ftps" {
+        return Err("FTPS is not supported by the current FTP transport; the request was not sent because credentials could be exposed".to_string());
+    }
     let host = parsed.host_str().ok_or("Missing FTP host")?;
     let port = parsed.port().unwrap_or(21);
     let remote_path = parsed.path();
@@ -417,7 +437,12 @@ pub async fn execute_ftp_download(
     };
 
     // Attempt connection
-    let mut ftp_stream = match AsyncRustlsFtpStream::connect(format!("{}:{}", host, port)).await {
+    let mut ftp_stream = match await_ftp_before_handoff(
+        AsyncRustlsFtpStream::connect(format!("{}:{}", host, port)),
+        &mut cancel_rx,
+    )
+    .await
+    {
         Ok(s) => s,
         Err(e) => {
             let err_msg = format!("FTP connection error: {}", e);
@@ -431,8 +456,10 @@ pub async fn execute_ftp_download(
         }
     };
 
-    if let Err(e) = ftp_stream.login(&username, &password).await {
-        let err_msg = format!("FTP authentication failed for user {}: {}", username, e);
+    if let Err(e) =
+        await_ftp_before_handoff(ftp_stream.login(&username, &password), &mut cancel_rx).await
+    {
+        let err_msg = format!("FTP authentication failed: {e}");
         let mut dls = downloads.write();
         if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
             d.status = crate::engine::DownloadStatus::Failed;
@@ -442,22 +469,62 @@ pub async fn execute_ftp_download(
         return Err(err_msg);
     }
 
-    if let Err(e) = ftp_stream
-        .transfer_type(suppaftp::types::FileType::Binary)
-        .await
-    {
-        return Err(e.to_string());
-    }
-
-    let resume_offset = item_snapshot.downloaded_bytes;
-    if resume_offset > 0 {
-        let _ = ftp_stream.resume_transfer(resume_offset as usize).await;
-    }
+    await_ftp_before_handoff(
+        ftp_stream.transfer_type(suppaftp::types::FileType::Binary),
+        &mut cancel_rx,
+    )
+    .await?;
 
     // Try to get remote file size
-    let remote_size = ftp_stream.size(remote_path).await.ok().map(|s| s as u64);
+    let remote_size = tokio::select! {
+        _ = cancel_rx.changed() => return Err("FTP handoff was cancelled before data arrived".to_string()),
+        size = ftp_stream.size(remote_path) => size.ok().map(|size| size as u64),
+    };
 
-    let mut data_stream = match ftp_stream.retr_as_stream(remote_path).await {
+    let existing_size = std::fs::metadata(&item_snapshot.save_path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    let mut resume_offset = item_snapshot.downloaded_bytes;
+    let partial_matches_remote = resume_offset > 0
+        && existing_size >= resume_offset
+        && item_snapshot.total_bytes > 0
+        && remote_size == Some(item_snapshot.total_bytes);
+    if !partial_matches_remote {
+        resume_offset = 0;
+    }
+    if resume_offset > 0 {
+        let resume_result = await_ftp_before_handoff(
+            ftp_stream.resume_transfer(resume_offset as usize),
+            &mut cancel_rx,
+        )
+        .await;
+        if let Err(error) = resume_result {
+            if *cancel_rx.borrow() {
+                return Err(error);
+            }
+            // REST support is optional. If the server rejects it, restart from
+            // byte zero rather than append a full response at the saved offset.
+            resume_offset = 0;
+            if let Some(current) = downloads
+                .write()
+                .iter_mut()
+                .find(|current| current.id == item_id)
+            {
+                current.resumable = false;
+                current.transfer_log.push(
+                    "FTP server does not support resuming this transfer; restarting from byte zero."
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    let mut data_stream = match await_ftp_before_handoff(
+        ftp_stream.retr_as_stream(remote_path),
+        &mut cancel_rx,
+    )
+    .await
+    {
         Ok(s) => s,
         Err(e) => {
             let err_msg = format!("FTP RETR error: {}", e);
@@ -484,29 +551,48 @@ pub async fn execute_ftp_download(
 
     use std::io::{Seek, SeekFrom, Write};
     if resume_offset > 0 {
+        file.set_len(resume_offset)
+            .map_err(|error| format!("Could not trim the partial FTP file: {error}"))?;
         file.seek(SeekFrom::Start(resume_offset))
             .map_err(|e| e.to_string())?;
     }
 
-    // Update state to Downloading
+    let mut buf = [0u8; 65536];
+    let first_count = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        data_stream.read(&mut buf),
+    )
+    .await
+    .map_err(|_| "FTP server did not send data in time".to_string())?
+    .map_err(|error| format!("FTP data stream failed before handoff: {error}"))?;
+    if first_count > 0 {
+        file.write_all(&buf[..first_count])
+            .map_err(|error| error.to_string())?;
+        file.sync_data().map_err(|error| error.to_string())?;
+    }
+    let mut total_written = resume_offset.saturating_add(first_count as u64);
+
+    // Update state to Downloading before acknowledging the handoff.
     {
         let mut dls = downloads.write();
         if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
             if let Some(sz) = remote_size {
                 d.total_bytes = sz;
             }
+            d.downloaded_bytes = total_written;
             d.status = crate::engine::DownloadStatus::Downloading;
             d.transfer_log.push(format!(
-                "Connected to FTP {} as user '{}' | Size: {} bytes",
+                "Connected to FTP {} | Size: {} bytes",
                 host,
-                username,
                 remote_size.unwrap_or(0)
             ));
         }
     }
 
-    let mut buf = [0u8; 65536];
-    let mut total_written = resume_offset;
+    if let Some(ack) = startup_ack.take() {
+        let _ = ack.send(Ok(()));
+    }
+
     let mut window_start = std::time::Instant::now();
     let mut window_bytes = 0u64;
 
@@ -599,6 +685,21 @@ pub async fn execute_ftp_download(
     let _ = ftp_stream.finalize_retr_stream(data_stream).await;
     let _ = ftp_stream.quit().await;
 
+    if remote_size.is_some_and(|size| size != total_written) {
+        let error = format!(
+            "FTP server closed the transfer after {total_written} of {} bytes. The partial file is available to retry.",
+            remote_size.unwrap_or_default()
+        );
+        let mut dls = downloads.write();
+        if let Some(current) = dls.iter_mut().find(|current| current.id == item_id) {
+            current.status = crate::engine::DownloadStatus::Failed;
+            current.downloaded_bytes = total_written;
+            current.error_message = Some(error.clone());
+            current.transfer_log.push(format!("[ERROR] {error}"));
+        }
+        return Err(error);
+    }
+
     // Completion
     let should_hash = settings.read().auto_verify_checksum;
     let computed_hash = if should_hash {
@@ -632,4 +733,194 @@ pub async fn execute_ftp_download(
     }
 
     Ok(total_written)
+}
+
+async fn await_ftp_before_handoff<T, E, F>(
+    future: F,
+    cancel_rx: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<T, String>
+where
+    F: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
+{
+    if *cancel_rx.borrow() {
+        return Err("FTP handoff cancelled before the native transfer was ready".to_string());
+    }
+    tokio::select! {
+        result = future => result.map_err(|error| error.to_string()),
+        _ = cancel_rx.changed() => Err("FTP handoff cancelled before the native transfer was ready".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod browser_ftp_tests {
+    use super::execute_ftp_download_with_ack;
+    use crate::engine::{DownloadEngine, DownloadRedirect, DownloadStatus, NewDownloadRequest};
+    use std::sync::Arc;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::TcpListener;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn ftp_transfer_is_acknowledged_after_native_data_is_written() {
+        let control_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let control_address = control_listener.local_addr().unwrap();
+        let expected_bytes = b"ftp-native-bytes".to_vec();
+        let server_bytes = expected_bytes.clone();
+        let server = tokio::spawn(async move {
+            let (control, _) = control_listener.accept().await.unwrap();
+            let mut control = BufReader::new(control);
+            control
+                .get_mut()
+                .write_all(b"220 Test FTP ready\r\n")
+                .await
+                .unwrap();
+            let mut passive_listener: Option<TcpListener> = None;
+            let mut commands = Vec::new();
+            loop {
+                let mut line = String::new();
+                if control.read_line(&mut line).await.unwrap() == 0 {
+                    break;
+                }
+                let command = line.trim().to_string();
+                commands.push(command.clone());
+                let upper = command.to_ascii_uppercase();
+                if upper.starts_with("USER ") {
+                    control
+                        .get_mut()
+                        .write_all(b"331 Password required\r\n")
+                        .await
+                        .unwrap();
+                } else if upper.starts_with("PASS ") {
+                    control
+                        .get_mut()
+                        .write_all(b"230 Logged in\r\n")
+                        .await
+                        .unwrap();
+                } else if upper == "TYPE I" {
+                    control
+                        .get_mut()
+                        .write_all(b"200 Binary mode\r\n")
+                        .await
+                        .unwrap();
+                } else if upper.starts_with("SIZE ") {
+                    control
+                        .get_mut()
+                        .write_all(format!("213 {}\r\n", server_bytes.len()).as_bytes())
+                        .await
+                        .unwrap();
+                } else if upper == "PASV" {
+                    let data_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let port = data_listener.local_addr().unwrap().port();
+                    passive_listener = Some(data_listener);
+                    control
+                        .get_mut()
+                        .write_all(
+                            format!(
+                                "227 Entering Passive Mode (127,0,0,1,{},{})\r\n",
+                                port / 256,
+                                port % 256
+                            )
+                            .as_bytes(),
+                        )
+                        .await
+                        .unwrap();
+                } else if upper.starts_with("RETR ") {
+                    control
+                        .get_mut()
+                        .write_all(b"150 Opening data connection\r\n")
+                        .await
+                        .unwrap();
+                    let listener = passive_listener.take().expect("PASV should precede RETR");
+                    let (mut data, _) = listener.accept().await.unwrap();
+                    data.write_all(&server_bytes).await.unwrap();
+                    data.shutdown().await.unwrap();
+                    control
+                        .get_mut()
+                        .write_all(b"226 Transfer complete\r\n")
+                        .await
+                        .unwrap();
+                } else if upper == "QUIT" {
+                    control
+                        .get_mut()
+                        .write_all(b"221 Goodbye\r\n")
+                        .await
+                        .unwrap();
+                    break;
+                } else {
+                    control
+                        .get_mut()
+                        .write_all(b"200 Command accepted\r\n")
+                        .await
+                        .unwrap();
+                }
+            }
+            commands
+        });
+
+        let engine = Arc::new(DownloadEngine::new());
+        let output_dir = std::env::temp_dir().join(format!("bytex-ftp-success-{}", Uuid::new_v4()));
+        let request = NewDownloadRequest {
+            url: "https://origin.test/trigger-download".to_string(),
+            final_url: Some(format!(
+                "ftp://test-user:test-password@{control_address}/package.bin"
+            )),
+            redirect_chain: vec![DownloadRedirect {
+                from_url: "https://origin.test/trigger-download".to_string(),
+                to_url: format!("ftp://test-user:test-password@{control_address}/package.bin"),
+                status_code: Some(302),
+            }],
+            filename: Some("package.bin".to_string()),
+            category: None,
+            save_path: Some(output_dir.to_string_lossy().to_string()),
+            threads_count: None,
+            queue_id: Some("main-queue".to_string()),
+            start_immediately: false,
+            source_browser: Some("Firefox".to_string()),
+            referer: None,
+            cookies: None,
+            user_agent: None,
+            custom_headers: None,
+            request_method: "GET".to_string(),
+            request_body: None,
+            browser_intercepted: true,
+            auth_username: None,
+            auth_password: None,
+            sequential_torrent: None,
+            torrent_file_data: None,
+            torrent_selected_files: None,
+        };
+        let item = engine.add_download(request);
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        let mut ack = Some(ack_tx);
+        let (_cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let transferred = execute_ftp_download_with_ack(
+            item.id.clone(),
+            engine.downloads.clone(),
+            engine.settings.clone(),
+            cancel_rx,
+            &mut ack,
+        )
+        .await
+        .unwrap();
+        assert_eq!(ack_rx.await.unwrap(), Ok(()));
+        assert_eq!(transferred, expected_bytes.len() as u64);
+        assert_eq!(std::fs::read(&item.save_path).unwrap(), expected_bytes);
+        assert_eq!(
+            engine
+                .downloads
+                .read()
+                .iter()
+                .find(|current| current.id == item.id)
+                .unwrap()
+                .status,
+            DownloadStatus::Completed
+        );
+        let commands = server.await.unwrap();
+        assert!(commands.iter().any(|command| command == "USER test-user"));
+        assert!(commands
+            .iter()
+            .any(|command| command == "PASS test-password"));
+        let _ = std::fs::remove_dir_all(output_dir);
+    }
 }

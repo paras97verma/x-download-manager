@@ -111,59 +111,31 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-async function getCookieHeaderForUrl(url, referer, clientCookies) {
-  const cookieMap = new Map();
-
-  // Merge cookies sent directly by content script (document.cookie)
-  if (clientCookies && typeof clientCookies === "string") {
-    clientCookies.split(";").forEach((pair) => {
-      const parts = pair.trim().split("=");
-      if (parts[0]) {
-        cookieMap.set(parts[0], parts.slice(1).join("="));
-      }
-    });
-  }
-
-  // Also query browser.cookies API if available
+async function getCookieHeaderForUrl(url) {
   if (runtimeAPI.cookies) {
     try {
       const cookies = await runtimeAPI.cookies.getAll({ url });
-      if (Array.isArray(cookies)) {
-        cookies.forEach((c) => {
-          if (c && c.name) cookieMap.set(c.name, c.value);
-        });
-      }
+      return Array.isArray(cookies)
+        ? cookies.filter((cookie) => cookie?.name).map((cookie) => `${cookie.name}=${cookie.value}`).join("; ") || null
+        : null;
     } catch (_) {}
-
-    if (referer) {
-      try {
-        const refCookies = await runtimeAPI.cookies.getAll({ url: referer });
-        if (Array.isArray(refCookies)) {
-          refCookies.forEach((c) => {
-            if (c && c.name && !cookieMap.has(c.name)) {
-              cookieMap.set(c.name, c.value);
-            }
-          });
-        }
-      } catch (_) {}
-    }
   }
-
-  if (cookieMap.size === 0) return null;
-  return Array.from(cookieMap.entries())
-    .map(([name, val]) => `${name}=${val}`)
-    .join("; ");
+  return null;
 }
 
-async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cookies, tabTitle }) {
-  const resolvedCookies = await getCookieHeaderForUrl(url, referer, cookies);
+async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
+  const resolvedCookies = await getCookieHeaderForUrl(url);
 
   let authUser = null;
   let authPass = null;
+  let safeUrl = url;
   try {
     const parsed = new URL(url);
     if (parsed.username) authUser = decodeURIComponent(parsed.username);
     if (parsed.password) authPass = decodeURIComponent(parsed.password);
+    parsed.username = "";
+    parsed.password = "";
+    safeUrl = parsed.toString();
   } catch (_) {}
 
   const isTorrent =
@@ -172,12 +144,12 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
     mimeType === "application/x-bittorrent";
 
   const payload = {
-    url,
+    url: safeUrl,
     filename: filename || null,
     file_size: fileSize || null,
     mime_type: mimeType || null,
     referer: referer || null,
-    cookies: resolvedCookies || null,
+    cookies: resolvedCookies,
     auth_username: authUser,
     auth_password: authPass,
     is_torrent: isTorrent,
@@ -186,24 +158,8 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
     tab_title: tabTitle || null,
   };
 
-  // 1. Try fast Localhost HTTP Bridge (http://127.0.0.1:45678)
-  try {
-    const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/intercept`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }, 5000);
-    if (resp.ok) {
-      const result = await resp.json().catch(() => null);
-      return result?.accepted === true
-        ? { duplicate: Boolean(result.duplicate) }
-        : null;
-    }
-  } catch (err) {
-    console.warn("XDM Safari bridge HTTP fetch failed:", err);
-  }
-
-  // 2. Fallback to Native Messaging Host (com.peivee.xdm)
+  // Credentials only cross the extension's authenticated Native Messaging
+  // channel; never post them to the unauthenticated localhost HTTP bridge.
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);

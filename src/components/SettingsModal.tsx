@@ -926,8 +926,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </label>
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1 text-xs">
-                    Automatically Intercept File Extensions (Comma separated)
+                    Safari Download Link Extensions (Comma separated)
                   </label>
+                  <p className="text-[10px] text-slate-400 mb-2">
+                    Chromium and Firefox intercept all HTTP, HTTPS, and FTP downloads. Safari uses this list for links without an explicit download attribute.
+                  </p>
                   <textarea
                     rows={3}
                     value={draft.browser.intercepted_extensions.join(", ")}
