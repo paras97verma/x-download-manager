@@ -44,21 +44,23 @@ for (const relativePath of [
 
 const cargoTomlPath = path.join(rootDir, "src-tauri/Cargo.toml");
 const cargoToml = fs.readFileSync(cargoTomlPath, "utf8");
-const updatedCargoToml = cargoToml.replace(/^version\s*=\s*"[^"]+"/m, `version = "${version}"`);
-if (updatedCargoToml === cargoToml) {
+const cargoVersionPattern = /^version\s*=\s*"[^"]+"/m;
+if (!cargoVersionPattern.test(cargoToml)) {
   throw new Error("Could not find the package version in src-tauri/Cargo.toml");
 }
+const updatedCargoToml = cargoToml.replace(cargoVersionPattern, `version = "${version}"`);
 fs.writeFileSync(cargoTomlPath, updatedCargoToml);
 
 const cargoLockPath = path.join(rootDir, "Cargo.lock");
 const cargoLock = fs.readFileSync(cargoLockPath, "utf8");
-const updatedCargoLock = cargoLock.replace(
-  /(\[\[package\]\]\nname = "x-download-manager"\nversion = ")[^"]+(")/,
-  `$1${version}$2`
-);
-if (updatedCargoLock === cargoLock) {
+const cargoLockVersionPattern = /(\[\[package\]\]\nname = "x-download-manager"\nversion = ")[^"]+(")/;
+if (!cargoLockVersionPattern.test(cargoLock)) {
   throw new Error('Could not find the "x-download-manager" package version in Cargo.lock');
 }
+const updatedCargoLock = cargoLock.replace(
+  cargoLockVersionPattern,
+  `$1${version}$2`
+);
 fs.writeFileSync(cargoLockPath, updatedCargoLock);
 
 console.log(`Synchronized project manifests to ${version}`);

@@ -52,32 +52,19 @@ jobs:
 
       - name: Compute Version-Typed Release Tag & Synchronize Manifests
         id: compute_version
+        env:
+          RELEASE_CHANNEL: ${{ github.event.inputs.release_channel || 'stable' }}
         run: |
-          BASE_VER=$(node -p "require('./package.json').version")
-          CHANNEL="${{ github.event.inputs.release_channel || 'stable' }}"
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            TAG_NAME="${GITHUB_REF#refs/tags/}"
-            RELEASE_TITLE="X Download Manager ${TAG_NAME}"
-          elif [[ "${CHANNEL}" == "stable" ]]; then
-            LATEST_TAG=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)
-            LATEST_VER="${LATEST_TAG#v}"
-            NEXT_VER=$(node -e '
-              const parse = (s) => s.split(".").map((n) => Number(n));
-              const cmp = (a, b) => { for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0) ? 1 : -1; } return 0; };
-              const base = process.argv[1], latest = process.argv[2];
-              if (!latest || cmp(parse(base), parse(latest)) > 0) process.stdout.write(base);
-              else { const v = parse(latest); v[2] = (v[2] || 0) + 1; process.stdout.write(v.join(".")); }
-            ' "$BASE_VER" "$LATEST_VER")
-            TAG_NAME="v${NEXT_VER}"
-            RELEASE_TITLE="X Download Manager ${TAG_NAME}"
-          else
-            TAG_NAME="v${BASE_VER}-${CHANNEL}.${GITHUB_RUN_NUMBER}"
-            RELEASE_TITLE="X Download Manager ${TAG_NAME} (${CHANNEL^^})"
-          fi
-          VER="${TAG_NAME#v}"
-          echo "version_tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
-          echo "version=${VER}" >> "$GITHUB_OUTPUT"
-          echo "release_title=${RELEASE_TITLE}" >> "$GITHUB_OUTPUT"
+          LATEST_TAG=$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)
+          VERSION_OUTPUT=$(RELEASE_CHANNEL="$RELEASE_CHANNEL" RELEASE_REF="$GITHUB_REF" RUN_NUMBER="$GITHUB_RUN_NUMBER" LATEST_TAG="$LATEST_TAG" node ./scripts/compute-release-version.mjs)
+          while IFS='=' read -r key value; do
+            case "$key" in
+              version_tag) TAG_NAME="$value" ;;
+              version) VER="$value" ;;
+              release_title) RELEASE_TITLE="$value" ;;
+            esac
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done <<< "$VERSION_OUTPUT"
           echo "VITE_APP_VERSION=${VER}" >> "$GITHUB_ENV"
 
           echo "Synchronizing project manifests to version: $VER"
