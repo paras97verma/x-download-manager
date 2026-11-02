@@ -3,6 +3,17 @@ const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 document.addEventListener("DOMContentLoaded", () => {
   const statusEl = document.getElementById("xdm-conn-status");
   const toggleEl = document.getElementById("xdm-enable-toggle");
+  const handoffEl = document.getElementById("xdm-last-handoff");
+
+  const renderLastHandoff = (handoff) => {
+    if (!handoff?.filename || !handoffEl) return;
+    handoffEl.hidden = false;
+    handoffEl.textContent = `Intercepted by ByteX: ${handoff.filename}`;
+  };
+  runtimeAPI.storage.local.get(["lastHandoff"], (settings) => renderLastHandoff(settings.lastHandoff));
+  runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.lastHandoff) renderLastHandoff(changes.lastHandoff.newValue);
+  });
 
   runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
     toggleEl.checked = settings.interceptEnabled !== false;

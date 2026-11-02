@@ -57,6 +57,21 @@ async function syncWithDesktopApp() {
 syncWithDesktopApp();
 setInterval(syncWithDesktopApp, 5000);
 
+function showHandoffIndicator(filename) {
+  const action = runtimeAPI.action || runtimeAPI.browserAction;
+  if (!action) return;
+  const label = filename || "Download";
+  try { action.setBadgeBackgroundColor?.({ color: "#0ea5e9" }); } catch (_) {}
+  try { action.setBadgeText?.({ text: "BX" }); } catch (_) {}
+  try { action.setTitle?.({ title: `${label} is downloading in ByteX` }); } catch (_) {}
+  const stored = runtimeAPI.storage.local.set({ lastHandoff: { filename: label, at: Date.now() } });
+  stored?.catch?.(() => {});
+  setTimeout(() => {
+    try { action.setBadgeText?.({ text: "" }); } catch (_) {}
+    try { action.setTitle?.({ title: "ByteX Download Manager" }); } catch (_) {}
+  }, 8000);
+}
+
 // Listen for messages from content script or popup
 runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "GET_INTERCEPT_SETTINGS") {
@@ -82,6 +97,7 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })
       .then((result) => {
         const success = Boolean(result);
+        if (success) showHandoffIndicator(msg.filename || "Download");
         sendResponse({ success, duplicate: Boolean(result?.duplicate) });
       })
       .catch(() => {
@@ -177,7 +193,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
     }, 5000);
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
-      return result?.accepted === true && result?.download_id
+      return result?.accepted === true
         ? { duplicate: Boolean(result.duplicate) }
         : null;
     }
@@ -189,7 +205,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, cooki
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return result?.accepted === true && result?.download_id
+      return result?.accepted === true
         ? { duplicate: Boolean(result.duplicate) }
         : null;
     } catch (_) {

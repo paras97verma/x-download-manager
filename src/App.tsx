@@ -32,7 +32,6 @@ import {
   apiGetAppVersion,
   DEFAULT_APP_VERSION,
   buildSegments,
-  formatSpeed,
   isTauriRuntime,
   onNativeMenuAction,
   onDuplicateDownloadDetected,
@@ -243,22 +242,6 @@ export const App: React.FC = () => {
     const firstId = Array.from(selectedIds)[0];
     return firstId ? downloads.find((d) => d.id === firstId) || null : null;
   }, [downloads, selectedIds, lastSelectedId]);
-
-  const totalDownSpeed = useMemo(
-    () =>
-      downloads
-        .filter((d) => d.status === "downloading")
-        .reduce((acc, d) => acc + d.speed_bps, 0),
-    [downloads]
-  );
-
-  const totalUpSpeed = useMemo(
-    () =>
-      downloads
-        .filter((d) => d.status === "downloading" || d.status === "seeding")
-        .reduce((acc, d) => acc + d.upload_speed_bps, 0),
-    [downloads]
-  );
 
   // Multi-Selection handler with Shift range and Cmd/Ctrl multi-click
   const handleSelect = (id: string, isMulti = false, isRange = false) => {
@@ -802,12 +785,6 @@ export const App: React.FC = () => {
             <strong className="text-slate-200">
               {downloads.filter((d) => d.status === "downloading").length}
             </strong>
-          </span>
-          <span className="text-emerald-400 font-mono">
-            ↓ Total Down: {formatSpeed(totalDownSpeed)}
-          </span>
-          <span className="text-indigo-400 font-mono">
-            ↑ Total Up: {formatSpeed(totalUpSpeed)}
           </span>
           <span>
             Extensions Connected:{" "}

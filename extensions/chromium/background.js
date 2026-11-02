@@ -153,7 +153,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     }, 5000);
     if (resp.ok) {
       const result = await resp.json().catch(() => null);
-      return result?.accepted === true && result?.download_id
+      return result?.accepted === true
         ? { duplicate: Boolean(result.duplicate) }
         : null;
     }
@@ -165,7 +165,7 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return result?.accepted === true && result?.download_id
+      return result?.accepted === true
         ? { duplicate: Boolean(result.duplicate) }
         : null;
     } catch (_) {
@@ -179,8 +179,12 @@ const interceptedDownloadIds = new Set();
 
 async function handleDownloadInterception(downloadItem) {
   if (downloadItem.id && interceptedDownloadIds.has(downloadItem.id)) return false;
-  await syncWithDesktopApp();
-  if (!shouldInterceptDownload(downloadItem)) return false;
+  // Pause immediately onCreated; syncing first left time for the browser to
+  // create a second transfer while ByteX was being contacted.
+  if (!shouldInterceptDownload(downloadItem)) {
+    await syncWithDesktopApp();
+    if (!shouldInterceptDownload(downloadItem)) return false;
+  }
 
   if (downloadItem.id) {
     interceptedDownloadIds.add(downloadItem.id);
@@ -206,11 +210,16 @@ async function handleDownloadInterception(downloadItem) {
   });
 
   if (result) {
+    showHandoffIndicator(downloadItem.filename || "Download");
     if (downloadItem.id && runtimeAPI.downloads.cancel) {
+      try { await runtimeAPI.downloads.cancel(downloadItem.id); } catch (_) {}
       try {
-        await runtimeAPI.downloads.cancel(downloadItem.id);
-        await runtimeAPI.downloads.erase?.({ id: downloadItem.id });
+        const matches = await runtimeAPI.downloads.search({ id: downloadItem.id });
+        if (matches?.[0]?.state === "complete") {
+          await runtimeAPI.downloads.removeFile?.(downloadItem.id);
+        }
       } catch (_) {}
+      try { await runtimeAPI.downloads.erase?.({ id: downloadItem.id }); } catch (_) {}
     }
     return true;
   } else {
@@ -235,6 +244,25 @@ if (runtimeAPI.downloads) {
     });
   }
 }
+
+runtimeAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "XDM_MANUAL_CAPTURE") return false;
+  (async () => {
+    await syncWithDesktopApp();
+    if (!state.interceptEnabled || !state.desktopIntegrationEnabled) return false;
+    const result = await dispatchToXdm({
+      url: message.url,
+      filename: message.filename || null,
+      referer: message.referer || sender.tab?.url || "",
+      tabTitle: message.tabTitle || sender.tab?.title || "",
+    });
+    if (result) showHandoffIndicator(message.filename || "Download");
+    return result;
+  })().then((result) => {
+    sendResponse({ success: Boolean(result), duplicate: Boolean(result?.duplicate) });
+  }).catch(() => sendResponse({ success: false }));
+  return true;
+});
 
 function detectBrowserFamily() {
   const ua = navigator.userAgent || "";
