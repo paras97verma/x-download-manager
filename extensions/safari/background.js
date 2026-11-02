@@ -26,6 +26,10 @@ let state = {
 runtimeAPI.storage.local.get(["interceptEnabled"], (settings) => {
   state.interceptEnabled = settings.interceptEnabled !== false;
 });
+try {
+  const cleanup = runtimeAPI.storage.local.remove?.("lastHandoff");
+  cleanup?.catch?.(() => {});
+} catch (_) {}
 runtimeAPI.storage.onChanged?.addListener((changes, areaName) => {
   if (areaName === "local" && changes.interceptEnabled) {
     state.interceptEnabled = changes.interceptEnabled.newValue !== false;
@@ -60,12 +64,10 @@ setInterval(syncWithDesktopApp, 5000);
 function showHandoffIndicator(filename) {
   const action = runtimeAPI.action || runtimeAPI.browserAction;
   if (!action) return;
-  const label = filename || "Download";
+  const label = String(filename || "Download").replace(/\\/g, "/").split("/").pop() || "Download";
   try { action.setBadgeBackgroundColor?.({ color: "#0ea5e9" }); } catch (_) {}
   try { action.setBadgeText?.({ text: "BX" }); } catch (_) {}
   try { action.setTitle?.({ title: `${label} is downloading in ByteX` }); } catch (_) {}
-  const stored = runtimeAPI.storage.local.set({ lastHandoff: { filename: label, at: Date.now() } });
-  stored?.catch?.(() => {});
   setTimeout(() => {
     try { action.setBadgeText?.({ text: "" }); } catch (_) {}
     try { action.setTitle?.({ title: "ByteX Download Manager" }); } catch (_) {}
