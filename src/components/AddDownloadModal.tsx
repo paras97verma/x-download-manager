@@ -59,41 +59,47 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [isParsingTorrent, setIsParsingTorrent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-detect clipboard URL on open
+  // Pre-fill only when the clipboard matches the dialog the user opened.
   useEffect(() => {
     if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
       navigator.clipboard
         .readText()
         .then((text) => {
           const trimmed = text.trim();
-          if (
-            trimmed.startsWith("http://") ||
-            trimmed.startsWith("https://") ||
-            trimmed.startsWith("magnet:?") ||
-            trimmed.startsWith("ftp://") ||
-            trimmed.startsWith("ftps://")
-          ) {
-            setUrl(trimmed);
-            if (trimmed.startsWith("magnet:?")) {
-              setMode("torrent");
-              parseMagnetString(trimmed);
-            } else {
+          const isMagnet = trimmed.toLowerCase().startsWith("magnet:?");
+          let parsedUrl: URL | null = null;
+          try {
+            parsedUrl = new URL(trimmed);
+          } catch (_) {}
+          const isTorrentFile = Boolean(
+            parsedUrl &&
+              ["http:", "https:", "ftp:", "ftps:"].includes(parsedUrl.protocol) &&
+              parsedUrl.pathname.toLowerCase().endsWith(".torrent")
+          );
+          const isDownloadUrl = Boolean(
+            parsedUrl && ["http:", "https:", "ftp:", "ftps:"].includes(parsedUrl.protocol)
+          );
+          const matchesDialog = initialMode === "torrent"
+            ? isMagnet || isTorrentFile
+            : isDownloadUrl && !isTorrentFile;
+
+          if (!matchesDialog) return;
+          setUrl(trimmed);
+          if (isMagnet) parseMagnetString(trimmed);
+          if (parsedUrl) {
+            const last = parsedUrl.pathname.split("/").pop();
+            if (last && last.includes(".")) {
               try {
-                const u = new URL(trimmed);
-                const last = u.pathname.split("/").pop();
-                if (last && last.includes(".")) {
-                  setFilename(decodeURIComponent(last));
-                  if (last.toLowerCase().endsWith(".torrent")) {
-                    setMode("torrent");
-                  }
-                }
-              } catch (_) {}
+                setFilename(decodeURIComponent(last));
+              } catch (_) {
+                setFilename(last);
+              }
             }
           }
         })
         .catch(() => {});
     }
-  }, []);
+  }, [initialMode]);
 
   const parseMagnetString = (magnetUri: string) => {
     try {
@@ -342,7 +348,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
               {/* Magnet URL fallback input */}
               <div>
                 <label className="block text-slate-300 font-semibold mb-1">
-                  Or Paste Magnet URI:
+                  Magnet URI or .torrent URL:
                 </label>
                 <input
                   type="text"
