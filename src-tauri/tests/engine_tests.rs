@@ -46,6 +46,8 @@ fn test_add_download_task_proper_routing() {
     let engine = Arc::new(DownloadEngine::new());
     let req = NewDownloadRequest {
         url: "https://example.com/downloads/package.tar.gz".to_string(),
+        final_url: None,
+        redirect_chain: Vec::new(),
         filename: Some("package.tar.gz".to_string()),
         category: None,
         save_path: None,
@@ -57,6 +59,9 @@ fn test_add_download_task_proper_routing() {
         cookies: None,
         user_agent: None,
         custom_headers: None,
+        request_method: "GET".to_string(),
+        request_body: None,
+        browser_intercepted: false,
         auth_username: None,
         auth_password: None,
         sequential_torrent: None,

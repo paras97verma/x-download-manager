@@ -13,6 +13,7 @@
   },
   "permissions": [
     "downloads",
+    "webRequest",
     "cookies",
     "notifications",
     "storage",
@@ -29,6 +30,7 @@
   },
   "background": {
     "scripts": [
+      "request-capture.js",
       "background.js"
     ]
   },

@@ -168,46 +168,65 @@ async function resumeBrowserDownload(id) {
   try { await runtimeAPI.downloads.resume(id); } catch (_) {}
 }
 
-async function getCookieHeaderForUrl(url, referer) {
+async function getCookieHeaderForUrl(url) {
   if (!runtimeAPI.cookies) return "";
-  const cookieMap = new Map();
-
-  async function collectCookies(targetUrl) {
-    if (!targetUrl || typeof targetUrl !== "string") return;
-    try {
-      const direct = await runtimeAPI.cookies.getAll({ url: targetUrl });
-      if (direct && Array.isArray(direct)) {
-        for (const c of direct) {
-          if (c && c.name) cookieMap.set(c.name, c.value);
-        }
-      }
-    } catch (_) {}
+  if (!url || typeof url !== "string") return "";
+  try {
+    const cookies = await runtimeAPI.cookies.getAll({ url });
+    return Array.isArray(cookies)
+      ? cookies.filter((cookie) => cookie && cookie.name).map((cookie) => `${cookie.name}=${cookie.value}`).join("; ")
+      : "";
+  } catch (_) {
+    return "";
   }
-
-  // Intercept late: merge cookies from landing page (Referer) and resolved download URL.
-  if (referer) {
-    await collectCookies(referer);
-  }
-  if (url) {
-    await collectCookies(url);
-  }
-
-  if (cookieMap.size === 0) return "";
-  return Array.from(cookieMap.entries())
-    .map(([name, val]) => `${name}=${val}`)
-    .join("; ");
 }
 
-async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTitle }) {
-  const cookies = await getCookieHeaderForUrl(url, referer);
+async function dispatchToXdm({
+  url,
+  originalUrl,
+  finalUrl,
+  redirects,
+  method,
+  bodyBase64,
+  requestReplayable,
+  requestUnavailableReason,
+  headers,
+  responseHeaders,
+  responseStatus,
+  filename,
+  fileSize,
+  mimeType,
+  referer,
+  tabTitle,
+}) {
+  const requestHeaders = { ...(headers || {}) };
+  const cookies = requestHeaders.cookie ? "" : await getCookieHeaderForUrl(finalUrl || url);
+  let finalRequestUrl = finalUrl || url;
+  let capturedOriginalUrl = originalUrl || url;
 
   // Extract embedded FTP/HTTP user:password credentials if present
   let authUser = null;
   let authPass = null;
   try {
-    const parsed = new URL(url);
-    if (parsed.username) authUser = decodeURIComponent(parsed.username);
-    if (parsed.password) authPass = decodeURIComponent(parsed.password);
+    const parsed = new URL(finalRequestUrl);
+    const embeddedUser = parsed.username ? decodeURIComponent(parsed.username) : "";
+    const embeddedPass = parsed.password ? decodeURIComponent(parsed.password) : "";
+    if (["ftp:", "ftps:"].includes(parsed.protocol)) {
+      authUser = embeddedUser || null;
+      authPass = embeddedPass || null;
+    }
+    if (["http:", "https:"].includes(parsed.protocol) && (embeddedUser || embeddedPass)) {
+      requestHeaders.authorization ||= `Basic ${btoa(`${embeddedUser}:${embeddedPass}`)}`;
+      parsed.username = "";
+      parsed.password = "";
+      finalRequestUrl = parsed.toString();
+    }
+    if (["http:", "https:"].includes(parsed.protocol)) {
+      const original = new URL(capturedOriginalUrl);
+      original.username = "";
+      original.password = "";
+      capturedOriginalUrl = original.toString();
+    }
   } catch (_) {}
 
   const isTorrent =
@@ -216,12 +235,22 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     mimeType === "application/x-bittorrent";
 
   const payload = {
-    url,
+    url: capturedOriginalUrl,
+    original_url: capturedOriginalUrl,
+    final_url: finalRequestUrl,
+    redirects: redirects || [],
     filename: filename || null,
     file_size: fileSize || null,
     mime_type: mimeType || null,
-    referer: referer || null,
+    referer: requestHeaders.referer || referer || null,
     cookies: cookies || null,
+    headers: requestHeaders,
+    method: method || "GET",
+    body_base64: bodyBase64 ?? null,
+    request_replayable: requestReplayable !== false,
+    request_unavailable_reason: requestUnavailableReason || null,
+    response_headers: responseHeaders || {},
+    response_status: responseStatus || null,
     auth_username: authUser,
     auth_password: authPass,
     is_torrent: isTorrent,
@@ -230,35 +259,18 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     tab_title: tabTitle || null,
   };
 
-  // 1. Try fast Localhost HTTP Bridge (`127.0.0.1:45678`)
-  try {
-    const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/intercept`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }, 5000);
-    if (resp.ok) {
-      const result = await resp.json().catch(() => null);
-      return result?.accepted === true
-        ? { duplicate: Boolean(result.duplicate) }
-        : null;
-    }
-  } catch (_) {
-    // Fallback to Native Messaging
-  }
-
-  // 2. Fallback to Native Messaging Host (`com.peivee.xdm`) which launches XDM if closed
+  // Native Messaging keeps request credentials off the browser's loopback CORS surface.
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
       return result?.accepted === true
-        ? { duplicate: Boolean(result.duplicate) }
-        : null;
+        ? { accepted: true, duplicate: Boolean(result.duplicate), reason: null }
+        : { accepted: false, reason: result?.reason || result?.error || "ByteX could not safely take over this request." };
     } catch (_) {
-      return false;
+      return { accepted: false, reason: "Native Messaging could not reach ByteX." };
     }
   }
-  return false;
+  return { accepted: false, reason: "Native Messaging is unavailable; the browser download will continue." };
 }
 
 const interceptedDownloadIds = new Set();
@@ -281,6 +293,19 @@ async function handleDownloadInterception(downloadItem) {
     }
   }
 
+  // Resolve request metadata before any pause/IPC await. Other downloads can
+  // complete while those operations are pending and otherwise steal the
+  // newest same-URL capture from this event.
+  const requestContext = globalThis.ByteXRequestCapture?.find(downloadItem) || {
+    originalUrl: downloadItem.url,
+    finalUrl: downloadItem.finalUrl || downloadItem.url,
+    method: "GET",
+    replayable: new URL(downloadItem.finalUrl || downloadItem.url).protocol === "ftp:",
+    unavailableReason: "ByteX could not capture the browser's original HTTP request context, so it left the browser download in control.",
+    headers: {},
+    redirects: [],
+  };
+
   let paused = false;
   let appAccepted = false;
   try {
@@ -288,7 +313,7 @@ async function handleDownloadInterception(downloadItem) {
     if (!browserState) {
       showHandoffFailure(
         downloadItem.filename,
-        "ByteX could not pause this browser download, so it is continuing in the browser.",
+        "ByteX could not confirm that the browser download is active and paused, so it did not start another transfer. Check the browser download status.",
       );
       return false;
     }
@@ -310,13 +335,27 @@ async function handleDownloadInterception(downloadItem) {
     }
 
     const result = await dispatchToXdm({
-      url: downloadItem.finalUrl || downloadItem.url,
+      url: requestContext.originalUrl,
+      originalUrl: requestContext.originalUrl,
+      finalUrl: requestContext.finalUrl,
+      redirects: requestContext.redirects,
+      method: requestContext.method,
+      bodyBase64: requestContext.bodyBase64,
+      requestReplayable: requestContext.replayable,
+      requestUnavailableReason: requestContext.unavailableReason,
+      headers: requestContext.headers,
+      responseHeaders: requestContext.responseHeaders,
+      responseStatus: requestContext.responseStatus,
       filename: displayFilename(downloadItem.filename),
       fileSize: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : null,
       mimeType: downloadItem.mime || null,
-      referer: downloadItem.referrer || null,
+      referer: downloadItem.referrer || requestContext.headers?.referer || null,
     });
-    if (!result) {
+    if (!result?.accepted) {
+      showHandoffFailure(
+        downloadItem.filename,
+        result?.reason || "ByteX could not safely reconstruct the browser request, so the browser download is continuing.",
+      );
       if (paused) {
         await resumeBrowserDownload(downloadItem.id);
       }
@@ -376,7 +415,7 @@ function showHandoffWarning(filename) {
 if (runtimeAPI.downloads) {
   if (runtimeAPI.downloads.onCreated) {
     runtimeAPI.downloads.onCreated.addListener((downloadItem) => {
-      handleDownloadInterception(downloadItem).catch(() => {});
+      return handleDownloadInterception(downloadItem).catch(() => {});
     });
   }
 }
@@ -392,10 +431,10 @@ runtimeAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
       referer: message.referer || sender.tab?.url || "",
       tabTitle: message.tabTitle || sender.tab?.title || "",
     });
-    if (result) showHandoffIndicator(message.filename || "Download");
+    if (result?.accepted) showHandoffIndicator(message.filename || "Download");
     return result;
   })().then((result) => {
-    sendResponse({ success: Boolean(result), duplicate: Boolean(result?.duplicate) });
+    sendResponse({ success: Boolean(result?.accepted), duplicate: Boolean(result?.duplicate) });
   }).catch(() => sendResponse({ success: false }));
   return true;
 });

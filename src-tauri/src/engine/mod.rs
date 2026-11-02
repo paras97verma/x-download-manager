@@ -53,6 +53,13 @@ pub struct ThreadSegment {
     pub status: String, // "waiting" | "connecting" | "receiving" | "completed" | "error"
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DownloadRedirect {
+    pub from_url: String,
+    pub to_url: String,
+    pub status_code: Option<u16>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TorrentPeerInfo {
     pub ip_port: String,
@@ -94,6 +101,8 @@ pub struct DownloadItem {
     pub filename: String,
     pub url: String,
     pub resolved_url: Option<String>,
+    #[serde(default)]
+    pub redirect_chain: Vec<DownloadRedirect>,
     pub protocol: DownloadProtocol,
     pub category: String,
     pub queue_id: String,
@@ -105,6 +114,10 @@ pub struct DownloadItem {
     pub eta_seconds: Option<u64>,
     pub status: DownloadStatus,
     pub resumable: bool,
+    #[serde(default)]
+    pub range_advertised: bool,
+    #[serde(default)]
+    pub resume_validator: Option<String>,
     pub threads_count: usize,
     pub segments: Vec<ThreadSegment>,
     pub torrent_meta: Option<TorrentMetadata>,
@@ -112,6 +125,14 @@ pub struct DownloadItem {
     pub referer: Option<String>,
     pub cookies: Option<String>,
     pub custom_headers: HashMap<String, String>,
+    #[serde(default = "default_request_method")]
+    pub request_method: String,
+    #[serde(skip)]
+    pub request_body: Option<String>,
+    #[serde(default)]
+    pub browser_intercepted: bool,
+    #[serde(default)]
+    pub browser_context_redacted: bool,
     pub site_credential_id: Option<String>,
     pub checksum_sha256: Option<String>,
     pub created_at: String,
@@ -125,6 +146,10 @@ pub struct DownloadItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewDownloadRequest {
     pub url: String,
+    #[serde(default)]
+    pub final_url: Option<String>,
+    #[serde(default)]
+    pub redirect_chain: Vec<DownloadRedirect>,
     pub filename: Option<String>,
     pub category: Option<String>,
     pub save_path: Option<String>,
@@ -136,11 +161,21 @@ pub struct NewDownloadRequest {
     pub cookies: Option<String>,
     pub user_agent: Option<String>,
     pub custom_headers: Option<HashMap<String, String>>,
+    #[serde(default = "default_request_method")]
+    pub request_method: String,
+    #[serde(skip)]
+    pub request_body: Option<String>,
+    #[serde(default)]
+    pub browser_intercepted: bool,
     pub auth_username: Option<String>,
     pub auth_password: Option<String>,
     pub sequential_torrent: Option<bool>,
     pub torrent_file_data: Option<String>,
     pub torrent_selected_files: Option<Vec<usize>>,
+}
+
+fn default_request_method() -> String {
+    "GET".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -247,6 +282,13 @@ fn normalize_restored_downloads(mut downloads: Vec<DownloadItem>) -> Vec<Downloa
     });
 
     for download in &mut downloads {
+        if download.browser_context_redacted && download.status != DownloadStatus::Completed {
+            download.status = DownloadStatus::Failed;
+            download.resumable = false;
+            let message = "This browser download needs session details that ByteX keeps only in memory. Start it again from the browser to continue safely.".to_string();
+            download.error_message = Some(message.clone());
+            download.transfer_log.push(format!("[ERROR] {message}"));
+        }
         if matches!(
             download.status,
             DownloadStatus::Connecting
@@ -289,9 +331,14 @@ fn write_download_history(path: &Path, downloads: &[DownloadItem]) -> Result<(),
     fs::create_dir_all(parent)
         .map_err(|e| format!("Could not create download history directory: {e}"))?;
 
+    let downloads = downloads
+        .iter()
+        .cloned()
+        .map(redact_download_secrets_for_history)
+        .collect();
     let history = DownloadHistory {
         format_version: 1,
-        downloads: downloads.to_vec(),
+        downloads,
     };
     let bytes = serde_json::to_vec(&history).map_err(|e| e.to_string())?;
     let temporary = path.with_extension("json.tmp");
@@ -320,6 +367,68 @@ fn write_download_history(path: &Path, downloads: &[DownloadItem]) -> Result<(),
     }
     let _ = fs::remove_file(backup);
     Ok(())
+}
+
+fn redact_download_secrets_for_history(mut download: DownloadItem) -> DownloadItem {
+    if download.source_browser.is_none() {
+        return download;
+    }
+
+    let mut redacted =
+        download.request_body.is_some() || download.cookies.is_some() || download.referer.is_some();
+    download.request_body = None;
+    download.cookies = None;
+    download.referer = None;
+
+    for (name, value) in &mut download.custom_headers {
+        let lower = name.to_ascii_lowercase();
+        if lower == "cookie"
+            || lower == "authorization"
+            || lower == "proxy-authorization"
+            || lower.starts_with("x-auth")
+            || lower.starts_with("x-api-")
+            || lower.contains("token")
+            || lower.contains("secret")
+            || lower.contains("key")
+            || lower.contains("session")
+            || lower.contains("csrf")
+            || lower.contains("signature")
+            || lower.contains("credential")
+            || lower.contains("password")
+            || lower.contains("ticket")
+            || lower.starts_with("x-xdm-ftp-")
+        {
+            *value = String::new();
+            redacted = true;
+        }
+    }
+    download.custom_headers.retain(|_, value| !value.is_empty());
+
+    redacted |= redact_url_query(&mut download.url);
+    if let Some(url) = download.resolved_url.as_mut() {
+        redacted |= redact_url_query(url);
+    }
+    for redirect in &mut download.redirect_chain {
+        redacted |= redact_url_query(&mut redirect.from_url);
+        redacted |= redact_url_query(&mut redirect.to_url);
+    }
+    download.browser_context_redacted |= redacted;
+    download
+}
+
+fn redact_url_query(value: &mut String) -> bool {
+    let Ok(mut parsed) = url::Url::parse(value) else {
+        return false;
+    };
+    if parsed.username().is_empty() && parsed.password().is_none() && parsed.query().is_none() {
+        return false;
+    }
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    *value = parsed.to_string();
+    true
 }
 
 impl DownloadEngine {
@@ -443,7 +552,21 @@ impl DownloadEngine {
 
     pub fn add_download(&self, req: NewDownloadRequest) -> DownloadItem {
         let settings = self.settings.read().clone();
-        let protocol = Self::detect_protocol(&req.url);
+        let protocol = if req.browser_intercepted {
+            let transfer_url = req.final_url.as_deref().unwrap_or(&req.url);
+            match url::Url::parse(transfer_url)
+                .map(|url| url.scheme().to_string())
+                .as_deref()
+            {
+                Ok("http") => DownloadProtocol::Http,
+                Ok("https") => DownloadProtocol::Https,
+                Ok("ftp") => DownloadProtocol::Ftp,
+                Ok("ftps") => DownloadProtocol::Ftps,
+                _ => Self::detect_protocol(transfer_url),
+            }
+        } else {
+            Self::detect_protocol(&req.url)
+        };
         let id = Uuid::new_v4().to_string();
 
         let torrent_file_path = req.torrent_file_data.as_deref().and_then(|encoded| {
@@ -519,7 +642,8 @@ impl DownloadEngine {
             id: id.clone(),
             filename,
             url: req.url.clone(),
-            resolved_url: None,
+            resolved_url: req.final_url.clone(),
+            redirect_chain: req.redirect_chain,
             protocol: protocol.clone(),
             category,
             queue_id: req.queue_id.unwrap_or_else(|| "main-queue".to_string()),
@@ -535,6 +659,8 @@ impl DownloadEngine {
                 DownloadStatus::Queued
             },
             resumable: true,
+            range_advertised: false,
+            resume_validator: None,
             threads_count,
             segments: Vec::new(),
             torrent_meta: None,
@@ -542,6 +668,10 @@ impl DownloadEngine {
             referer: req.referer,
             cookies,
             custom_headers: headers,
+            request_method: req.request_method,
+            request_body: req.request_body,
+            browser_intercepted: req.browser_intercepted,
+            browser_context_redacted: false,
             site_credential_id,
             checksum_sha256: None,
             created_at: Utc::now().to_rfc3339(),
@@ -562,8 +692,27 @@ impl DownloadEngine {
 
     pub async fn start_download_execution(
         self: &Arc<Self>,
+        item: DownloadItem,
+        req: &NewDownloadRequest,
+    ) -> DownloadItem {
+        self.start_download_execution_inner(item, req, None).await
+    }
+
+    pub async fn start_download_execution_with_ack(
+        self: &Arc<Self>,
+        item: DownloadItem,
+        req: &NewDownloadRequest,
+        startup_ack: tokio::sync::oneshot::Sender<Result<(), String>>,
+    ) -> DownloadItem {
+        self.start_download_execution_inner(item, req, Some(startup_ack))
+            .await
+    }
+
+    async fn start_download_execution_inner(
+        self: &Arc<Self>,
         mut item: DownloadItem,
         req: &NewDownloadRequest,
+        mut startup_ack: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     ) -> DownloadItem {
         if item.protocol == DownloadProtocol::BitTorrent
             || item.protocol == DownloadProtocol::Magnet
@@ -579,8 +728,9 @@ impl DownloadEngine {
                 d.total_bytes = meta.files.iter().map(|f| f.size_bytes).sum();
                 item = d.clone();
             }
-        } else if item.protocol == DownloadProtocol::Usersdrive
-            || item.protocol == DownloadProtocol::FileHostAuth
+        } else if !item.browser_intercepted
+            && (item.protocol == DownloadProtocol::Usersdrive
+                || item.protocol == DownloadProtocol::FileHostAuth)
         {
             let st = self.settings.read().clone();
             if let Ok(resolved) =
@@ -644,6 +794,9 @@ impl DownloadEngine {
                     d.speed_bps = 0;
                     item = d.clone();
                 }
+                if let Some(ack) = startup_ack.take() {
+                    let _ = ack.send(Err("ByteX download queue is full".to_string()));
+                }
                 return item;
             }
             if let Some(d) = self.downloads.write().iter_mut().find(|d| d.id == item.id) {
@@ -659,14 +812,16 @@ impl DownloadEngine {
             let st_arc = Arc::clone(&self.settings);
             let id_clone = item.id.clone();
             let proto = item.protocol.clone();
+            let mut startup_ack = startup_ack.take();
 
             tauri::async_runtime::spawn(async move {
                 let result = if proto == DownloadProtocol::Ftp || proto == DownloadProtocol::Ftps {
-                    ftp_auth::execute_ftp_download(
+                    ftp_auth::execute_ftp_download_with_ack(
                         id_clone.clone(),
                         dls_arc.clone(),
                         st_arc.clone(),
                         rx,
+                        &mut startup_ack,
                     )
                     .await
                     .map(|_| ())
@@ -690,14 +845,21 @@ impl DownloadEngine {
                     )
                     .await
                 } else {
-                    http::execute_segmented_http_download(
+                    http::execute_segmented_http_download_with_ack(
                         id_clone.clone(),
                         dls_arc.clone(),
                         st_arc.clone(),
                         rx,
+                        &mut startup_ack,
                     )
                     .await
                 };
+                if let Some(ack) = startup_ack.take() {
+                    let message = result.as_ref().err().cloned().unwrap_or_else(|| {
+                        "ByteX could not verify the download response".to_string()
+                    });
+                    let _ = ack.send(Err(message));
+                }
                 if let Err(error) = result {
                     let mut dls = dls_arc.write();
                     if let Some(d) = dls.iter_mut().find(|d| d.id == id_clone) {
@@ -788,6 +950,8 @@ impl DownloadEngine {
             };
             let req = NewDownloadRequest {
                 url: item.url.clone(),
+                final_url: item.resolved_url.clone(),
+                redirect_chain: item.redirect_chain.clone(),
                 filename: Some(item.filename.clone()),
                 category: Some(item.category.clone()),
                 save_path: Some(item.save_path.clone()),
@@ -799,6 +963,9 @@ impl DownloadEngine {
                 cookies: item.cookies.clone(),
                 user_agent: item.custom_headers.get("User-Agent").cloned(),
                 custom_headers: Some(item.custom_headers.clone()),
+                request_method: item.request_method.clone(),
+                request_body: item.request_body.clone(),
+                browser_intercepted: item.browser_intercepted,
                 auth_username: None,
                 auth_password: None,
                 sequential_torrent: None,
@@ -821,6 +988,8 @@ impl DownloadEngine {
             .ok_or_else(|| "Download not found".to_string())?;
         let req = NewDownloadRequest {
             url: item.url.clone(),
+            final_url: item.resolved_url.clone(),
+            redirect_chain: item.redirect_chain.clone(),
             filename: Some(item.filename.clone()),
             category: Some(item.category.clone()),
             save_path: Some(item.save_path.clone()),
@@ -832,6 +1001,9 @@ impl DownloadEngine {
             cookies: item.cookies.clone(),
             user_agent: item.custom_headers.get("User-Agent").cloned(),
             custom_headers: Some(item.custom_headers.clone()),
+            request_method: item.request_method.clone(),
+            request_body: item.request_body.clone(),
+            browser_intercepted: item.browser_intercepted,
             auth_username: None,
             auth_password: None,
             sequential_torrent: None,
@@ -862,6 +1034,8 @@ mod persistence_tests {
         let mut item = engine.add_download(NewDownloadRequest {
             url: "magnet:?xt=urn:btih:0123456789012345678901234567890123456789&dn=resume-test"
                 .into(),
+            final_url: None,
+            redirect_chain: Vec::new(),
             filename: Some("resume-test".into()),
             category: Some("Torrents".into()),
             save_path: Some(output_dir.to_string_lossy().to_string()),
@@ -873,6 +1047,9 @@ mod persistence_tests {
             cookies: Some("session=kept".into()),
             user_agent: None,
             custom_headers: None,
+            request_method: "GET".into(),
+            request_body: None,
+            browser_intercepted: false,
             auth_username: None,
             auth_password: None,
             sequential_torrent: None,
@@ -941,6 +1118,8 @@ mod persistence_tests {
         let directory = std::env::temp_dir().join(format!("bytex-save-dir-{}", Uuid::new_v4()));
         let item = engine.add_download(NewDownloadRequest {
             url: "https://example.com/report.zip".into(),
+            final_url: None,
+            redirect_chain: Vec::new(),
             filename: Some("../report.zip".into()),
             category: None,
             save_path: Some(directory.to_string_lossy().to_string()),
@@ -952,6 +1131,9 @@ mod persistence_tests {
             cookies: None,
             user_agent: None,
             custom_headers: None,
+            request_method: "GET".into(),
+            request_body: None,
+            browser_intercepted: false,
             auth_username: None,
             auth_password: None,
             sequential_torrent: None,
@@ -961,5 +1143,134 @@ mod persistence_tests {
 
         assert_eq!(item.filename, "report.zip");
         assert_eq!(PathBuf::from(item.save_path), directory.join("report.zip"));
+    }
+
+    #[test]
+    fn browser_credentials_and_signed_urls_are_not_written_to_history() {
+        let engine = DownloadEngine::new();
+        let directory =
+            std::env::temp_dir().join(format!("bytex-secret-history-{}", Uuid::new_v4()));
+        let request = NewDownloadRequest {
+            url: "https://files.example/archive.zip?token=secret-token".to_string(),
+            final_url: Some("https://cdn.example/archive.zip?sig=secret-signature".to_string()),
+            redirect_chain: vec![DownloadRedirect {
+                from_url: "https://files.example/start?session=secret".to_string(),
+                to_url: "https://cdn.example/archive.zip?sig=secret-signature".to_string(),
+                status_code: Some(302),
+            }],
+            filename: Some("archive.zip".to_string()),
+            category: None,
+            save_path: Some(directory.to_string_lossy().to_string()),
+            threads_count: None,
+            queue_id: None,
+            start_immediately: false,
+            source_browser: Some("Chrome".to_string()),
+            referer: Some("https://files.example/page?csrf=secret".to_string()),
+            cookies: Some("session=secret-cookie".to_string()),
+            user_agent: Some("Browser Test".to_string()),
+            custom_headers: Some(HashMap::from([
+                ("Cookie".to_string(), "session=secret-cookie".to_string()),
+                (
+                    "Authorization".to_string(),
+                    "Bearer secret-header".to_string(),
+                ),
+                ("Accept".to_string(), "application/octet-stream".to_string()),
+            ])),
+            request_method: "POST".to_string(),
+            request_body: Some("c2VjcmV0LXBvc3QtYm9keQ==".to_string()),
+            browser_intercepted: true,
+            auth_username: None,
+            auth_password: None,
+            sequential_torrent: None,
+            torrent_file_data: None,
+            torrent_selected_files: None,
+        };
+        let item = engine.add_download(request);
+        let path =
+            std::env::temp_dir().join(format!("bytex-secret-history-{}.json", Uuid::new_v4()));
+        write_download_history(&path, &[item]).expect("history should save");
+        let contents = fs::read_to_string(&path).expect("history should be readable");
+        for secret in [
+            "secret-token",
+            "secret-signature",
+            "secret-cookie",
+            "secret-header",
+            "secret-post-body",
+            "csrf=secret",
+        ] {
+            assert!(!contents.contains(secret), "history leaked {secret}");
+        }
+        let restored = restore_downloads(&path);
+        let restored_item = restored
+            .first()
+            .expect("browser record should remain visible");
+        assert!(restored_item.browser_context_redacted);
+        assert_eq!(restored_item.status, DownloadStatus::Failed);
+        assert!(restored_item
+            .error_message
+            .as_deref()
+            .unwrap()
+            .contains("Start it again from the browser"));
+        assert_eq!(restored_item.request_method, "POST");
+        assert!(restored_item.request_body.is_none());
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path.with_extension("json.bak"));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[tokio::test]
+    async fn ftp_handoff_is_not_acknowledged_when_the_native_connection_fails() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let engine = Arc::new(DownloadEngine::new());
+        let output_dir = std::env::temp_dir().join(format!("bytex-ftp-handoff-{}", Uuid::new_v4()));
+        let request = NewDownloadRequest {
+            url: format!("ftp://127.0.0.1:{port}/package.bin"),
+            final_url: None,
+            redirect_chain: Vec::new(),
+            filename: Some("package.bin".to_string()),
+            category: None,
+            save_path: Some(output_dir.to_string_lossy().to_string()),
+            threads_count: None,
+            queue_id: Some("main-queue".to_string()),
+            start_immediately: true,
+            source_browser: Some("Firefox".to_string()),
+            referer: None,
+            cookies: None,
+            user_agent: None,
+            custom_headers: None,
+            request_method: "GET".to_string(),
+            request_body: None,
+            browser_intercepted: true,
+            auth_username: None,
+            auth_password: None,
+            sequential_torrent: None,
+            torrent_file_data: None,
+            torrent_selected_files: None,
+        };
+        let item = engine.add_download(request.clone());
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        engine
+            .start_download_execution_with_ack(item.clone(), &request, ack_tx)
+            .await;
+
+        let acknowledgment = tokio::time::timeout(std::time::Duration::from_secs(5), ack_rx)
+            .await
+            .expect("FTP setup should return a handoff decision")
+            .expect("FTP worker should report its setup result");
+        assert!(acknowledgment.unwrap_err().contains("FTP connection error"));
+        assert_eq!(
+            engine
+                .downloads
+                .read()
+                .iter()
+                .find(|current| current.id == item.id)
+                .unwrap()
+                .status,
+            DownloadStatus::Failed
+        );
+        let _ = std::fs::remove_dir_all(output_dir);
     }
 }

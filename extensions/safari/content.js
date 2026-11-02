@@ -58,7 +58,6 @@
       url: originalUrl,
       filename: anchor.getAttribute("download") || null,
       referer: window.location.href,
-      cookies: document.cookie || null,
       tabTitle: document.title,
     }, (response) => {
       if (runtimeAPI.runtime.lastError || !response?.success) {
