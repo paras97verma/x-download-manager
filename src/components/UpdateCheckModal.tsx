@@ -146,7 +146,7 @@ export const UpdateCheckModal: React.FC<UpdateCheckModalProps> = ({
                     <code className="text-emerald-300 text-[10px]">{prepSummary.backup_path}</code>.
                   </div>
                   <div className="text-[11px] text-emerald-200 pt-1">
-                    You can now run the downloaded installer (.pkg, .dmg, .exe, .msi, or .AppImage) or replace the application file.
+                    You can now run the downloaded installer (.dmg on macOS, .exe on Windows, or .AppImage/.deb/.rpm on Linux) or replace the application file.
                   </div>
                 </div>
               ) : (

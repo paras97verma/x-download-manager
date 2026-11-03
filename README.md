@@ -17,10 +17,8 @@ Get the latest verified build for your operating system and browser:
 
 | Operating System | Architecture | Package Format | Direct Download | Latest Release |
 | :--- | :--- | :--- | :--- | :--- |
-| **macOS** | Universal (Apple Silicon & Intel) | `.pkg` Installer | [⬇️ **Download for macOS (.pkg)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/ByteX-Download-Manager_universal.pkg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/ByteX-Download-Manager_universal.pkg) |
 | **macOS** | Universal (Apple Silicon & Intel) | `.dmg` Installer | [⬇️ **Download for macOS (.dmg)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_universal.dmg) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_universal.dmg) |
 | **Windows** | 64-bit (x64) | `.exe` (NSIS Installer) | [⬇️ **Download for Windows (.exe)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_x64-setup.exe) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_x64-setup.exe) |
-| **Windows** | 64-bit (x64) | `.msi` (WiX Installer) | [⬇️ **Download for Windows (.msi)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_x64_en-US.msi) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_x64_en-US.msi) |
 | **Linux** | 64-bit (x86_64) | `.AppImage` (Universal) | [⬇️ **Download for Linux (.AppImage)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_amd64.AppImage) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_amd64.AppImage) |
 | **Linux (Debian/Ubuntu)** | 64-bit (x86_64) | `.deb` Package | [⬇️ **Download for Ubuntu/Debian (.deb)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_amd64.deb) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager_amd64.deb) |
 | **Linux (Fedora/RHEL)** | 64-bit (x86_64) | `.rpm` Package | [⬇️ **Download for Fedora/RHEL (.rpm)**](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager-1.x86_64.rpm) | [Latest Release](https://github.com/paras97verma/x-download-manager/releases/latest/download/bytex-download-manager-1.x86_64.rpm) |
@@ -76,7 +74,7 @@ xattr -cr "/Applications/ByteX Download Manager.app"
 
 ### 🪟 Windows (Microsoft Defender SmartScreen / "Untrusted App")
 
-When launching `bytex-download-manager_1.0.0_x64-setup.exe` or `.msi`, Microsoft Defender SmartScreen may display:
+When launching `bytex-download-manager_1.0.0_x64-setup.exe`, Microsoft Defender SmartScreen may display:
 > *Windows protected your PC: Microsoft Defender SmartScreen prevented an unrecognized app from starting.*
 
 **Option 1: Run Anyway via SmartScreen Dialog (Recommended)**
@@ -84,7 +82,7 @@ When launching `bytex-download-manager_1.0.0_x64-setup.exe` or `.msi`, Microsoft
 2. Click the **Run anyway** button that appears in the bottom right corner.
 
 **Option 2: Unblock via File Properties**
-1. Right-click the downloaded `.exe` or `.msi` file and select **Properties**.
+1. Right-click the downloaded `.exe` file and select **Properties**.
 2. On the **General** tab, look at the bottom section under **Security**.
 3. Check the **Unblock** box and click **Apply** → **OK**.
 4. Double-click to launch the installer normally.
@@ -132,7 +130,7 @@ If you own an Apple Developer Program subscription or Windows Authenticode Certi
    - On first launch, ByteX automatically detects installed browsers and registers its **Native Messaging Host** and local browser bridge.
    - Enable, disable, or reinstall extensions per browser directly inside ByteX's **Browser Extensions** manager.
 5. **Automated GitHub Actions CI/CD Release Pipeline**
-   - Every verified push/merge to `main` runs `cargo fmt`, `cargo clippy`, `cargo test`, and `npm run build`, then builds and publishes version-typed `.dmg`/`.pkg` (macOS), `.exe`/`.msi` (Windows), `.deb`/`.AppImage`/`.rpm` (Linux), and packaged browser extensions.
+   - Every verified push/merge to `main` runs `cargo fmt`, `cargo clippy`, `cargo test`, and `npm run build`, then builds and publishes version-typed `.dmg` (macOS), `.exe` (Windows), `.deb`/`.AppImage`/`.rpm` (Linux), and standalone browser companion extension packages.
 
 ---
 
@@ -157,10 +155,8 @@ npm run package:extensions
 # 4. Launch ByteX Download Manager in development mode
 npm run tauri dev
 
-# 5. Build native OS installer (.dmg / .pkg / .exe / .msi / .deb / .AppImage)
+# 5. Build native OS installer (.dmg on macOS / .exe on Windows / .deb, .AppImage, .rpm on Linux)
 npm run tauri build
-# (On macOS) package .pkg component installer:
-npm run package:pkg
 ```
 
 ---

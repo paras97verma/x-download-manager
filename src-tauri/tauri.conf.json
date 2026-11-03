@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "app", "nsis", "msi", "deb", "appimage", "rpm"],
+    "targets": ["dmg", "nsis", "deb", "appimage", "rpm"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -38,11 +38,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../extensions/chromium/**/*",
-      "../extensions/firefox/**/*",
-      "../extensions/safari/**/*"
-    ],
+    "resources": [],
     "category": "Utility",
     "shortDescription": "ByteX Download Manager — fast, cross-platform downloads",
     "longDescription": "ByteX Download Manager is a fast, native download manager for macOS, Windows, and Linux, with segmented HTTP/HTTPS downloads, BitTorrent and magnet links, FTP/FTPS, authenticated file hosting, and browser extensions for Chromium, Firefox, and Safari.",
@@ -57,10 +53,6 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "http://timestamp.digicert.com",
       "tsp": true,
-      "wix": {
-        "upgradeCode": "7dfcbae0-cfb4-5c66-91a4-0cadb7fae9a8",
-        "language": "en-US"
-      },
       "nsis": {
         "installMode": "both",
         "displayLanguageSelector": false,

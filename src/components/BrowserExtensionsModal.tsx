@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Copy,
   CheckCheck,
+  Download,
 } from "lucide-react";
 import { AppSettings, BrowserStatus } from "../types/xdm";
 import { apiOpenBrowserUrl, apiOpenExtensionFolder } from "../services/tauriBridge";
@@ -130,16 +131,26 @@ export const BrowserExtensionsModal: React.FC<BrowserExtensionsModalProps> = ({
                 Intercepts every file download (documents, archives, software, media) directly from your browser.
               </div>
               <div className="text-[11px] text-slate-400">
-                Restart ByteX after an app update before loading an extension so its manual-install folder is refreshed.
+                Browser extensions are downloaded separately as .zip / .xpi packages and loaded into your browser.
               </div>
             </div>
-            <button
-              onClick={onReinstallAll}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5 shrink-0"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Re-register All Hosts
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => apiOpenBrowserUrl("https://github.com/peivee/x-download-manager/releases/latest")}
+                className="px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white font-semibold flex items-center gap-1.5 transition"
+                title="Download browser extension packages (.zip / .xpi) from GitHub Releases"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Extensions (.zip / .xpi)
+              </button>
+              <button
+                onClick={onReinstallAll}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5 shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Re-register All Hosts
+              </button>
+            </div>
           </div>
 
           {/* Quick Activation Guide for Chromium & Firefox */}
