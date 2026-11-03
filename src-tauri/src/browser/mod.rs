@@ -626,6 +626,21 @@ pub fn configure_browser_integration(
     let primary_dir = get_native_messaging_dir(browser_id);
     let _primary_manifest_file = primary_dir.join(format!("{}.json", NATIVE_HOST_NAME));
 
+    #[cfg(target_os = "macos")]
+    let current_exe = {
+        let installed_app = PathBuf::from(
+            "/Applications/ByteX Download Manager.app/Contents/MacOS/bytex-download-manager",
+        );
+        if installed_app.exists() {
+            installed_app.to_string_lossy().to_string()
+        } else {
+            std::env::current_exe()
+                .unwrap_or_else(|_| PathBuf::from("/usr/local/bin/bytex-download-manager"))
+                .to_string_lossy()
+                .to_string()
+        }
+    };
+    #[cfg(not(target_os = "macos"))]
     let current_exe = std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("/usr/local/bin/bytex-download-manager"))
         .to_string_lossy()

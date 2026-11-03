@@ -196,18 +196,27 @@ async function dispatchToXdm({ url, filename, fileSize, mimeType, referer, tabTi
     tab_title: tabTitle || null,
   };
 
-  // Credentials only cross the extension's authenticated Native Messaging
-  // channel; never post them to the unauthenticated localhost HTTP bridge.
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
       return result?.accepted === true
         ? { duplicate: Boolean(result.duplicate) }
         : null;
-    } catch (_) {
-      return false;
-    }
+    } catch (_) {}
   }
+
+  // Fallback to HTTP IPC bridge
+  try {
+    const response = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/intercept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }, 5000);
+    if (response.ok) {
+      const result = await response.json();
+      return result?.accepted === true ? { duplicate: Boolean(result.duplicate) } : null;
+    }
+  } catch (_) {}
 
   return false;
 }
