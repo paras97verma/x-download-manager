@@ -1,7 +1,7 @@
 {
   "name": "bytex-download-manager",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "ByteX Download Manager — a fast cross-platform download manager for HTTP, torrents, FTP, and browser downloads",
   "author": "~peivee",
   "license": "MIT",

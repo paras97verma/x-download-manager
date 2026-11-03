@@ -1,6 +1,6 @@
 [package]
 name = "bytex-download-manager"
-version = "1.0.2"
+version = "1.0.0"
 description = "ByteX Download Manager — High-Speed Cross-Platform Multi-Threaded, Torrent, and FTP Download Manager"
 authors = ["~peivee"]
 license = "MIT"
