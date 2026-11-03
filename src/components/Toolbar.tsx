@@ -26,6 +26,8 @@ interface ToolbarProps {
   settings?: AppSettings;
   selectedCount?: number;
   appVersion?: string;
+  onPlayMediaSelected?: () => void;
+  isMediaSelected?: boolean;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -40,6 +42,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   uiMode,
   selectedCount = 0,
   appVersion,
+  onPlayMediaSelected,
+  isMediaSelected = false,
 }) => {
   const isMac = typeof navigator !== "undefined" && navigator.platform?.toUpperCase().includes("MAC");
   return (
@@ -101,6 +105,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <span className="hidden xl:inline">Pause</span>
           {selectedCount > 1 ? ` (${selectedCount})` : ""}
         </button>
+
+        {isMediaSelected && onPlayMediaSelected && (
+          <button
+            onClick={onPlayMediaSelected}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-sm transition shrink-0"
+            title="Stream / Play Selected Media"
+          >
+            <Play className="w-3.5 h-3.5 fill-white" />
+            <span className="hidden xl:inline">Play / Stream</span>
+          </button>
+        )}
 
         <button
           onClick={onStopAll}

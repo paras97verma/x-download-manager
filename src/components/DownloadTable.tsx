@@ -26,7 +26,13 @@ import {
   X,
 } from "lucide-react";
 import { DownloadItem, AppSettings } from "../types/xdm";
-import { formatBytes, formatEta, formatSpeed } from "../services/tauriBridge";
+import {
+  formatBytes,
+  formatEta,
+  formatSpeed,
+  isMediaFile,
+  apiOpenInExternalPlayer,
+} from "../services/tauriBridge";
 
 interface DownloadTableProps {
   downloads: DownloadItem[];
@@ -46,6 +52,7 @@ interface DownloadTableProps {
   onDeleteDownload: (id: string, deleteFile: boolean) => void;
   settings?: AppSettings;
   onToggleSpeedLimiter?: () => void;
+  onPlayMedia?: (item: DownloadItem) => void;
 }
 
 interface ContextMenuState {
@@ -72,6 +79,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   onDeleteDownload,
   settings,
   onToggleSpeedLimiter,
+  onPlayMedia,
 }) => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [nonResumableModal, setNonResumableModal] = useState<{
@@ -314,6 +322,18 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 <td className="py-2.5 px-3 text-right">
                   {item.status === "completed" ? (
                     <div className="flex items-center justify-end gap-1.5">
+                      {isMediaFile(item.filename) && onPlayMedia && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPlayMedia(item);
+                          }}
+                          className="px-2 py-1 rounded bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-300 inline-flex items-center gap-1 text-[11px] transition"
+                          title="Play Media File"
+                        >
+                          <Play className="w-3 h-3 fill-indigo-400" /> Play
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -344,23 +364,37 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                       <Clock className="w-4 h-4" /> Queued
                     </span>
                   ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTogglePauseResume(item);
-                      }}
-                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1 text-[11px]"
-                    >
-                      {item.status === "downloading" ? (
-                        <>
-                          <Pause className="w-3 h-3 text-amber-400" /> Pause
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-3 h-3 text-emerald-400" /> Resume
-                        </>
+                    <div className="flex items-center justify-end gap-1.5">
+                      {isMediaFile(item.filename) && onPlayMedia && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPlayMedia(item);
+                          }}
+                          className="p-1 rounded bg-indigo-950/70 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-300 transition"
+                          title="Stream While Downloading"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-indigo-400" />
+                        </button>
                       )}
-                    </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTogglePauseResume(item);
+                        }}
+                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1 text-[11px]"
+                      >
+                        {item.status === "downloading" ? (
+                          <>
+                            <Pause className="w-3 h-3 text-amber-400" /> Pause
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 text-emerald-400" /> Resume
+                          </>
+                        )}
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -377,6 +411,35 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
           className="fixed z-50 w-64 max-h-[85vh] overflow-y-auto bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Progressive Media Streaming */}
+          {isMediaFile(contextMenu.item.filename) && (
+            <>
+              <button
+                onClick={() => {
+                  onPlayMedia?.(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left font-medium text-indigo-300"
+              >
+                <Play className="w-3.5 h-3.5 text-indigo-400 fill-indigo-400/40" />
+                {contextMenu.item.status === "completed"
+                  ? "Play Media File"
+                  : "Play While Downloading (Stream)"}
+              </button>
+              <button
+                onClick={() => {
+                  apiOpenInExternalPlayer(contextMenu.item.id);
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left text-slate-300"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-indigo-400" />
+                Open in System Player (VLC)
+              </button>
+              <div className="h-px bg-slate-700/60 my-1" />
+            </>
+          )}
+
           {/* Pause / Resume */}
           {contextMenu.item.status === "downloading" ? (
             <button

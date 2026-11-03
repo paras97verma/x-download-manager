@@ -10,6 +10,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { SchedulerModal } from "./components/SchedulerModal";
 import { FilePropertiesModal } from "./components/FilePropertiesModal";
 import { DuplicateDownloadModal } from "./components/DuplicateDownloadModal";
+import { MediaPlayerModal } from "./components/MediaPlayerModal";
 import {
   DEFAULT_SETTINGS,
   INITIAL_BROWSERS,
@@ -38,6 +39,8 @@ import {
   isTauriRuntime,
   onNativeMenuAction,
   onDuplicateDownloadDetected,
+  apiGetMediaStreamInfo,
+  isMediaFile,
 } from "./services/tauriBridge";
 import {
   AppSettings,
@@ -45,6 +48,7 @@ import {
   DownloadItem,
   NewDownloadRequest,
   DuplicateDownloadNotice,
+  MediaStreamInfo,
 } from "./types/xdm";
 
 export const App: React.FC = () => {
@@ -67,9 +71,21 @@ export const App: React.FC = () => {
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [rememberDeleteConfirmation, setRememberDeleteConfirmation] = useState(false);
   const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
+  const [activeMediaStream, setActiveMediaStream] = useState<MediaStreamInfo | null>(null);
   const [duplicateNotices, setDuplicateNotices] = useState<DuplicateDownloadNotice[]>([]);
   const duplicateNotice = duplicateNotices[0] || null;
   const dismissDuplicateNotice = () => setDuplicateNotices((notices) => notices.slice(1));
+
+  const handlePlayMedia = useCallback(async (item: DownloadItem) => {
+    try {
+      const info = await apiGetMediaStreamInfo(item.id);
+      if (info) {
+        setActiveMediaStream(info);
+      }
+    } catch (err) {
+      console.error("Failed to load media stream info:", err);
+    }
+  }, []);
 
   const previousStatusRef = useRef<Map<string, string>>(new Map());
 
@@ -784,6 +800,8 @@ export const App: React.FC = () => {
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         onToggleUiMode={toggleUiMode}
         uiMode={settings.ui_mode || "simple"}
+        isMediaSelected={Boolean(selectedItem && isMediaFile(selectedItem.filename))}
+        onPlayMediaSelected={() => selectedItem && handlePlayMedia(selectedItem)}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -817,9 +835,10 @@ export const App: React.FC = () => {
             onDeleteDownload={(id, deleteFile) => handleDeleteOne(id, deleteFile)}
             settings={settings}
             onToggleSpeedLimiter={handleToggleSpeedLimiter}
+            onPlayMedia={handlePlayMedia}
           />
           {(settings.ui_mode || "simple") === "advanced" && (
-            <SegmentInspector item={selectedItem} />
+            <SegmentInspector item={selectedItem} onPlayMedia={handlePlayMedia} />
           )}
         </main>
       </div>
@@ -1061,6 +1080,13 @@ export const App: React.FC = () => {
             </div>
           </section>
         </div>
+      )}
+
+      {activeMediaStream && (
+        <MediaPlayerModal
+          mediaInfo={activeMediaStream}
+          onClose={() => setActiveMediaStream(null)}
+        />
       )}
     </div>
   );

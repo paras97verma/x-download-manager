@@ -5,6 +5,7 @@ import {
   BrowserStatus,
   DownloadItem,
   DuplicateDownloadNotice,
+  MediaStreamInfo,
   NewDownloadRequest,
   ThreadSegment,
 } from "../types/xdm";
@@ -356,6 +357,56 @@ export async function apiParseTorrentFile(
   } catch (err) {
     console.error("Failed to parse_torrent_file via Tauri:", err);
     return null;
+  }
+}
+
+export function isVideoFile(filename?: string): boolean {
+  if (!filename) return false;
+  const ext = filename.split(".").pop()?.toLowerCase();
+  return ["mp4", "m4v", "webm", "mkv", "avi", "mov", "ts", "ogv"].includes(ext || "");
+}
+
+export function isAudioFile(filename?: string): boolean {
+  if (!filename) return false;
+  const ext = filename.split(".").pop()?.toLowerCase();
+  return ["mp3", "wav", "flac", "aac", "ogg", "oga", "m4a", "opus"].includes(ext || "");
+}
+
+export function isMediaFile(filename?: string): boolean {
+  return isVideoFile(filename) || isAudioFile(filename);
+}
+
+export async function apiGetMediaStreamInfo(id: string): Promise<MediaStreamInfo | null> {
+  if (!isTauriRuntime()) {
+    return {
+      download_id: id,
+      filename: "sample-media.mp4",
+      stream_url: `http://127.0.0.1:45678/api/v1/stream/${id}`,
+      mime_type: "video/mp4",
+      total_bytes: 50_000_000,
+      downloaded_bytes: 25_000_000,
+      is_video: true,
+      is_audio: false,
+      is_complete: false,
+    };
+  }
+  try {
+    return await invoke<MediaStreamInfo>("get_media_stream_info", { id });
+  } catch (err) {
+    console.error("Failed to get_media_stream_info via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiOpenInExternalPlayer(id: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    window.open(`http://127.0.0.1:45678/api/v1/stream/${id}`, "_blank");
+    return;
+  }
+  try {
+    await invoke("open_in_external_player", { id });
+  } catch (err) {
+    console.error("Failed to open_in_external_player via Tauri:", err);
   }
 }
 

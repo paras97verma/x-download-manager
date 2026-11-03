@@ -236,6 +236,14 @@ pub async fn start_browser_ipc_server(
         .route("/api/v1/intercept", post(handle_intercept))
         .route("/api/v1/prepare-update", post(handle_prepare_update))
         .route("/api/v1/downloads", get(handle_list_downloads))
+        .route(
+            "/api/v1/stream/:id",
+            get(crate::streaming::stream_media_handler).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/stream/:id",
+            get(crate::streaming::stream_media_handler).layer(CorsLayer::permissive()),
+        )
         .with_state(engine);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
