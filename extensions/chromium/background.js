@@ -3,7 +3,30 @@
 // Intercepts browser-managed network downloads, sends them to ByteX, and resumes
 // the browser transfer if the app declines or cannot receive the handoff.
 
+try { importScripts("durable-outbox.js"); } catch (_) {}
 try { importScripts("request-capture.js"); } catch (_) {}
+
+const HandoffState = globalThis.ByteXHandoffState || {
+  DETECTED: "DETECTED",
+  CLASSIFIED: "CLASSIFIED",
+  CONTEXT_COLLECTED: "CONTEXT_COLLECTED",
+  BRIDGE_CONNECTING: "BRIDGE_CONNECTING",
+  SUBMITTED: "SUBMITTED",
+  APP_VALIDATING: "APP_VALIDATING",
+  APP_ACCEPTED: "APP_ACCEPTED",
+  REPLACEMENT_READY: "REPLACEMENT_READY",
+  BROWSER_CANCEL_REQUESTED: "BROWSER_CANCEL_REQUESTED",
+  BROWSER_CANCELLED: "BROWSER_CANCELLED",
+  DESKTOP_RUNNING: "DESKTOP_RUNNING",
+  FAILED_FALLBACK_RESUMED: "FAILED_FALLBACK_RESUMED",
+};
+
+const durableOutbox = globalThis.ByteXDurableOutbox || {
+  recordTransition: async () => {},
+  markResolved: async () => {},
+  getEntry: () => null,
+  reconcileOnStartup: async () => {},
+};
 
 const runtimeAPI = typeof browser !== "undefined" ? browser : chrome;
 const XDM_IPC_URL = "http://127.0.0.1:45678";
@@ -383,12 +406,19 @@ async function handleDownloadInterception(downloadItem) {
       const first = interceptedDownloadIds.values().next().value;
       interceptedDownloadIds.delete(first);
     }
+    await durableOutbox.recordTransition(downloadItem.id, HandoffState.DETECTED, {
+      url: downloadItem.finalUrl || downloadItem.url,
+      filename: downloadItem.filename,
+    });
   }
+
+  await durableOutbox.recordTransition(downloadItem.id, HandoffState.CLASSIFIED);
 
   // Resolve request metadata before any pause/IPC await. Other downloads can
   // complete while those operations are pending and otherwise steal the
   // newest same-URL capture from this event.
   const requestContext = resolveDownloadRequestContext(downloadItem);
+  await durableOutbox.recordTransition(downloadItem.id, HandoffState.CONTEXT_COLLECTED);
 
   let paused = false;
   let appAccepted = false;
@@ -401,6 +431,7 @@ async function handleDownloadInterception(downloadItem) {
         downloadItem.filename,
         "ByteX could not confirm that the browser download is active and paused, so it did not start another transfer. Check the browser download status.",
       );
+      await durableOutbox.markResolved(downloadItem.id, HandoffState.FAILED_FALLBACK_RESUMED, "Browser pause failed");
       return false;
     }
     if (browserState === "complete") {
@@ -408,6 +439,7 @@ async function handleDownloadInterception(downloadItem) {
         downloadItem.filename,
         "This download finished in the browser before ByteX could take over. It was not started again in ByteX.",
       );
+      await durableOutbox.markResolved(downloadItem.id, HandoffState.FAILED_FALLBACK_RESUMED, "Finished in browser before takeover");
       return false;
     }
     paused = browserState === "paused";
@@ -415,8 +447,11 @@ async function handleDownloadInterception(downloadItem) {
     await syncWithDesktopApp();
     if (!shouldInterceptDownload(downloadItem)) {
       if (paused) await resumeBrowserDownload(downloadItem.id);
+      await durableOutbox.markResolved(downloadItem.id, HandoffState.FAILED_FALLBACK_RESUMED, "Sync deselected download");
       return false;
     }
+
+    await durableOutbox.recordTransition(downloadItem.id, HandoffState.SUBMITTED);
 
     const result = await dispatchToXdm({
       url: requestContext.originalUrl,
@@ -442,13 +477,18 @@ async function handleDownloadInterception(downloadItem) {
         result?.reason || "ByteX could not safely reconstruct the browser request, so the browser download is continuing.",
       );
       if (paused) await resumeBrowserDownload(downloadItem.id);
+      await durableOutbox.markResolved(downloadItem.id, HandoffState.FAILED_FALLBACK_RESUMED, result?.reason || "Desktop unaccepted");
       return false;
     }
     appAccepted = true;
+    await durableOutbox.recordTransition(downloadItem.id, HandoffState.APP_ACCEPTED);
 
+    await durableOutbox.recordTransition(downloadItem.id, HandoffState.BROWSER_CANCEL_REQUESTED);
     const browserStopped = await stopBrowserDownload(downloadItem.id);
     const filename = displayFilename(downloadItem.filename);
     if (browserStopped) {
+      await durableOutbox.recordTransition(downloadItem.id, HandoffState.BROWSER_CANCELLED);
+      await durableOutbox.markResolved(downloadItem.id, HandoffState.DESKTOP_RUNNING);
       showHandoffIndicator(filename);
       showHandoffInTab(downloadItem.tabId, filename);
       return true;
@@ -456,9 +496,11 @@ async function handleDownloadInterception(downloadItem) {
 
     // Keep the browser copy paused instead of resuming it beside ByteX.
     showHandoffWarning(filename);
+    await durableOutbox.markResolved(downloadItem.id, HandoffState.DESKTOP_RUNNING, "Browser paused fallback warning");
     return false;
-  } catch (_) {
+  } catch (err) {
     if (paused && !appAccepted) await resumeBrowserDownload(downloadItem.id);
+    await durableOutbox.markResolved(downloadItem.id, HandoffState.FAILED_FALLBACK_RESUMED, err?.message || String(err));
     return false;
   }
 }

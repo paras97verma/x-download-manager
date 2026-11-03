@@ -14,7 +14,7 @@ use crate::browser::{
     auto_register_all_detected_browsers, configure_browser_integration, detect_browsers,
     BrowserStatus,
 };
-use crate::config::{AppSettings, SchedulerQueueConfig};
+use crate::config::{AppSettings, SchedulerQueueConfig, SiteCredential};
 use crate::engine::{
     ftp_auth::{resolve_usersdrive_or_filehost, ResolvedAuthDownload},
     DownloadEngine, DownloadItem, DownloadStatus, DuplicateDownloadNotice, NewDownloadRequest,
@@ -431,6 +431,56 @@ fn update_settings(
     engine.config_manager.save(&new_settings)?;
     *engine.settings.write() = new_settings.clone();
     Ok(new_settings)
+}
+
+#[tauri::command]
+async fn test_remote_connection(
+    params: crate::engine::remote_protocol::RemoteConnectionTestParams,
+) -> Result<crate::engine::remote_protocol::RemoteConnectionTestResult, String> {
+    Ok(crate::engine::remote_protocol::test_remote_connection(params).await)
+}
+
+#[tauri::command]
+fn save_remote_credential(
+    credential: SiteCredential,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<AppSettings, String> {
+    if !credential.password_or_token.is_empty() {
+        let _ = engine.keyring.set_secret(
+            &format!("site_cred:{}", credential.id),
+            &credential.password_or_token,
+        );
+    }
+    let mut st = engine.settings.write();
+    let mut updated = st.clone();
+    if let Some(pos) = updated
+        .site_credentials
+        .iter()
+        .position(|c| c.id == credential.id)
+    {
+        updated.site_credentials[pos] = credential;
+    } else {
+        updated.site_credentials.push(credential);
+    }
+    engine.config_manager.save(&updated)?;
+    *st = updated.clone();
+    Ok(updated)
+}
+
+#[tauri::command]
+fn delete_remote_credential(
+    credential_id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<AppSettings, String> {
+    let _ = engine
+        .keyring
+        .delete_secret(&format!("site_cred:{}", credential_id));
+    let mut st = engine.settings.write();
+    let mut updated = st.clone();
+    updated.site_credentials.retain(|c| c.id != credential_id);
+    engine.config_manager.save(&updated)?;
+    *st = updated.clone();
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -1573,6 +1623,9 @@ pub fn run_app() {
             get_app_version,
             get_media_stream_info,
             open_in_external_player,
+            test_remote_connection,
+            save_remote_credential,
+            delete_remote_credential,
         ])
         .build(tauri::generate_context!());
     match app_result {

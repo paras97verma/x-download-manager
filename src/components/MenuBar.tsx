@@ -18,6 +18,7 @@ import {
   KeyRound,
   ShieldCheck,
   RotateCcw,
+  Server,
 } from "lucide-react";
 
 interface MenuBarProps {
@@ -26,6 +27,7 @@ interface MenuBarProps {
   onOpenSettings: (tab?: string) => void;
   onOpenScheduler: () => void;
   onOpenExtensions: () => void;
+  onOpenRemoteProtocol?: () => void;
   onToggleUiMode: () => void;
   uiMode: "simple" | "advanced";
   onResumeSelected: () => void;
@@ -46,6 +48,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onOpenSettings,
   onOpenScheduler,
   onOpenExtensions,
+  onOpenRemoteProtocol,
   onToggleUiMode,
   uiMode,
   onResumeSelected,
@@ -337,6 +340,16 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                 <Puzzle className="w-3.5 h-3.5 text-indigo-400" /> Browser Integration...
               </span>
             </button>
+            {onOpenRemoteProtocol && (
+              <button
+                onClick={() => handleAction(onOpenRemoteProtocol)}
+                className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
+              >
+                <span className="flex items-center gap-2">
+                  <Server className="w-3.5 h-3.5 text-cyan-400" /> Remote Protocol Manager (FTP / SFTP)...
+                </span>
+              </button>
+            )}
             <button
               onClick={() => handleAction(() => onOpenSettings("logins"))}
               className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"

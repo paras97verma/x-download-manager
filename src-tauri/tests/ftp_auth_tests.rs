@@ -15,6 +15,7 @@ fn test_match_site_credential_wildcard() {
             cookies: Some("xfss=abc".into()),
             custom_headers: HashMap::new(),
             enabled: true,
+            ..Default::default()
         },
         SiteCredential {
             id: "2".into(),
@@ -25,6 +26,7 @@ fn test_match_site_credential_wildcard() {
             cookies: None,
             custom_headers: HashMap::new(),
             enabled: true,
+            ..Default::default()
         },
     ];
 
@@ -54,6 +56,7 @@ fn test_match_site_credential_disabled_ignored() {
         cookies: None,
         custom_headers: HashMap::new(),
         enabled: false,
+        ..Default::default()
     }];
 
     let m = match_site_credential("https://sub.disabledhost.com/file.zip", &creds);
@@ -71,6 +74,7 @@ fn test_saved_http_auth_is_applied_to_matching_downloads() {
         cookies: None,
         custom_headers: HashMap::new(),
         enabled: true,
+        ..Default::default()
     }];
     let mut headers = HashMap::new();
     let mut cookies = None;
@@ -101,6 +105,7 @@ fn test_saved_bearer_and_cookie_auth_preserve_explicit_values() {
             cookies: None,
             custom_headers: HashMap::new(),
             enabled: true,
+            ..Default::default()
         },
         SiteCredential {
             id: "cookie-login".into(),
@@ -111,6 +116,7 @@ fn test_saved_bearer_and_cookie_auth_preserve_explicit_values() {
             cookies: Some("session=saved".into()),
             custom_headers: HashMap::new(),
             enabled: true,
+            ..Default::default()
         },
     ];
     let mut bearer_headers = HashMap::new();

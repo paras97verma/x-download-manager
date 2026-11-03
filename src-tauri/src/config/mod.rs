@@ -11,12 +11,45 @@ const LEGACY_DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 
 pub struct SiteCredential {
     pub id: String,
     pub host_pattern: String,
-    pub site_type: String, // "usersdrive" | "1fichier" | "mediafire" | "ftp" | "http_basic" | "bearer" | "cookie"
+    pub site_type: String, // "usersdrive" | "1fichier" | "mediafire" | "ftp" | "ftps" | "sftp" | "http_basic" | "bearer" | "cookie"
     pub username: String,
     pub password_or_token: String,
     pub cookies: Option<String>,
     pub custom_headers: HashMap<String, String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub remote_path: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub is_anonymous: Option<bool>,
+    #[serde(default)]
+    pub passive_mode: Option<bool>,
+}
+
+impl Default for SiteCredential {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            host_pattern: String::new(),
+            site_type: "generic".into(),
+            username: String::new(),
+            password_or_token: String::new(),
+            cookies: None,
+            custom_headers: HashMap::new(),
+            enabled: true,
+            protocol: None,
+            port: None,
+            remote_path: None,
+            display_name: None,
+            is_anonymous: None,
+            passive_mode: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -716,7 +749,11 @@ impl ConfigManager {
     }
 
     pub fn save(&self, settings: &AppSettings) -> Result<(), String> {
-        let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+        let mut sanitized = settings.clone();
+        for cred in &mut sanitized.site_credentials {
+            cred.password_or_token = String::new();
+        }
+        let json = serde_json::to_string_pretty(&sanitized).map_err(|e| e.to_string())?;
         fs::write(&self.config_path, json).map_err(|e| e.to_string())
     }
 }

@@ -101,12 +101,43 @@ export interface DownloadItem {
 export interface SiteCredential {
   id: string;
   host_pattern: string;
-  site_type: "usersdrive" | "1fichier" | "mediafire" | "ftp" | "http_basic" | "bearer" | "cookie";
+  site_type: "usersdrive" | "1fichier" | "mediafire" | "ftp" | "ftps" | "sftp" | "http_basic" | "bearer" | "cookie";
   username: string;
   password_or_token: string;
   cookies?: string | null;
   custom_headers: Record<string, string>;
   enabled: boolean;
+  protocol?: "ftp" | "ftps" | "sftp" | "http" | "https" | null;
+  port?: number | null;
+  remote_path?: string | null;
+  display_name?: string | null;
+  is_anonymous?: boolean | null;
+  passive_mode?: boolean | null;
+}
+
+export interface RemoteConnectionTestParams {
+  protocol: "ftp" | "ftps" | "sftp";
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+  is_anonymous: boolean;
+  remote_path?: string | null;
+  passive_mode: boolean;
+}
+
+export interface RemoteConnectionTestResult {
+  success: boolean;
+  protocol: string;
+  host: string;
+  port: number;
+  banner?: string | null;
+  authenticated: boolean;
+  features: string[];
+  remote_path_exists?: boolean | null;
+  message: string;
+  latency_ms: number;
+  security_warning?: string | null;
 }
 
 export interface CategoryRule {

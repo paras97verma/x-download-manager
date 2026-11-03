@@ -98,6 +98,10 @@ jobs:
         if: steps.filter.outputs.run_tests == 'true'
         run: npm run typecheck
 
+      - name: Frontend & Extension Automated Unit Tests (Vitest & Node)
+        if: steps.filter.outputs.run_tests == 'true'
+        run: npm test
+
       # ========================================================================
       # 2. CODE SCANNING & DEPENDENCY SECURITY AUDIT
       # ========================================================================

@@ -8,6 +8,7 @@ import { AddDownloadModal } from "./components/AddDownloadModal";
 import { BrowserExtensionsModal } from "./components/BrowserExtensionsModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { SchedulerModal } from "./components/SchedulerModal";
+import { RemoteProtocolModal } from "./components/RemoteProtocolModal";
 import { FilePropertiesModal } from "./components/FilePropertiesModal";
 import { DuplicateDownloadModal } from "./components/DuplicateDownloadModal";
 import { MediaPlayerModal } from "./components/MediaPlayerModal";
@@ -69,6 +70,7 @@ export const App: React.FC = () => {
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
+  const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [rememberDeleteConfirmation, setRememberDeleteConfirmation] = useState(false);
@@ -656,6 +658,7 @@ export const App: React.FC = () => {
         else if (showExtensionsModal) setShowExtensionsModal(false);
         else if (settingsTab) setSettingsTab(null);
         else if (showSchedulerModal) setShowSchedulerModal(false);
+        else if (showRemoteModal) setShowRemoteModal(false);
         else if (propertiesItem) setPropertiesItem(null);
         else if (selectedIds.size > 0) setSelectedIds(new Set());
       }
@@ -670,6 +673,7 @@ export const App: React.FC = () => {
     showExtensionsModal,
     settingsTab,
     showSchedulerModal,
+    showRemoteModal,
     propertiesItem,
   ]);
 
@@ -741,6 +745,9 @@ export const App: React.FC = () => {
         case "open_scheduler":
           setShowSchedulerModal(true);
           break;
+        case "open_remote_sites":
+          setShowRemoteModal(true);
+          break;
         case "open_extensions":
           setSettingsTab("browser");
           break;
@@ -784,6 +791,7 @@ export const App: React.FC = () => {
           onOpenSettings={(tab) => setSettingsTab(tab || "general")}
           onOpenScheduler={() => setShowSchedulerModal(true)}
           onOpenExtensions={() => setSettingsTab("browser")}
+          onOpenRemoteProtocol={() => setShowRemoteModal(true)}
           onToggleUiMode={toggleUiMode}
           uiMode={settings.ui_mode || "simple"}
           onResumeSelected={handleResumeBatch}
@@ -838,6 +846,7 @@ export const App: React.FC = () => {
         onDeleteSelected={() => handleDeleteBatch(false)}
         selectedCount={selectedIds.size}
         onOpenScheduler={() => setShowSchedulerModal(true)}
+        onOpenRemoteProtocol={() => setShowRemoteModal(true)}
         onOpenSettings={(tab) => setSettingsTab(tab || "general")}
         onToggleUiMode={toggleUiMode}
         uiMode={settings.ui_mode || "simple"}
@@ -1050,7 +1059,16 @@ export const App: React.FC = () => {
               setSettings(newSettings);
             }
           }}
+          onOpenRemoteProtocol={() => setShowRemoteModal(true)}
           onClose={() => setSettingsTab(null)}
+        />
+      )}
+
+      {showRemoteModal && (
+        <RemoteProtocolModal
+          settings={settings}
+          onClose={() => setShowRemoteModal(false)}
+          onUpdateSettings={(newSettings) => setSettings(newSettings)}
         />
       )}
 

@@ -1,6 +1,7 @@
 pub mod ftp_auth;
 pub mod http;
 pub mod rate_limiter;
+pub mod remote_protocol;
 pub mod torrent;
 
 use chrono::Utc;

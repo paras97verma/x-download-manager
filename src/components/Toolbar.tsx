@@ -9,6 +9,7 @@ import {
   CalendarClock,
   Settings,
   Sparkles,
+  Server,
 } from "lucide-react";
 import { AppSettings } from "../types/xdm";
 
@@ -20,6 +21,7 @@ interface ToolbarProps {
   onDeleteSelected: () => void;
   onOpenScheduler: () => void;
   onOpenExtensions?: () => void;
+  onOpenRemoteProtocol?: () => void;
   onOpenSettings: (initialTab?: string) => void;
   onToggleUiMode: () => void;
   uiMode: "simple" | "advanced";
@@ -37,6 +39,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onStopAll,
   onDeleteSelected,
   onOpenScheduler,
+  onOpenRemoteProtocol,
   onOpenSettings,
   onToggleUiMode,
   uiMode,
@@ -160,6 +163,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
           <span className="hidden xl:inline">Queues</span>
         </button>
+
+        {onOpenRemoteProtocol && (
+          <button
+            onClick={onOpenRemoteProtocol}
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-slate-800/70 hover:bg-slate-700 border border-slate-700/70 text-slate-200 text-xs font-medium transition shrink-0"
+            title="FTP, FTPS & SFTP Remote Protocol Manager"
+          >
+            <Server className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden xl:inline">FTP / Sites</span>
+          </button>
+        )}
 
         <button
           onClick={() => onOpenSettings("general")}
