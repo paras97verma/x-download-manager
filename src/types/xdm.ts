@@ -296,3 +296,53 @@ export interface MediaStreamInfo {
   is_audio: boolean;
   is_complete: boolean;
 }
+
+export interface UpdatePreparationSummary {
+  success: boolean;
+  paused_downloads_count: number;
+  queued_downloads_count: number;
+  completed_downloads_count: number;
+  backup_path: string;
+  db_intact: boolean;
+  prepared_at: string;
+  message: string;
+}
+
+export interface RestoredDownloadInfo {
+  id: string;
+  filename: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  resumable: boolean;
+  reason: string;
+}
+
+export interface UpdateRestorationReport {
+  restored_at: string;
+  app_version: string;
+  previous_version: string | null;
+  total_restored: number;
+  safely_paused: number;
+  ready_to_resume: RestoredDownloadInfo[];
+  non_resumable_protected: RestoredDownloadInfo[];
+  completed_verified: number;
+  db_restored_from_backup: boolean;
+}
+
+export interface DownloadResumeVerificationResult {
+  id: string;
+  can_resume: boolean;
+  accepts_ranges: boolean;
+  validator_matches: boolean;
+  server_total_bytes: number;
+  message: string;
+}
+
+export interface AppUpdateInfo {
+  current_version: string;
+  latest_version: string;
+  has_update: boolean;
+  release_notes: string;
+  release_url: string;
+  published_at: string | null;
+}

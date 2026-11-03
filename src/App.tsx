@@ -37,6 +37,7 @@ import {
   apiToggleBrowserExtension,
   apiUpdateSettings,
   apiGetAppVersion,
+  apiGetUpdateRestorationReport,
   DEFAULT_APP_VERSION,
   buildSegments,
   isTauriRuntime,
@@ -52,7 +53,10 @@ import {
   NewDownloadRequest,
   DuplicateDownloadNotice,
   MediaStreamInfo,
+  UpdateRestorationReport,
 } from "./types/xdm";
+import { UpdateRestorationModal } from "./components/UpdateRestorationModal";
+import { UpdateCheckModal } from "./components/UpdateCheckModal";
 
 export const App: React.FC = () => {
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
@@ -71,6 +75,8 @@ export const App: React.FC = () => {
   const [settingsTab, setSettingsTab] = useState<string | null>(null);
   const [showSchedulerModal, setShowSchedulerModal] = useState(false);
   const [showRemoteModal, setShowRemoteModal] = useState(false);
+  const [restorationReport, setRestorationReport] = useState<UpdateRestorationReport | null>(null);
+  const [showUpdateCheckModal, setShowUpdateCheckModal] = useState(false);
   const [propertiesItem, setPropertiesItem] = useState<DownloadItem | null>(null);
   const [deleteConfirmIds, setDeleteConfirmIds] = useState<string[] | null>(null);
   const [rememberDeleteConfirmation, setRememberDeleteConfirmation] = useState(false);
@@ -170,6 +176,10 @@ export const App: React.FC = () => {
 
     apiGetAppVersion().then((v) => {
       if (v) setAppVersion(v);
+    });
+
+    apiGetUpdateRestorationReport().then((rep) => {
+      if (rep) setRestorationReport(rep);
     });
 
     apiGetBrowserStatuses().then((b) => {
@@ -659,6 +669,8 @@ export const App: React.FC = () => {
         else if (settingsTab) setSettingsTab(null);
         else if (showSchedulerModal) setShowSchedulerModal(false);
         else if (showRemoteModal) setShowRemoteModal(false);
+        else if (showUpdateCheckModal) setShowUpdateCheckModal(false);
+        else if (restorationReport) setRestorationReport(null);
         else if (propertiesItem) setPropertiesItem(null);
         else if (selectedIds.size > 0) setSelectedIds(new Set());
       }
@@ -748,6 +760,10 @@ export const App: React.FC = () => {
         case "open_remote_sites":
           setShowRemoteModal(true);
           break;
+        case "check_updates":
+        case "check-updates":
+          setShowUpdateCheckModal(true);
+          break;
         case "open_extensions":
           setSettingsTab("browser");
           break;
@@ -822,6 +838,7 @@ export const App: React.FC = () => {
           onRestartSelected={
             selectedItem ? () => handleRestartDownload(selectedItem.id) : undefined
           }
+          onCheckUpdates={() => setShowUpdateCheckModal(true)}
           selectedCount={selectedIds.size}
         />
       )}
@@ -1060,6 +1077,7 @@ export const App: React.FC = () => {
             }
           }}
           onOpenRemoteProtocol={() => setShowRemoteModal(true)}
+          onCheckUpdates={() => setShowUpdateCheckModal(true)}
           onClose={() => setSettingsTab(null)}
         />
       )}
@@ -1155,6 +1173,21 @@ export const App: React.FC = () => {
         <MediaPlayerModal
           mediaInfo={activeMediaStream}
           onClose={() => setActiveMediaStream(null)}
+        />
+      )}
+
+      {restorationReport && (
+        <UpdateRestorationModal
+          report={restorationReport}
+          onClose={() => setRestorationReport(null)}
+          onRefreshDownloads={syncFromBackend}
+        />
+      )}
+
+      {showUpdateCheckModal && (
+        <UpdateCheckModal
+          appVersion={appVersion}
+          onClose={() => setShowUpdateCheckModal(false)}
         />
       )}
     </div>

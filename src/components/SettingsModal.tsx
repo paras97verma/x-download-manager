@@ -47,6 +47,7 @@ interface SettingsModalProps {
   onSave: (updated: AppSettings) => void;
   onClose: () => void;
   appVersion?: string;
+  onCheckUpdates?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -59,6 +60,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSave,
   onClose,
   appVersion,
+  onCheckUpdates,
 }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [draft, setDraft] = useState<AppSettings>(JSON.parse(JSON.stringify(settings)));
@@ -1170,6 +1172,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
                     Native multi-threaded download accelerator, BitTorrent swarm client, FTP/FTPS worker, and automated cross-browser interceptor.
                   </p>
+                  {onCheckUpdates && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onCheckUpdates();
+                        }}
+                        className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition shadow-md shadow-cyan-600/20 inline-flex items-center gap-2"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Check for Updates...
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
