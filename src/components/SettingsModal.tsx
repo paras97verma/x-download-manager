@@ -25,6 +25,7 @@ import {
   Shield,
   Copy,
   CheckCheck,
+  Server,
 } from "lucide-react";
 import { AppSettings, BrowserStatus, SiteCredential } from "../types/xdm";
 import {
@@ -42,6 +43,7 @@ interface SettingsModalProps {
   browsers?: BrowserStatus[];
   onToggleBrowser?: (browserId: string, enable: boolean) => void;
   onReinstallAll?: () => void;
+  onOpenRemoteProtocol?: () => void;
   onSave: (updated: AppSettings) => void;
   onClose: () => void;
   appVersion?: string;
@@ -53,6 +55,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   browsers = [],
   onToggleBrowser,
   onReinstallAll,
+  onOpenRemoteProtocol,
   onSave,
   onClose,
   appVersion,
@@ -87,6 +90,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: "speed", label: "Speed Limiter", icon: Gauge },
     { id: "torrent", label: "BitTorrent / DHT", icon: Magnet },
     { id: "logins", label: "Site Logins & Auth", icon: KeyRound },
+    { id: "remote", label: "Remote Sites (FTP / SFTP)", icon: Server },
     { id: "categories", label: "File Categories", icon: FolderOpen },
     { id: "browser", label: "Browser Extensions & Integration", icon: Puzzle },
     { id: "proxy", label: "Proxy & Network", icon: Globe },
@@ -601,7 +605,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
                   <div className="text-xs font-semibold text-slate-200">Add New Site Authentication:</div>
                   <div className="text-[11px] text-slate-400">Entries are applied automatically when a download URL matches this host. Save Preferences to keep changes.</div>
-                  <div className="text-[11px] text-amber-300">Credentials are stored in the local app settings file and are not encrypted by this feature.</div>
+                  <div className="text-[11px] text-cyan-300">Passwords and secret tokens are encrypted in your OS-native Keychain / Credential store; plaintext passwords are never saved on disk.</div>
+                  {onOpenRemoteProtocol && (
+                    <div className="p-2.5 rounded-lg bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-cyan-200">
+                        Need dedicated FTP, FTPS, or SFTP server profiles with live connection testing and directory validation?
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onOpenRemoteProtocol}
+                        className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 text-xs font-semibold shrink-0 transition"
+                      >
+                        Open Remote Protocol Manager →
+                      </button>
+                    </div>
+                  )}
                   {usesFileHostCookies && <div className="text-[11px] text-slate-300">These file hosts use saved or browser session cookies. ByteX does not sign in to file-host accounts or solve captchas.</div>}
                   <div className={`grid ${usesFileHostCookies ? "grid-cols-2" : "grid-cols-3"} gap-2`}>
                     <input
@@ -688,6 +706,91 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </button>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Remote Protocol Manager (FTP / FTPS / SFTP) */}
+            {activeTab === "remote" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Server className="w-4 h-4 text-cyan-400" />
+                      Dedicated Remote Protocol Manager (FTP, FTPS, SFTP)
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Configure remote servers, test network reachability & server capabilities, and isolate credentials in OS Keychain.
+                    </p>
+                  </div>
+                  {onOpenRemoteProtocol && (
+                    <button
+                      type="button"
+                      onClick={onOpenRemoteProtocol}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-700 hover:bg-cyan-500 text-white text-xs font-bold shadow transition flex items-center gap-1.5"
+                    >
+                      <Server className="w-3.5 h-3.5" /> Launch Dedicated Manager
+                    </button>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+                  <div className="text-xs font-semibold text-slate-200">
+                    Configured Remote Server Profiles ({draft.site_credentials.filter((c) => ["ftp", "ftps", "sftp"].includes(c.protocol || c.site_type)).length})
+                  </div>
+                  <div className="text-xs text-slate-400 leading-relaxed">
+                    ByteX supports plain FTP (with insecure channel warnings), FTPS (FTP over TLS encryption), and SFTP (SSH File Transfer Protocol). Each site profile includes port configuration, anonymous toggles, remote working directories, and zero plain-text password persistence on disk.
+                  </div>
+                  <div className="space-y-2 pt-2">
+                    {draft.site_credentials
+                      .filter((c) => ["ftp", "ftps", "sftp"].includes(c.protocol || c.site_type))
+                      .map((p) => {
+                        const pType = (p.protocol || p.site_type || "ftp").toLowerCase();
+                        return (
+                          <div
+                            key={p.id}
+                            className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-xs text-white">
+                                  {p.display_name || p.host_pattern}
+                                </span>
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                                    pType === "sftp"
+                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                      : pType === "ftps"
+                                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                                      : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                  }`}
+                                >
+                                  {pType}
+                                </span>
+                              </div>
+                              <div className="text-[11px] font-mono text-slate-400 mt-0.5">
+                                {p.host_pattern}:{p.port || (pType === "sftp" ? 22 : pType === "ftps" ? 990 : 21)}
+                                {p.remote_path && p.remote_path !== "/" ? ` • ${p.remote_path}` : ""}
+                              </div>
+                            </div>
+                            {onOpenRemoteProtocol && (
+                              <button
+                                type="button"
+                                onClick={onOpenRemoteProtocol}
+                                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-cyan-300 transition"
+                              >
+                                Test & Edit
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    {draft.site_credentials.filter((c) => ["ftp", "ftps", "sftp"].includes(c.protocol || c.site_type)).length === 0 && (
+                      <div className="text-center py-6 text-slate-500 text-xs">
+                        No remote site profiles configured. Click "Launch Dedicated Manager" to add one.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

@@ -98,6 +98,7 @@ async fn test_http_download_client_sends_saved_site_auth() {
         cookies: Some("session=saved-cookie".into()),
         custom_headers: HashMap::new(),
         enabled: true,
+        ..Default::default()
     };
     let engine = DownloadEngine::new();
     engine.settings.write().site_credentials = vec![credential];

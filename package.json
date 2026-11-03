@@ -2,7 +2,7 @@
   "name": "bytex-download-manager",
   "private": true,
   "version": "1.0.2",
-  "description": "ByteX Download Manager \u2014 a fast cross-platform download manager for HTTP, torrents, FTP, and browser downloads",
+  "description": "ByteX Download Manager — a fast cross-platform download manager for HTTP, torrents, FTP, and browser downloads",
   "author": "~peivee",
   "license": "MIT",
   "type": "module",
@@ -10,6 +10,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test": "vitest run && node --test tests/*.test.cjs",
+    "test:frontend": "vitest run",
+    "test:extensions": "node --test tests/*.test.cjs",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "package:extensions": "bash ./scripts/package-extensions.sh",
@@ -27,13 +31,18 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^2.1.9"
   }
 }

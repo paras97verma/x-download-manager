@@ -7,7 +7,10 @@ import {
   DuplicateDownloadNotice,
   MediaStreamInfo,
   NewDownloadRequest,
+  RemoteConnectionTestParams,
+  RemoteConnectionTestResult,
   SchedulerQueueConfig,
+  SiteCredential,
   ThreadSegment,
 } from "../types/xdm";
 
@@ -113,6 +116,53 @@ export async function apiUpdateSettings(settings: AppSettings): Promise<AppSetti
     return await invoke<AppSettings>("update_settings", { newSettings: settings });
   } catch (err) {
     console.error("Failed to update_settings via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiTestRemoteConnection(
+  params: RemoteConnectionTestParams
+): Promise<RemoteConnectionTestResult> {
+  if (!isTauriRuntime()) {
+    await new Promise((r) => setTimeout(r, 450));
+    const isFtp = params.protocol === "ftp";
+    return {
+      success: true,
+      protocol: params.protocol,
+      host: params.host,
+      port: params.port || (params.protocol === "sftp" ? 22 : params.protocol === "ftps" ? 990 : 21),
+      banner: params.protocol === "sftp" ? "SSH-2.0-OpenSSH_9.3p1" : "220 ByteX Mock FTP Server Ready",
+      authenticated: true,
+      features: ["UTF8", "REST (STREAM)", "PASV", "EPSV", "MLSD"],
+      remote_path_exists: params.remote_path ? true : null,
+      message: `Connected successfully to ${params.host} as ${params.is_anonymous ? "anonymous" : (params.username || "anonymous")}.`,
+      latency_ms: 32,
+      security_warning: isFtp ? "⚠️ Plain FTP Warning: Plain FTP transmits credentials and files in plaintext without encryption." : null,
+    };
+  }
+  return await invoke<RemoteConnectionTestResult>("test_remote_connection", { params });
+}
+
+export async function apiSaveRemoteCredential(
+  credential: SiteCredential
+): Promise<AppSettings | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<AppSettings>("save_remote_credential", { credential });
+  } catch (err) {
+    console.error("Failed to save_remote_credential via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiDeleteRemoteCredential(
+  credentialId: string
+): Promise<AppSettings | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<AppSettings>("delete_remote_credential", { credentialId });
+  } catch (err) {
+    console.error("Failed to delete_remote_credential via Tauri:", err);
     return null;
   }
 }
