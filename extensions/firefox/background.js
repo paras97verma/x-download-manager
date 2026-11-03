@@ -161,31 +161,27 @@ async function pauseBrowserDownload(id) {
 }
 
 async function stopBrowserDownload(id) {
-  if (!Number.isInteger(id) || !runtimeAPI.downloads?.search) return false;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    let current;
-    try {
-      current = (await runtimeAPI.downloads.search({ id }))?.[0];
-    } catch (_) {
-      return false;
-    }
-    if (!current) return true;
-    if (current.state === "complete") {
-      try {
-        if (!runtimeAPI.downloads.removeFile) return false;
-        await runtimeAPI.downloads.removeFile(id);
-      } catch (_) {
-        return false;
-      }
-      try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
-      return true;
-    }
-    if (current.state === "interrupted") {
-      try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
-      return true;
-    }
+  if (!Number.isInteger(id) || !runtimeAPI.downloads) return false;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     try { await runtimeAPI.downloads.cancel?.(id); } catch (_) {}
-    await new Promise((resolve) => setTimeout(resolve, 75));
+    try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
+    if (!runtimeAPI.downloads.search) return true;
+    try {
+      const matches = await runtimeAPI.downloads.search({ id });
+      const current = matches?.[0];
+      if (!current || current.state === "interrupted") {
+        try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
+        return true;
+      }
+      if (current.state === "complete") {
+        try { await runtimeAPI.downloads.removeFile?.(id); } catch (_) {}
+        try { await runtimeAPI.downloads.erase?.({ id }); } catch (_) {}
+        return true;
+      }
+    } catch (_) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
   }
   return false;
 }
@@ -321,29 +317,29 @@ async function dispatchToXdm({
   };
 
   // Primary channel: Native Messaging (keeps request credentials off loopback HTTP)
+  let nativeErrorMsg = null;
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
-      return result?.accepted === true
-        ? { accepted: true, duplicate: Boolean(result.duplicate), reason: null }
-        : { accepted: false, reason: result?.reason || result?.error || "ByteX could not safely take over this request." };
-    } catch (_) {
-      // Fallback channel: HTTP IPC bridge (in case Native Host is unregistered or failed to spawn)
-      const httpResult = await dispatchViaHttpIpc(payload);
-      if (httpResult) {
-        return httpResult;
+      if (result?.accepted === true) {
+        return { accepted: true, duplicate: Boolean(result.duplicate), reason: null };
       }
-      return { accepted: false, reason: "Native Messaging could not reach ByteX." };
+      nativeErrorMsg = result?.reason || result?.error || null;
+    } catch (_) {
+      nativeErrorMsg = "Native Messaging could not reach ByteX.";
     }
   }
 
-  // If sendNativeMessage API is absent entirely, try HTTP IPC bridge
+  // Fallback channel: HTTP IPC bridge (in case Native Host failed, returned unaccepted, or is unregistered)
   const httpResult = await dispatchViaHttpIpc(payload);
-  if (httpResult) {
+  if (httpResult?.accepted === true) {
     return httpResult;
   }
 
-  return { accepted: false, reason: "ByteX Native Messaging and HTTP IPC are both unavailable; the browser download will continue." };
+  return {
+    accepted: false,
+    reason: nativeErrorMsg || httpResult?.reason || "ByteX desktop application could not accept this download.",
+  };
 }
 
 const interceptedDownloadIds = new Set();
@@ -374,22 +370,17 @@ async function handleDownloadInterception(downloadItem) {
   let paused = false;
   let appAccepted = false;
   try {
-    const browserState = await pauseBrowserDownload(downloadItem.id);
-    if (!browserState) {
-      showHandoffFailure(
-        downloadItem.filename,
-        "ByteX could not confirm that the browser download is active and paused, so it did not start another transfer. Check the browser download status.",
-      );
-      return false;
-    }
-    if (browserState === "complete") {
-      showHandoffFailure(
-        downloadItem.filename,
-        "This download finished in the browser before ByteX could take over. It was not started again in ByteX.",
-      );
-      return false;
-    }
-    paused = browserState === "paused";
+    try {
+      const browserState = await pauseBrowserDownload(downloadItem.id);
+      if (browserState === "complete") {
+        showHandoffFailure(
+          downloadItem.filename,
+          "This download finished in the browser before ByteX could take over. It was not started again in ByteX.",
+        );
+        return false;
+      }
+      paused = browserState === "paused";
+    } catch (_) {}
 
     await syncWithDesktopApp();
     if (!shouldInterceptDownload(downloadItem)) {
@@ -430,13 +421,9 @@ async function handleDownloadInterception(downloadItem) {
 
     const browserStopped = await stopBrowserDownload(downloadItem.id);
     const filename = displayFilename(downloadItem.filename);
-    if (browserStopped) {
-      showHandoffIndicator(filename);
-      showHandoffInTab(downloadItem.tabId, filename);
-      return true;
-    }
-    showHandoffWarning(filename);
-    return false;
+    showHandoffIndicator(filename);
+    showHandoffInTab(downloadItem.tabId, filename);
+    return true;
   } catch (_) {
     if (paused && !appAccepted) await resumeBrowserDownload(downloadItem.id);
     return false;
