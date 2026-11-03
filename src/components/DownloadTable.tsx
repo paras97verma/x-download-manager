@@ -274,12 +274,14 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                     {item.segments.length > 0 ? (
                       item.segments.map((seg) => {
                         const segLen = Math.max(1, seg.end_byte - seg.start_byte + 1);
-                        const segPct = Math.min(100, (seg.downloaded_bytes / segLen) * 100);
+                        const isCompleted = item.status === "completed" || seg.status === "completed";
+                        const segDownloaded = isCompleted ? segLen : seg.downloaded_bytes;
+                        const segPct = isCompleted ? 100 : Math.min(100, (segDownloaded / segLen) * 100);
                         return (
                           <div key={seg.id} className="flex-1 bg-slate-900 h-full overflow-hidden">
                             <div
                               className={`h-full transition-all duration-300 ${
-                                item.status === "completed"
+                                isCompleted
                                   ? "bg-emerald-500"
                                   : item.status === "paused"
                                   ? "bg-amber-500"

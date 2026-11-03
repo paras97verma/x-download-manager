@@ -669,7 +669,7 @@ impl DatabaseManager {
                 )
                 .map_err(|e| format!("Failed to prepare segments statement: {}", e))?;
 
-            let segments = seg_stmt
+            let mut segments = seg_stmt
                 .query_map(params![id], |s_row| {
                     let seg_id: i64 = s_row.get(0)?;
                     let start_byte: i64 = s_row.get(1)?;
@@ -689,6 +689,32 @@ impl DatabaseManager {
                 .map_err(|e| format!("Failed to query segments for {}: {}", id, e))?
                 .filter_map(Result::ok)
                 .collect::<Vec<_>>();
+
+            if status == DownloadStatus::Completed {
+                if segments.is_empty() && total_bytes > 0 {
+                    segments.push(ThreadSegment {
+                        id: 1,
+                        start_byte: 0,
+                        end_byte: (total_bytes as u64).saturating_sub(1),
+                        downloaded_bytes: total_bytes as u64,
+                        speed_bps: 0,
+                        status: "completed".to_string(),
+                    });
+                } else {
+                    for seg in &mut segments {
+                        if seg.end_byte == 0 && total_bytes > 0 {
+                            seg.end_byte = (total_bytes as u64).saturating_sub(1);
+                        }
+                        let len = seg
+                            .end_byte
+                            .saturating_sub(seg.start_byte)
+                            .saturating_add(1);
+                        seg.downloaded_bytes = len;
+                        seg.status = "completed".to_string();
+                        seg.speed_bps = 0;
+                    }
+                }
+            }
 
             // Load torrent metadata if present
             let mut torrent_meta = None;
@@ -1521,6 +1547,32 @@ mod tests {
         let after_del = db.load_downloads().expect("load failed");
         assert_eq!(after_del.len(), 1);
         assert_eq!(after_del[0].id, "dl-2");
+    }
+
+    #[test]
+    fn test_completed_download_segments_are_sanitized_on_load() {
+        let db = DatabaseManager::open_in_memory().expect("in-memory db open failed");
+        let mut item = dummy_download("dl-completed");
+        item.status = DownloadStatus::Completed;
+        item.downloaded_bytes = 4_000_000_000;
+        item.total_bytes = 4_000_000_000;
+        item.segments = vec![ThreadSegment {
+            id: 1,
+            start_byte: 0,
+            end_byte: 3_999_999_999,
+            downloaded_bytes: 8_192,
+            speed_bps: 100_000,
+            status: "receiving".to_string(),
+        }];
+
+        db.save_downloads(&[item]).expect("save downloads failed");
+        let loaded = db.load_downloads().expect("load downloads failed");
+        let found = loaded.iter().find(|d| d.id == "dl-completed").unwrap();
+        assert_eq!(found.status, DownloadStatus::Completed);
+        assert_eq!(found.segments.len(), 1);
+        assert_eq!(found.segments[0].status, "completed");
+        assert_eq!(found.segments[0].downloaded_bytes, 4_000_000_000);
+        assert_eq!(found.segments[0].speed_bps, 0);
     }
 
     #[test]
