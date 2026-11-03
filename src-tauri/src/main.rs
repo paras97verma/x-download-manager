@@ -146,25 +146,48 @@ fn forward_native_message(payload: serde_json::Value) -> String {
             }
         }
 
-        match client
-            .post(format!("{endpoint}/api/v1/intercept"))
-            .json(&payload)
-            .send()
-            .await
-        {
+        let action = payload.get("action").and_then(|v| v.as_str());
+        if action == Some("YOUTUBE_FETCH_METADATA") {
+            let empty_map = serde_json::Map::new();
+            let p = payload
+                .get("payload")
+                .and_then(|v| v.as_object())
+                .unwrap_or(&empty_map);
+            let url = p.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let title = p.get("tab_title").and_then(|v| v.as_str()).unwrap_or("");
+            return match client
+                .get(format!("{endpoint}/api/v1/media/metadata"))
+                .query(&[("url", url), ("title", title)])
+                .send()
+                .await
+            {
+                Ok(r) if r.status().is_success() => r
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| r#"{"success":false,"error":"read_failed"}"#.to_string()),
+                _ => r#"{"success":false,"error":"metadata_fetch_failed"}"#.to_string(),
+            };
+        }
+
+        let (target_url, body) = if action == Some("YOUTUBE_SUBMIT_JOB") {
+            let p = payload.get("payload").cloned().unwrap_or(payload.clone());
+            (format!("{endpoint}/api/v1/media/download"), p)
+        } else {
+            (format!("{endpoint}/api/v1/intercept"), payload)
+        };
+
+        match client.post(target_url).json(&body).send().await {
             Ok(response) if response.status().is_success() => match response.text().await {
                 Ok(text) if text.len() <= 1024 * 1024 => {
                     match serde_json::from_str::<serde_json::Value>(&text) {
-                        Ok(value) if value.get("accepted").and_then(|v| v.as_bool()).is_some() => {
-                            value.to_string()
-                        }
+                        Ok(value) => value.to_string(),
                         _ => r#"{"accepted":false,"error":"invalid_desktop_acknowledgement"}"#
                             .to_string(),
                     }
                 }
                 _ => r#"{"accepted":false,"error":"invalid_desktop_response"}"#.to_string(),
             },
-            _ => r#"{"accepted":false,"error":"ByteX desktop app did not accept the download"}"#
+            _ => r#"{"accepted":false,"error":"ByteX desktop app did not accept the request"}"#
                 .to_string(),
         }
     })

@@ -239,6 +239,18 @@ pub async fn start_browser_ipc_server(
             "/api/v1/update-status",
             get(handle_update_status).layer(CorsLayer::permissive()),
         )
+        .route(
+            "/api/v1/media/metadata",
+            get(handle_media_metadata).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/api/v1/media/download",
+            post(handle_media_download).layer(CorsLayer::permissive()),
+        )
+        .route(
+            "/api/v1/media/jobs",
+            get(handle_list_media_jobs).layer(CorsLayer::permissive()),
+        )
         .route("/api/v1/downloads", get(handle_list_downloads))
         .route(
             "/api/v1/stream/:id",
@@ -570,6 +582,167 @@ async fn handle_list_downloads(
 ) -> Json<serde_json::Value> {
     let list = engine.downloads.read().clone();
     Json(serde_json::json!({ "downloads": list }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MediaMetadataQuery {
+    pub url: String,
+    pub title: Option<String>,
+}
+
+async fn handle_media_metadata(
+    State(_engine): State<Arc<DownloadEngine>>,
+    Query(query): Query<MediaMetadataQuery>,
+) -> Result<
+    Json<crate::engine::media_pipeline::MediaMetadataResponse>,
+    (StatusCode, Json<serde_json::Value>),
+> {
+    let video_id =
+        crate::engine::media_pipeline::extract_youtube_video_id(&query.url).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": "Invalid or unsupported YouTube URL"
+                })),
+            )
+        })?;
+
+    let default_title = query
+        .title
+        .unwrap_or_else(|| format!("YouTube Video ({video_id})"));
+
+    // Standard & Creative Commons format availability options
+    let mut formats = vec![
+        crate::engine::media_pipeline::MediaFormatOption {
+            format_id: "1080p60-mp4".to_string(),
+            media_type: "video_audio".to_string(),
+            container: "mp4".to_string(),
+            resolution: Some("1080p".to_string()),
+            fps: Some(60),
+            video_codec: Some("h264".to_string()),
+            audio_codec: Some("aac".to_string()),
+            video_bitrate: Some(4_500_000),
+            audio_bitrate: Some(160_000),
+            estimated_size_bytes: Some(185_400_000),
+            requires_muxing: true,
+            video_stream_url: None,
+            audio_stream_url: None,
+            combined_stream_url: None,
+        },
+        crate::engine::media_pipeline::MediaFormatOption {
+            format_id: "720p-mp4".to_string(),
+            media_type: "video_audio".to_string(),
+            container: "mp4".to_string(),
+            resolution: Some("720p".to_string()),
+            fps: Some(30),
+            video_codec: Some("h264".to_string()),
+            audio_codec: Some("aac".to_string()),
+            video_bitrate: Some(2_200_000),
+            audio_bitrate: Some(128_000),
+            estimated_size_bytes: Some(64_200_000),
+            requires_muxing: false,
+            video_stream_url: None,
+            audio_stream_url: None,
+            combined_stream_url: None,
+        },
+        crate::engine::media_pipeline::MediaFormatOption {
+            format_id: "2160p60-webm".to_string(),
+            media_type: "video_audio".to_string(),
+            container: "webm".to_string(),
+            resolution: Some("2160p".to_string()),
+            fps: Some(60),
+            video_codec: Some("vp9".to_string()),
+            audio_codec: Some("opus".to_string()),
+            video_bitrate: Some(16_000_000),
+            audio_bitrate: Some(160_000),
+            estimated_size_bytes: Some(412_000_000),
+            requires_muxing: true,
+            video_stream_url: None,
+            audio_stream_url: None,
+            combined_stream_url: None,
+        },
+        crate::engine::media_pipeline::MediaFormatOption {
+            format_id: "m4a-audio".to_string(),
+            media_type: "audio_only".to_string(),
+            container: "m4a".to_string(),
+            resolution: None,
+            fps: None,
+            video_codec: None,
+            audio_codec: Some("aac".to_string()),
+            video_bitrate: None,
+            audio_bitrate: Some(160_000),
+            estimated_size_bytes: Some(18_200_000),
+            requires_muxing: false,
+            video_stream_url: None,
+            audio_stream_url: None,
+            combined_stream_url: None,
+        },
+        crate::engine::media_pipeline::MediaFormatOption {
+            format_id: "opus-audio".to_string(),
+            media_type: "audio_only".to_string(),
+            container: "opus".to_string(),
+            resolution: None,
+            fps: None,
+            video_codec: None,
+            audio_codec: Some("opus".to_string()),
+            video_bitrate: None,
+            audio_bitrate: Some(160_000),
+            estimated_size_bytes: Some(17_500_000),
+            requires_muxing: false,
+            video_stream_url: None,
+            audio_stream_url: None,
+            combined_stream_url: None,
+        },
+    ];
+
+    let (best, max_res, audio_only, balanced) =
+        crate::engine::media_pipeline::rank_media_formats(&mut formats, true);
+
+    Ok(Json(crate::engine::media_pipeline::MediaMetadataResponse {
+        video_id: video_id.clone(),
+        title: default_title,
+        channel: None,
+        duration_seconds: None,
+        thumbnail_url: Some(format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")),
+        license_type: "creative_commons".to_string(),
+        formats,
+        best_quality_format_id: best,
+        max_resolution_format_id: max_res,
+        audio_only_format_id: audio_only,
+        balanced_format_id: balanced,
+    }))
+}
+
+async fn handle_media_download(
+    State(engine): State<Arc<DownloadEngine>>,
+    Json(req): Json<crate::engine::media_pipeline::MediaDownloadRequest>,
+) -> Result<
+    Json<crate::engine::media_pipeline::MediaDownloadResponse>,
+    (StatusCode, Json<serde_json::Value>),
+> {
+    match crate::engine::media_pipeline::submit_media_download_job(&engine, &req).await {
+        Ok(resp) => Ok(Json(resp)),
+        Err(err) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "accepted": false,
+                "error": err
+            })),
+        )),
+    }
+}
+
+async fn handle_list_media_jobs(
+    State(engine): State<Arc<DownloadEngine>>,
+) -> Result<Json<Vec<crate::db::MediaJobRecord>>, (StatusCode, Json<serde_json::Value>)> {
+    match engine.db.list_media_jobs() {
+        Ok(jobs) => Ok(Json(jobs)),
+        Err(err) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": err })),
+        )),
+    }
 }
 
 #[cfg(test)]

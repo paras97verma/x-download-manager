@@ -7,6 +7,9 @@ import {
   DownloadItem,
   DownloadResumeVerificationResult,
   DuplicateDownloadNotice,
+  MediaDownloadRequest,
+  MediaDownloadResponse,
+  MediaJobRecord,
   MediaStreamInfo,
   NewDownloadRequest,
   RemoteConnectionTestParams,
@@ -579,6 +582,36 @@ export async function apiOpenInExternalPlayer(id: string): Promise<void> {
     await invoke("open_in_external_player", { id });
   } catch (err) {
     console.error("Failed to open_in_external_player via Tauri:", err);
+  }
+}
+
+export async function apiGetMediaJob(id: string): Promise<MediaJobRecord | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<MediaJobRecord | null>("get_media_job", { id });
+  } catch (err) {
+    console.error("Failed to get_media_job via Tauri:", err);
+    return null;
+  }
+}
+
+export async function apiListMediaJobs(): Promise<MediaJobRecord[]> {
+  if (!isTauriRuntime()) return [];
+  try {
+    return await invoke<MediaJobRecord[]>("list_media_jobs");
+  } catch (err) {
+    console.error("Failed to list_media_jobs via Tauri:", err);
+    return [];
+  }
+}
+
+export async function apiSubmitMediaJob(req: MediaDownloadRequest): Promise<MediaDownloadResponse | null> {
+  if (!isTauriRuntime()) return null;
+  try {
+    return await invoke<MediaDownloadResponse>("submit_media_job", { req });
+  } catch (err) {
+    console.error("Failed to submit_media_job via Tauri:", err);
+    throw err;
   }
 }
 

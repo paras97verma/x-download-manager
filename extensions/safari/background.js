@@ -108,6 +108,44 @@ runtimeAPI.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // Keep message port open for async response
   }
 
+  if (msg.type === "YOUTUBE_GET_METADATA") {
+    (async () => {
+      try {
+        const query = new URLSearchParams({
+          url: msg.url || "",
+          title: msg.tabTitle || (sender.tab ? sender.tab.title : "") || "",
+        });
+        const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/media/metadata?${query.toString()}`, {}, 4000);
+        if (resp.ok) return await resp.json();
+      } catch (err) {
+        return { error: "Failed to connect to ByteX desktop application." };
+      }
+      return { error: "Media metadata unavailable." };
+    })().then(sendResponse).catch((err) => sendResponse({ error: err?.message || String(err) }));
+    return true;
+  }
+
+  if (msg.type === "YOUTUBE_START_DOWNLOAD") {
+    (async () => {
+      try {
+        const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/media/download`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg.jobPayload),
+        }, 5000);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.accepted) showHandoffIndicator(msg.jobPayload?.title || "Video Download");
+          return data;
+        }
+      } catch (err) {
+        return { accepted: false, error: "Failed to connect to ByteX desktop application." };
+      }
+      return { accepted: false, error: "Could not start media download." };
+    })().then(sendResponse).catch((err) => sendResponse({ accepted: false, error: err?.message || String(err) }));
+    return true;
+  }
+
   return false;
 });
 

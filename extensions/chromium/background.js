@@ -550,22 +550,87 @@ if (runtimeAPI.downloads) {
 }
 
 runtimeAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "XDM_MANUAL_CAPTURE") return false;
-  (async () => {
-    await syncWithDesktopApp();
-    if (!state.interceptEnabled || !state.desktopIntegrationEnabled) return false;
-    const result = await dispatchToXdm({
-      url: message.url,
-      filename: message.filename || null,
-      referer: message.referer || sender.tab?.url || "",
-      tabTitle: message.tabTitle || sender.tab?.title || "",
-    });
-    if (result?.accepted) showHandoffIndicator(message.filename || "Download");
-    return result;
-  })().then((result) => {
-    sendResponse({ success: Boolean(result?.accepted), duplicate: Boolean(result?.duplicate) });
-  }).catch(() => sendResponse({ success: false }));
-  return true;
+  if (message?.type === "XDM_MANUAL_CAPTURE") {
+    (async () => {
+      await syncWithDesktopApp();
+      if (!state.interceptEnabled || !state.desktopIntegrationEnabled) return false;
+      const result = await dispatchToXdm({
+        url: message.url,
+        filename: message.filename || null,
+        referer: message.referer || sender.tab?.url || "",
+        tabTitle: message.tabTitle || sender.tab?.title || "",
+      });
+      if (result?.accepted) showHandoffIndicator(message.filename || "Download");
+      return result;
+    })().then((result) => {
+      sendResponse({ success: Boolean(result?.accepted), duplicate: Boolean(result?.duplicate) });
+    }).catch(() => sendResponse({ success: false }));
+    return true;
+  }
+
+  if (message?.type === "YOUTUBE_GET_METADATA") {
+    (async () => {
+      if (runtimeAPI.runtime.sendNativeMessage) {
+        try {
+          const res = await sendNativeMessage(NATIVE_HOST_NAME, {
+            action: "YOUTUBE_FETCH_METADATA",
+            payload: {
+              url: message.url,
+              tab_title: message.tabTitle || sender.tab?.title || "",
+            },
+          });
+          if (res && (res.formats || res.video_id)) return res;
+        } catch (_) {}
+      }
+      try {
+        const query = new URLSearchParams({
+          url: message.url || "",
+          title: message.tabTitle || sender.tab?.title || "",
+        });
+        const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/media/metadata?${query.toString()}`, {}, 4000);
+        if (resp.ok) return await resp.json();
+      } catch (err) {
+        return { error: "Failed to connect to ByteX desktop application." };
+      }
+      return { error: "Media metadata unavailable." };
+    })().then(sendResponse).catch((err) => sendResponse({ error: err?.message || String(err) }));
+    return true;
+  }
+
+  if (message?.type === "YOUTUBE_START_DOWNLOAD") {
+    (async () => {
+      if (runtimeAPI.runtime.sendNativeMessage) {
+        try {
+          const res = await sendNativeMessage(NATIVE_HOST_NAME, {
+            action: "YOUTUBE_SUBMIT_JOB",
+            payload: message.jobPayload,
+          });
+          if (res && res.accepted !== undefined) {
+            if (res.accepted) showHandoffIndicator(message.jobPayload?.title || "Video Download");
+            return res;
+          }
+        } catch (_) {}
+      }
+      try {
+        const resp = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/media/download`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(message.jobPayload),
+        }, 5000);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.accepted) showHandoffIndicator(message.jobPayload?.title || "Video Download");
+          return data;
+        }
+      } catch (err) {
+        return { accepted: false, error: "Failed to connect to ByteX desktop application." };
+      }
+      return { accepted: false, error: "Could not start media download." };
+    })().then(sendResponse).catch((err) => sendResponse({ accepted: false, error: err?.message || String(err) }));
+    return true;
+  }
+
+  return false;
 });
 
 function detectBrowserFamily() {

@@ -1,5 +1,6 @@
 pub mod ftp_auth;
 pub mod http;
+pub mod media_pipeline;
 pub mod rate_limiter;
 pub mod remote_protocol;
 pub mod torrent;

@@ -34,6 +34,32 @@ pub struct ResumableSnapshot {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaJobRecord {
+    pub id: String,
+    pub source_platform: String,
+    pub source_url: String,
+    pub video_id: String,
+    pub title: String,
+    pub channel_name: Option<String>,
+    pub duration_seconds: Option<u64>,
+    pub thumbnail_url: Option<String>,
+    pub license_type: String,
+    pub selected_format: String,
+    pub selected_resolution: Option<String>,
+    pub selected_fps: Option<u32>,
+    pub video_codec: Option<String>,
+    pub audio_codec: Option<String>,
+    pub video_download_id: Option<String>,
+    pub audio_download_id: Option<String>,
+    pub output_container: String,
+    pub final_output_path: String,
+    pub mux_status: String,
+    pub mux_error: Option<String>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
 pub struct DatabaseManager {
     conn: Mutex<Connection>,
     pub db_path: PathBuf,
@@ -194,7 +220,36 @@ impl DatabaseManager {
                 paused_download_ids_json TEXT NOT NULL DEFAULT '[]',
                 resumable_map_json TEXT NOT NULL DEFAULT '{}',
                 summary_json TEXT NOT NULL DEFAULT '{}'
-            );",
+            );
+
+            CREATE TABLE IF NOT EXISTS media_jobs (
+                id TEXT PRIMARY KEY,
+                source_platform TEXT NOT NULL DEFAULT 'youtube',
+                source_url TEXT NOT NULL,
+                video_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                channel_name TEXT,
+                duration_seconds INTEGER,
+                thumbnail_url TEXT,
+                license_type TEXT NOT NULL DEFAULT 'standard',
+                selected_format TEXT NOT NULL,
+                selected_resolution TEXT,
+                selected_fps INTEGER,
+                video_codec TEXT,
+                audio_codec TEXT,
+                video_download_id TEXT,
+                audio_download_id TEXT,
+                output_container TEXT NOT NULL DEFAULT 'mp4',
+                final_output_path TEXT NOT NULL,
+                mux_status TEXT NOT NULL DEFAULT 'pending',
+                mux_error TEXT,
+                created_at TEXT NOT NULL,
+                completed_at TEXT,
+                FOREIGN KEY (video_download_id) REFERENCES downloads(id) ON DELETE SET NULL,
+                FOREIGN KEY (audio_download_id) REFERENCES downloads(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_media_jobs_video_id ON media_jobs(video_id);",
         )
         .map_err(|e| format!("Failed to initialize database schema: {}", e))?;
 
@@ -1165,6 +1220,217 @@ impl DatabaseManager {
         let _ = db.migrate_from_json_if_needed(history_json_path);
         Ok(db)
     }
+
+    /// Transactionally insert or update a parent media job
+    pub fn save_media_job(&self, job: &MediaJobRecord) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "INSERT INTO media_jobs (
+                id, source_platform, source_url, video_id, title, channel_name,
+                duration_seconds, thumbnail_url, license_type, selected_format,
+                selected_resolution, selected_fps, video_codec, audio_codec,
+                video_download_id, audio_download_id, output_container,
+                final_output_path, mux_status, mux_error, created_at, completed_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
+            ON CONFLICT(id) DO UPDATE SET
+                mux_status = excluded.mux_status,
+                mux_error = excluded.mux_error,
+                final_output_path = excluded.final_output_path,
+                completed_at = excluded.completed_at;",
+            params![
+                job.id,
+                job.source_platform,
+                job.source_url,
+                job.video_id,
+                job.title,
+                job.channel_name,
+                job.duration_seconds,
+                job.thumbnail_url,
+                job.license_type,
+                job.selected_format,
+                job.selected_resolution,
+                job.selected_fps,
+                job.video_codec,
+                job.audio_codec,
+                job.video_download_id,
+                job.audio_download_id,
+                job.output_container,
+                job.final_output_path,
+                job.mux_status,
+                job.mux_error,
+                job.created_at,
+                job.completed_at,
+            ],
+        )
+        .map_err(|e| format!("Failed to save media job: {}", e))?;
+        Ok(())
+    }
+
+    /// Retrieve a media job by primary ID
+    pub fn get_media_job(&self, id: &str) -> Result<Option<MediaJobRecord>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, source_platform, source_url, video_id, title, channel_name,
+                        duration_seconds, thumbnail_url, license_type, selected_format,
+                        selected_resolution, selected_fps, video_codec, audio_codec,
+                        video_download_id, audio_download_id, output_container,
+                        final_output_path, mux_status, mux_error, created_at, completed_at
+                 FROM media_jobs WHERE id = ?1 LIMIT 1",
+            )
+            .map_err(|e| format!("Failed to prepare select media job statement: {}", e))?;
+
+        let res = stmt
+            .query_row(params![id], |row| {
+                Ok(MediaJobRecord {
+                    id: row.get(0)?,
+                    source_platform: row.get(1)?,
+                    source_url: row.get(2)?,
+                    video_id: row.get(3)?,
+                    title: row.get(4)?,
+                    channel_name: row.get(5)?,
+                    duration_seconds: row.get(6)?,
+                    thumbnail_url: row.get(7)?,
+                    license_type: row.get(8)?,
+                    selected_format: row.get(9)?,
+                    selected_resolution: row.get(10)?,
+                    selected_fps: row.get(11)?,
+                    video_codec: row.get(12)?,
+                    audio_codec: row.get(13)?,
+                    video_download_id: row.get(14)?,
+                    audio_download_id: row.get(15)?,
+                    output_container: row.get(16)?,
+                    final_output_path: row.get(17)?,
+                    mux_status: row.get(18)?,
+                    mux_error: row.get(19)?,
+                    created_at: row.get(20)?,
+                    completed_at: row.get(21)?,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("Failed to query media job: {}", e))?;
+
+        Ok(res)
+    }
+
+    /// Retrieve the most recent media job for a video ID
+    pub fn get_media_job_by_video_id(
+        &self,
+        video_id: &str,
+    ) -> Result<Option<MediaJobRecord>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, source_platform, source_url, video_id, title, channel_name,
+                        duration_seconds, thumbnail_url, license_type, selected_format,
+                        selected_resolution, selected_fps, video_codec, audio_codec,
+                        video_download_id, audio_download_id, output_container,
+                        final_output_path, mux_status, mux_error, created_at, completed_at
+                 FROM media_jobs WHERE video_id = ?1 ORDER BY created_at DESC LIMIT 1",
+            )
+            .map_err(|e| format!("Failed to prepare select media job statement: {}", e))?;
+
+        let res = stmt
+            .query_row(params![video_id], |row| {
+                Ok(MediaJobRecord {
+                    id: row.get(0)?,
+                    source_platform: row.get(1)?,
+                    source_url: row.get(2)?,
+                    video_id: row.get(3)?,
+                    title: row.get(4)?,
+                    channel_name: row.get(5)?,
+                    duration_seconds: row.get(6)?,
+                    thumbnail_url: row.get(7)?,
+                    license_type: row.get(8)?,
+                    selected_format: row.get(9)?,
+                    selected_resolution: row.get(10)?,
+                    selected_fps: row.get(11)?,
+                    video_codec: row.get(12)?,
+                    audio_codec: row.get(13)?,
+                    video_download_id: row.get(14)?,
+                    audio_download_id: row.get(15)?,
+                    output_container: row.get(16)?,
+                    final_output_path: row.get(17)?,
+                    mux_status: row.get(18)?,
+                    mux_error: row.get(19)?,
+                    created_at: row.get(20)?,
+                    completed_at: row.get(21)?,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("Failed to query media job by video id: {}", e))?;
+
+        Ok(res)
+    }
+
+    /// Update media job muxing status and completion timestamp
+    pub fn update_media_job_mux_status(
+        &self,
+        id: &str,
+        status: &str,
+        error: Option<&str>,
+        completed_at: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE media_jobs
+             SET mux_status = ?1, mux_error = ?2, completed_at = COALESCE(?3, completed_at)
+             WHERE id = ?4",
+            params![status, error, completed_at, id],
+        )
+        .map_err(|e| format!("Failed to update media job status: {}", e))?;
+        Ok(())
+    }
+
+    /// List all media jobs ordered by creation time
+    pub fn list_media_jobs(&self) -> Result<Vec<MediaJobRecord>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, source_platform, source_url, video_id, title, channel_name,
+                        duration_seconds, thumbnail_url, license_type, selected_format,
+                        selected_resolution, selected_fps, video_codec, audio_codec,
+                        video_download_id, audio_download_id, output_container,
+                        final_output_path, mux_status, mux_error, created_at, completed_at
+                 FROM media_jobs ORDER BY created_at DESC",
+            )
+            .map_err(|e| format!("Failed to prepare list media jobs statement: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(MediaJobRecord {
+                    id: row.get(0)?,
+                    source_platform: row.get(1)?,
+                    source_url: row.get(2)?,
+                    video_id: row.get(3)?,
+                    title: row.get(4)?,
+                    channel_name: row.get(5)?,
+                    duration_seconds: row.get(6)?,
+                    thumbnail_url: row.get(7)?,
+                    license_type: row.get(8)?,
+                    selected_format: row.get(9)?,
+                    selected_resolution: row.get(10)?,
+                    selected_fps: row.get(11)?,
+                    video_codec: row.get(12)?,
+                    audio_codec: row.get(13)?,
+                    video_download_id: row.get(14)?,
+                    audio_download_id: row.get(15)?,
+                    output_container: row.get(16)?,
+                    final_output_path: row.get(17)?,
+                    mux_status: row.get(18)?,
+                    mux_error: row.get(19)?,
+                    created_at: row.get(20)?,
+                    completed_at: row.get(21)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query media jobs: {}", e))?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r.map_err(|e| format!("Failed to read media job row: {}", e))?);
+        }
+        Ok(list)
+    }
 }
 
 #[cfg(test)]
@@ -1255,5 +1521,82 @@ mod tests {
         let after_del = db.load_downloads().expect("load failed");
         assert_eq!(after_del.len(), 1);
         assert_eq!(after_del[0].id, "dl-2");
+    }
+
+    #[test]
+    fn test_media_job_persistence() {
+        let db = DatabaseManager::open_in_memory().expect("in-memory db open failed");
+        let dl_v = dummy_download("dl-video-1");
+        let dl_a = dummy_download("dl-audio-1");
+        db.save_downloads(&[dl_v, dl_a])
+            .expect("save track downloads failed");
+
+        let job = MediaJobRecord {
+            id: "media-job-1".to_string(),
+            source_platform: "youtube".to_string(),
+            source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ".to_string(),
+            video_id: "dQw4w9WgXcQ".to_string(),
+            title: "Never Gonna Give You Up".to_string(),
+            channel_name: Some("Rick Astley".to_string()),
+            duration_seconds: Some(213),
+            thumbnail_url: Some("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg".to_string()),
+            license_type: "creative_commons".to_string(),
+            selected_format: "1080p-mp4".to_string(),
+            selected_resolution: Some("1080p".to_string()),
+            selected_fps: Some(60),
+            video_codec: Some("h264".to_string()),
+            audio_codec: Some("aac".to_string()),
+            video_download_id: Some("dl-video-1".to_string()),
+            audio_download_id: Some("dl-audio-1".to_string()),
+            output_container: "mp4".to_string(),
+            final_output_path: "/downloads/Rick_Astley_1080p.mp4".to_string(),
+            mux_status: "downloading".to_string(),
+            mux_error: None,
+            created_at: "2026-11-03T00:00:00Z".to_string(),
+            completed_at: None,
+        };
+
+        // Save
+        db.save_media_job(&job).expect("save media job failed");
+
+        // Query by ID
+        let loaded = db
+            .get_media_job("media-job-1")
+            .expect("get failed")
+            .unwrap();
+        assert_eq!(loaded.video_id, "dQw4w9WgXcQ");
+        assert_eq!(loaded.selected_resolution.as_deref(), Some("1080p"));
+        assert_eq!(loaded.selected_fps, Some(60));
+        assert_eq!(loaded.mux_status, "downloading");
+
+        // Query by video ID
+        let by_vid = db
+            .get_media_job_by_video_id("dQw4w9WgXcQ")
+            .expect("get by vid failed")
+            .unwrap();
+        assert_eq!(by_vid.id, "media-job-1");
+
+        // Update status
+        db.update_media_job_mux_status(
+            "media-job-1",
+            "completed",
+            None,
+            Some("2026-11-03T00:05:00Z"),
+        )
+        .expect("update status failed");
+
+        let updated = db
+            .get_media_job("media-job-1")
+            .expect("get failed")
+            .unwrap();
+        assert_eq!(updated.mux_status, "completed");
+        assert_eq!(
+            updated.completed_at.as_deref(),
+            Some("2026-11-03T00:05:00Z")
+        );
+
+        // List
+        let all = db.list_media_jobs().expect("list failed");
+        assert_eq!(all.len(), 1);
     }
 }

@@ -729,6 +729,29 @@ async fn check_for_updates(
 }
 
 #[tauri::command]
+fn get_media_job(
+    id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<Option<crate::db::MediaJobRecord>, String> {
+    engine.db.get_media_job(&id)
+}
+
+#[tauri::command]
+fn list_media_jobs(
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<Vec<crate::db::MediaJobRecord>, String> {
+    engine.db.list_media_jobs()
+}
+
+#[tauri::command]
+async fn submit_media_job(
+    req: crate::engine::media_pipeline::MediaDownloadRequest,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<crate::engine::media_pipeline::MediaDownloadResponse, String> {
+    crate::engine::media_pipeline::submit_media_download_job(engine.inner(), &req).await
+}
+
+#[tauri::command]
 fn open_extension_folder(family: String) -> Result<String, String> {
     let dir = crate::browser::get_or_create_extension_dir(&family)?;
     #[cfg(target_os = "macos")]
@@ -1683,6 +1706,9 @@ pub fn run_app() {
             dismiss_update_restoration_report,
             verify_and_resume_download,
             check_for_updates,
+            get_media_job,
+            list_media_jobs,
+            submit_media_job,
         ])
         .build(tauri::generate_context!());
     match app_result {
