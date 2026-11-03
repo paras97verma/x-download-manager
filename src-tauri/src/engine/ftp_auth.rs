@@ -44,6 +44,16 @@ pub fn match_site_credential<'a>(
     })
 }
 
+pub fn resolve_credential_secret(c: &SiteCredential) -> String {
+    if !c.password_or_token.is_empty() {
+        return c.password_or_token.clone();
+    }
+    let keyring = crate::security::KeyringStore::new();
+    keyring
+        .get_secret(&format!("site_cred:{}", c.id))
+        .unwrap_or_default()
+}
+
 /// Applies a matching saved site login to a new download. Browser-provided
 /// cookies and explicitly supplied headers take precedence over saved values.
 pub fn apply_site_credential(
@@ -60,13 +70,12 @@ pub fn apply_site_credential(
         }
     }
 
+    let secret = resolve_credential_secret(credential);
+
     if cookies.is_none() {
         *cookies = credential.cookies.clone();
-        if cookies.is_none()
-            && credential.site_type == "cookie"
-            && !credential.password_or_token.is_empty()
-        {
-            *cookies = Some(credential.password_or_token.clone());
+        if cookies.is_none() && credential.site_type == "cookie" && !secret.is_empty() {
+            *cookies = Some(secret.clone());
         }
     }
 
@@ -77,10 +86,8 @@ pub fn apply_site_credential(
                 .any(|key| key.eq_ignore_ascii_case("Authorization")) =>
         {
             use base64::Engine;
-            let encoded = base64::engine::general_purpose::STANDARD.encode(format!(
-                "{}:{}",
-                credential.username, credential.password_or_token
-            ));
+            let encoded = base64::engine::general_purpose::STANDARD
+                .encode(format!("{}:{}", credential.username, secret));
             headers.insert("Authorization".to_string(), format!("Basic {encoded}"));
         }
         "bearer"
@@ -88,7 +95,7 @@ pub fn apply_site_credential(
                 .keys()
                 .any(|key| key.eq_ignore_ascii_case("Authorization")) =>
         {
-            let token = credential.password_or_token.trim();
+            let token = secret.trim();
             let value = if token
                 .get(..7)
                 .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Bearer "))
@@ -311,7 +318,12 @@ pub async fn download_via_ftp(
     let password = if let Some(p) = parsed.password() {
         p.to_string()
     } else if let Some(c) = matched_cred {
-        c.password_or_token.clone()
+        let sec = resolve_credential_secret(c);
+        if !sec.is_empty() {
+            sec
+        } else {
+            c.password_or_token.clone()
+        }
     } else {
         "anonymous@bytex.local".to_string()
     };
@@ -431,7 +443,12 @@ pub async fn execute_ftp_download_with_ack(
     } else if let Some(password) = item_snapshot.custom_headers.get("X-XDM-FTP-Password") {
         password.clone()
     } else if let Some(c) = matched_cred {
-        c.password_or_token.clone()
+        let sec = resolve_credential_secret(c);
+        if !sec.is_empty() {
+            sec
+        } else {
+            c.password_or_token.clone()
+        }
     } else {
         "anonymous@bytex.local".to_string()
     };

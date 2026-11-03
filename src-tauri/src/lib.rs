@@ -1,8 +1,10 @@
 pub mod browser;
 pub mod config;
+pub mod db;
 pub mod engine;
 pub mod menu;
 pub mod scheduler;
+pub mod security;
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
@@ -392,13 +394,22 @@ async fn delete_download(
         let _ = std::fs::remove_file(crate::config::resolve_path(&path));
     }
     engine.downloads.write().retain(|d| d.id != id);
+    let _ = engine.db.delete_download(&id);
     engine.persist_downloads()?;
     Ok(())
 }
 
 #[tauri::command]
 fn get_settings(engine: State<'_, Arc<DownloadEngine>>) -> AppSettings {
-    engine.settings.read().clone()
+    let mut settings = engine.settings.read().clone();
+    for cred in &mut settings.site_credentials {
+        if cred.password_or_token.is_empty() {
+            if let Some(secret) = engine.keyring.get_secret(&format!("site_cred:{}", cred.id)) {
+                cred.password_or_token = secret;
+            }
+        }
+    }
+    settings
 }
 
 #[tauri::command]
@@ -406,6 +417,13 @@ fn update_settings(
     new_settings: AppSettings,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<AppSettings, String> {
+    for cred in &new_settings.site_credentials {
+        if !cred.password_or_token.is_empty() {
+            let _ = engine
+                .keyring
+                .set_secret(&format!("site_cred:{}", cred.id), &cred.password_or_token);
+        }
+    }
     crate::config::ensure_directories_exist(&new_settings);
     engine.config_manager.save(&new_settings)?;
     *engine.settings.write() = new_settings.clone();
