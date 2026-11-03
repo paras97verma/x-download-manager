@@ -9,19 +9,26 @@ fn main() {
 
     if args.iter().any(|a| a == "--prepare-for-update") {
         // Installer scripts invoke this on the previous installation. It asks the already
-        // running process to exit cleanly; a missing process is a successful no-op.
+        // running process to pause active downloads, flush partial files, checkpoint SQLite,
+        // and exit cleanly. A missing process is a successful no-op.
         let settings = xdm_lib::config::ConfigManager::new().load();
         let port = settings.browser.ipc_port;
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build();
         if let Ok(runtime) = runtime {
-            let _ = runtime.block_on(async move {
-                reqwest::Client::new()
+            runtime.block_on(async move {
+                let client = reqwest::Client::new();
+                let resp = client
                     .post(format!("http://127.0.0.1:{port}/api/v1/prepare-update"))
-                    .timeout(std::time::Duration::from_secs(3))
+                    .timeout(std::time::Duration::from_secs(10))
                     .send()
-                    .await
+                    .await;
+                if let Ok(r) = resp {
+                    if r.status().is_success() {
+                        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                    }
+                }
             });
         }
         return;

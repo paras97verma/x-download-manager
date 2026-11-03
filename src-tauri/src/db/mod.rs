@@ -5,9 +5,34 @@ use crate::engine::{
 };
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCheckpoint {
+    pub id: Option<i64>,
+    pub app_version: String,
+    pub target_version: Option<String>,
+    pub prepared_at: String,
+    pub restored_at: Option<String>,
+    pub status: String,
+    pub paused_download_ids: Vec<String>,
+    pub resumable_map: HashMap<String, ResumableSnapshot>,
+    pub summary_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResumableSnapshot {
+    pub resumable: bool,
+    pub resume_validator: Option<String>,
+    pub total_bytes: u64,
+    pub downloaded_bytes: u64,
+    pub filename: String,
+    pub save_path: String,
+    pub url: String,
+}
 
 pub struct DatabaseManager {
     conn: Mutex<Connection>,
@@ -157,6 +182,18 @@ impl DatabaseManager {
                 cookies TEXT,
                 custom_headers_json TEXT NOT NULL DEFAULT '{}',
                 enabled INTEGER NOT NULL DEFAULT 1
+            );
+
+            CREATE TABLE IF NOT EXISTS update_checkpoints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                app_version TEXT NOT NULL,
+                target_version TEXT,
+                prepared_at TEXT NOT NULL,
+                restored_at TEXT,
+                status TEXT NOT NULL,
+                paused_download_ids_json TEXT NOT NULL DEFAULT '[]',
+                resumable_map_json TEXT NOT NULL DEFAULT '{}',
+                summary_json TEXT NOT NULL DEFAULT '{}'
             );",
         )
         .map_err(|e| format!("Failed to initialize database schema: {}", e))?;
@@ -930,6 +967,203 @@ impl DatabaseManager {
         let _ = fs::rename(json_path, migrated_path);
 
         Ok(true)
+    }
+
+    /// Transactionally save an update preparation checkpoint
+    pub fn save_update_checkpoint(&self, checkpoint: &UpdateCheckpoint) -> Result<i64, String> {
+        let conn = self.conn.lock();
+        let paused_ids_json = serde_json::to_string(&checkpoint.paused_download_ids)
+            .unwrap_or_else(|_| "[]".to_string());
+        let resumable_map_json =
+            serde_json::to_string(&checkpoint.resumable_map).unwrap_or_else(|_| "{}".to_string());
+
+        conn.execute(
+            "INSERT INTO update_checkpoints (
+                app_version, target_version, prepared_at, restored_at, status,
+                paused_download_ids_json, resumable_map_json, summary_json
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                checkpoint.app_version,
+                checkpoint.target_version,
+                checkpoint.prepared_at,
+                checkpoint.restored_at,
+                checkpoint.status,
+                paused_ids_json,
+                resumable_map_json,
+                checkpoint.summary_json,
+            ],
+        )
+        .map_err(|e| format!("Failed to insert update checkpoint: {}", e))?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Retrieve the most recent update checkpoint (if any)
+    pub fn get_latest_update_checkpoint(&self) -> Result<Option<UpdateCheckpoint>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, app_version, target_version, prepared_at, restored_at, status,
+                        paused_download_ids_json, resumable_map_json, summary_json
+                 FROM update_checkpoints
+                 ORDER BY id DESC LIMIT 1",
+            )
+            .map_err(|e| format!("Failed to prepare select checkpoint statement: {}", e))?;
+
+        let res = stmt
+            .query_row([], |row| {
+                let id: i64 = row.get(0)?;
+                let app_version: String = row.get(1)?;
+                let target_version: Option<String> = row.get(2)?;
+                let prepared_at: String = row.get(3)?;
+                let restored_at: Option<String> = row.get(4)?;
+                let status: String = row.get(5)?;
+                let paused_json: String = row.get(6)?;
+                let resumable_json: String = row.get(7)?;
+                let summary_json: String = row.get(8)?;
+
+                let paused_download_ids: Vec<String> =
+                    serde_json::from_str(&paused_json).unwrap_or_default();
+                let resumable_map: HashMap<String, ResumableSnapshot> =
+                    serde_json::from_str(&resumable_json).unwrap_or_default();
+
+                Ok(UpdateCheckpoint {
+                    id: Some(id),
+                    app_version,
+                    target_version,
+                    prepared_at,
+                    restored_at,
+                    status,
+                    paused_download_ids,
+                    resumable_map,
+                    summary_json,
+                })
+            })
+            .optional()
+            .map_err(|e| format!("Failed to query latest update checkpoint: {}", e))?;
+
+        Ok(res)
+    }
+
+    /// Mark an update checkpoint as successfully restored
+    pub fn mark_checkpoint_restored(
+        &self,
+        id: i64,
+        restored_at: &str,
+        summary_json: &str,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute(
+            "UPDATE update_checkpoints
+             SET status = 'restored', restored_at = ?1, summary_json = ?2
+             WHERE id = ?3",
+            params![restored_at, summary_json, id],
+        )
+        .map_err(|e| format!("Failed to mark checkpoint restored: {}", e))?;
+        Ok(())
+    }
+
+    /// Truncate Write-Ahead Log so the main database file is 100% synchronized
+    pub fn wal_checkpoint_truncate(&self) -> Result<(), String> {
+        let conn = self.conn.lock();
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|e| format!("Failed to truncate WAL checkpoint: {}", e))?;
+        Ok(())
+    }
+
+    /// Execute SQLite integrity check to verify database is not corrupted
+    pub fn integrity_check(&self) -> Result<bool, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare("PRAGMA quick_check;")
+            .map_err(|e| format!("Failed to prepare integrity check: {}", e))?;
+        let result: String = stmt
+            .query_row([], |row| row.get(0))
+            .map_err(|e| format!("Failed to query integrity check: {}", e))?;
+        Ok(result.eq_ignore_ascii_case("ok"))
+    }
+
+    /// Perform a safe, consistent online backup of SQLite database to a destination file
+    pub fn backup_to_file(&self, backup_path: &Path) -> Result<(), String> {
+        if let Some(parent) = backup_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let src = self.conn.lock();
+        let mut dst = Connection::open(backup_path)
+            .map_err(|e| format!("Failed to open backup destination {:?}: {}", backup_path, e))?;
+        let backup = rusqlite::backup::Backup::new(&src, &mut dst)
+            .map_err(|e| format!("Failed to initialize SQLite backup: {}", e))?;
+        backup
+            .run_to_completion(10, std::time::Duration::from_millis(10), None)
+            .map_err(|e| format!("SQLite backup execution failed: {}", e))?;
+        Ok(())
+    }
+
+    /// Restore database file from a verified backup
+    pub fn restore_from_backup(db_path: &Path, backup_path: &Path) -> Result<(), String> {
+        if !backup_path.exists() {
+            return Err(format!("Backup file {:?} does not exist", backup_path));
+        }
+        // Verify backup integrity first before overwriting
+        let test_db = Self::open(backup_path)
+            .map_err(|e| format!("Failed to open backup for verification: {}", e))?;
+        if !test_db.integrity_check().unwrap_or(false) {
+            return Err("Backup file failed integrity check".to_string());
+        }
+        drop(test_db);
+
+        if let Some(parent) = db_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::copy(backup_path, db_path)
+            .map_err(|e| format!("Failed to copy backup to {:?}: {}", db_path, e))?;
+        Ok(())
+    }
+
+    /// Open database with automated corruption recovery from backup or JSON history
+    pub fn verify_or_recover(
+        db_path: &Path,
+        backup_path: &Path,
+        history_json_path: &Path,
+    ) -> Result<Self, String> {
+        if db_path.exists() {
+            match Self::open(db_path) {
+                Ok(db) => {
+                    if db.integrity_check().unwrap_or(false) {
+                        return Ok(db);
+                    }
+                    tracing::warn!(
+                        "Database at {:?} failed integrity check. Attempting restore from backup {:?}...",
+                        db_path,
+                        backup_path
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to open database at {:?}: {}. Attempting restore from backup {:?}...",
+                        db_path,
+                        e,
+                        backup_path
+                    );
+                }
+            }
+        }
+
+        // Try restoring from backup_path if it exists
+        if backup_path.exists() {
+            if let Ok(()) = Self::restore_from_backup(db_path, backup_path) {
+                if let Ok(db) = Self::open(db_path) {
+                    tracing::info!("Successfully recovered database from {:?}", backup_path);
+                    return Ok(db);
+                }
+            }
+        }
+
+        // Fresh open of db_path
+        let db = Self::open(db_path)?;
+        // If history_json exists, migrate from it
+        let _ = db.migrate_from_json_if_needed(history_json_path);
+        Ok(db)
     }
 }
 

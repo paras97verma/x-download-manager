@@ -39,6 +39,7 @@ interface MenuBarProps {
   onOpenFile?: () => void;
   onShowInFolder?: () => void;
   onRestartSelected?: () => void;
+  onCheckUpdates?: () => void;
   selectedCount: number;
 }
 
@@ -60,6 +61,7 @@ export const MenuBar: React.FC<MenuBarProps> = ({
   onOpenFile,
   onShowInFolder,
   onRestartSelected,
+  onCheckUpdates,
   selectedCount,
 }) => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -390,6 +392,14 @@ export const MenuBar: React.FC<MenuBarProps> = ({
                 <HelpCircle className="w-3.5 h-3.5 text-emerald-400" /> Keyboard Shortcuts Guide
               </span>
               <kbd className="text-[10px] text-slate-400">{modKey}/</kbd>
+            </button>
+            <button
+              onClick={() => handleAction(() => onCheckUpdates && onCheckUpdates())}
+              className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
+            >
+              <span className="flex items-center gap-2">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Check for Updates...
+              </span>
             </button>
             <button
               onClick={() => handleAction(() => onOpenSettings("about"))}

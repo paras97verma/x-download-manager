@@ -51,7 +51,7 @@ thiserror = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 librqbit = { version = "9.1", default-features = false, features = ["rust-tls"] }
-rusqlite = { version = "0.32", features = ["bundled", "chrono", "uuid"] }
+rusqlite = { version = "0.32", features = ["bundled", "chrono", "uuid", "backup"] }
 keyring = "3.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
@@ -60,3 +60,4 @@ winreg = "0.56"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+tempfile = "3.10"

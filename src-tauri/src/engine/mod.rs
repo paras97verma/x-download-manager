@@ -3,6 +3,7 @@ pub mod http;
 pub mod rate_limiter;
 pub mod remote_protocol;
 pub mod torrent;
+pub mod update_lifecycle;
 
 use chrono::Utc;
 use parking_lot::RwLock;
@@ -210,7 +211,7 @@ pub struct DownloadEngine {
     pub config_manager: ConfigManager,
     pub downloads: Arc<RwLock<Vec<DownloadItem>>>,
     pub active_cancellations: Arc<RwLock<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
-    history_path: PathBuf,
+    pub history_path: PathBuf,
     pub db: Arc<crate::db::DatabaseManager>,
     pub keyring: Arc<crate::security::KeyringStore>,
 }
@@ -292,15 +293,20 @@ fn restored_output_exists(download: &DownloadItem) -> bool {
 }
 
 fn normalize_restored_downloads(mut downloads: Vec<DownloadItem>) -> Vec<DownloadItem> {
-    // Download history intentionally lives outside the app bundle so upgrades
-    // preserve valid transfers. Drop entries whose output has since been
-    // removed, otherwise a stale active record can be resumed after reinstall.
-    downloads.retain(|download| {
-        restored_output_exists(download)
-            || (download.status == DownloadStatus::Queued && download.downloaded_bytes == 0)
-    });
-
+    // Download history lives outside the app bundle so upgrades preserve valid transfers.
+    // We never delete or drop user download tasks on startup or after updates.
     for download in &mut downloads {
+        if !restored_output_exists(download)
+            && download.status != DownloadStatus::Queued
+            && download.downloaded_bytes > 0
+        {
+            download.status = DownloadStatus::Paused;
+            download.transfer_log.push(
+                "Notice: Target file was not found on disk at startup. Task metadata preserved safely."
+                    .to_string(),
+            );
+        }
+
         if download.browser_context_redacted && download.status != DownloadStatus::Completed {
             download.status = DownloadStatus::Failed;
             download.resumable = false;
@@ -456,16 +462,20 @@ impl DownloadEngine {
         let settings = config_manager.load();
         let history_path = config_manager.download_history_path();
         let db_path = config_manager.database_path();
+        let backup_path = db_path.with_extension("db.backup");
+
+        // Open database with automatic corruption recovery from backup or JSON history
         let db = Arc::new(
-            crate::db::DatabaseManager::open(&db_path).unwrap_or_else(|e| {
-                tracing::warn!(
-                    "Failed to open SQLite database at {:?}: {}; using memory database",
-                    db_path,
-                    e
-                );
-                crate::db::DatabaseManager::open_in_memory()
-                    .expect("Failed to initialize fallback in-memory database")
-            }),
+            crate::db::DatabaseManager::verify_or_recover(&db_path, &backup_path, &history_path)
+                .unwrap_or_else(|e| {
+                    tracing::warn!(
+                        "Failed to open SQLite database at {:?}: {}; using memory database",
+                        db_path,
+                        e
+                    );
+                    crate::db::DatabaseManager::open_in_memory()
+                        .expect("Failed to initialize fallback in-memory database")
+                }),
         );
         let keyring = Arc::new(crate::security::KeyringStore::new());
 
@@ -473,10 +483,12 @@ impl DownloadEngine {
         let _ = db.migrate_from_json_if_needed(&history_path);
 
         // Load downloads from SQLite, falling back to JSON if database returns empty and JSON exists
-        let downloads = match db.load_downloads() {
+        let raw_downloads = match db.load_downloads() {
             Ok(dls) if !dls.is_empty() => dls,
             _ => restore_downloads(&history_path),
         };
+        // Normalize all restored downloads so no phantom active states exist and all fields are clean
+        let downloads = normalize_restored_downloads(raw_downloads);
 
         // Populate keyring with any configured credentials
         for cred in &settings.site_credentials {

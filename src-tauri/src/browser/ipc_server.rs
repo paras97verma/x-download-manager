@@ -235,6 +235,10 @@ pub async fn start_browser_ipc_server(
         )
         .route("/api/v1/intercept", post(handle_intercept))
         .route("/api/v1/prepare-update", post(handle_prepare_update))
+        .route(
+            "/api/v1/update-status",
+            get(handle_update_status).layer(CorsLayer::permissive()),
+        )
         .route("/api/v1/downloads", get(handle_list_downloads))
         .route(
             "/api/v1/stream/:id",
@@ -266,29 +270,35 @@ async fn handle_prepare_update(
             Json(serde_json::json!({ "accepted": false, "reason": "origin not allowed" })),
         );
     }
-    if let Some(app) = UPDATE_APP_HANDLE.get() {
-        if let Err(error) = engine.persist_downloads() {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "accepted": false, "reason": error })),
-            );
+    match crate::engine::update_lifecycle::prepare_for_update(&engine, None).await {
+        Ok(summary) => {
+            if let Some(app) = UPDATE_APP_HANDLE.get() {
+                let app = app.clone();
+                tokio::spawn(async move {
+                    // Give the installer request time to receive its response before quitting.
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    app.exit(0);
+                });
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "accepted": true,
+                    "summary": summary
+                })),
+            )
         }
-        let app = app.clone();
-        tokio::spawn(async move {
-            // Give the installer request time to receive its response before quitting.
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-            app.exit(0);
-        });
-        (
-            StatusCode::OK,
-            Json(serde_json::json!({ "accepted": true })),
-        )
-    } else {
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({ "accepted": false, "reason": "app is shutting down" })),
-        )
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "accepted": false, "reason": error })),
+        ),
     }
+}
+
+async fn handle_update_status() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "is_preparing_update": crate::engine::update_lifecycle::is_preparing_update()
+    }))
 }
 
 async fn handle_status(
@@ -325,6 +335,13 @@ async fn handle_intercept(
         return Json(serde_json::json!({
             "accepted": false,
             "reason": "Use the ByteX browser extension Native Messaging channel"
+        }));
+    }
+    if crate::engine::update_lifecycle::is_preparing_update() {
+        return Json(serde_json::json!({
+            "accepted": false,
+            "reason": "app_preparing_update",
+            "message": "ByteX is preparing for an update. Downloads are temporarily blocked to preserve data."
         }));
     }
     if !engine.settings.read().browser.intercept_all_downloads {

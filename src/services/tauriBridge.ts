@@ -2,16 +2,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import {
   AppSettings,
+  AppUpdateInfo,
   BrowserStatus,
   DownloadItem,
+  DownloadResumeVerificationResult,
   DuplicateDownloadNotice,
   MediaStreamInfo,
   NewDownloadRequest,
   RemoteConnectionTestParams,
   RemoteConnectionTestResult,
+  RestoredDownloadInfo,
   SchedulerQueueConfig,
   SiteCredential,
   ThreadSegment,
+  UpdatePreparationSummary,
+  UpdateRestorationReport,
 } from "../types/xdm";
 
 declare global {
@@ -395,6 +400,93 @@ export async function apiGetAppVersion(): Promise<string> {
     }
   }
   return DEFAULT_APP_VERSION;
+}
+
+export async function apiPrepareAppForUpdate(
+  targetVersion?: string
+): Promise<UpdatePreparationSummary> {
+  if (isTauriRuntime()) {
+    try {
+      return await invoke<UpdatePreparationSummary>("prepare_app_for_update", {
+        targetVersion: targetVersion || null,
+      });
+    } catch (err) {
+      console.error("Failed to prepare app for update:", err);
+      throw err;
+    }
+  }
+  return {
+    success: true,
+    paused_downloads_count: 0,
+    queued_downloads_count: 0,
+    completed_downloads_count: 0,
+    backup_path: "/mock/bytex.db.backup",
+    db_intact: true,
+    prepared_at: new Date().toISOString(),
+    message: "Mock update preparation successful in browser preview.",
+  };
+}
+
+export async function apiGetUpdateRestorationReport(): Promise<UpdateRestorationReport | null> {
+  if (isTauriRuntime()) {
+    try {
+      return await invoke<UpdateRestorationReport | null>("get_update_restoration_report");
+    } catch (err) {
+      console.error("Failed to get update restoration report:", err);
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function apiDismissUpdateRestorationReport(): Promise<void> {
+  if (isTauriRuntime()) {
+    try {
+      await invoke("dismiss_update_restoration_report");
+    } catch (err) {
+      console.error("Failed to dismiss update restoration report:", err);
+    }
+  }
+}
+
+export async function apiVerifyAndResumeDownload(
+  id: string
+): Promise<DownloadResumeVerificationResult> {
+  if (isTauriRuntime()) {
+    try {
+      return await invoke<DownloadResumeVerificationResult>("verify_and_resume_download", { id });
+    } catch (err) {
+      console.error("Failed to verify and resume download:", err);
+      throw err;
+    }
+  }
+  return {
+    id,
+    can_resume: true,
+    accepts_ranges: true,
+    validator_matches: true,
+    server_total_bytes: 0,
+    message: "Mock verified and resumed in browser preview.",
+  };
+}
+
+export async function apiCheckForUpdates(): Promise<AppUpdateInfo> {
+  if (isTauriRuntime()) {
+    try {
+      return await invoke<AppUpdateInfo>("check_for_updates");
+    } catch (err) {
+      console.error("Failed to check for updates:", err);
+      throw err;
+    }
+  }
+  return {
+    current_version: DEFAULT_APP_VERSION,
+    latest_version: DEFAULT_APP_VERSION,
+    has_update: false,
+    release_notes: "Up to date (web preview mode).",
+    release_url: "https://github.com/paras97verma/x-download-manager/releases",
+    published_at: null,
+  };
 }
 
 export async function apiPromptNotificationPermission(): Promise<boolean> {

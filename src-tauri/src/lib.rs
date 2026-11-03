@@ -32,6 +32,9 @@ async fn add_download_task(
     engine: State<'_, Arc<DownloadEngine>>,
     app: tauri::AppHandle,
 ) -> Result<DownloadItem, String> {
+    if crate::engine::update_lifecycle::is_preparing_update() {
+        return Err("ByteX is currently preparing for an application update. New downloads are temporarily blocked to protect data.".to_string());
+    }
     if keep_both.unwrap_or(false) {
         req = unique_copy_request(engine.inner(), req);
     } else {
@@ -682,6 +685,50 @@ fn get_app_version(app: tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
+async fn prepare_app_for_update(
+    target_version: Option<String>,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<crate::engine::update_lifecycle::UpdatePreparationSummary, String> {
+    crate::engine::update_lifecycle::prepare_for_update(engine.inner(), target_version).await
+}
+
+#[tauri::command]
+fn get_update_restoration_report(
+    state: State<
+        '_,
+        Arc<parking_lot::Mutex<Option<crate::engine::update_lifecycle::UpdateRestorationReport>>>,
+    >,
+) -> Option<crate::engine::update_lifecycle::UpdateRestorationReport> {
+    state.lock().clone()
+}
+
+#[tauri::command]
+fn dismiss_update_restoration_report(
+    state: State<
+        '_,
+        Arc<parking_lot::Mutex<Option<crate::engine::update_lifecycle::UpdateRestorationReport>>>,
+    >,
+) {
+    *state.lock() = None;
+}
+
+#[tauri::command]
+async fn verify_and_resume_download(
+    id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<crate::engine::update_lifecycle::DownloadResumeVerificationResult, String> {
+    crate::engine::update_lifecycle::verify_and_resume_download(engine.inner(), &id).await
+}
+
+#[tauri::command]
+async fn check_for_updates(
+    app: tauri::AppHandle,
+) -> Result<crate::engine::update_lifecycle::AppUpdateInfo, String> {
+    let current_version = get_app_version(app);
+    crate::engine::update_lifecycle::check_for_updates(&current_version).await
+}
+
+#[tauri::command]
 fn open_extension_folder(family: String) -> Result<String, String> {
     let dir = crate::browser::get_or_create_extension_dir(&family)?;
     #[cfg(target_os = "macos")]
@@ -1308,6 +1355,10 @@ pub fn run_app() {
     let completion_engine = Arc::clone(&engine);
     let start_on_boot_setting = engine.settings.read().start_on_boot;
 
+    let restoration_report = Arc::new(parking_lot::Mutex::new(
+        crate::engine::update_lifecycle::restore_post_update(&engine),
+    ));
+
     let app_result = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             use tauri::Manager;
@@ -1325,6 +1376,7 @@ pub fn run_app() {
             Some(vec![]),
         ))
         .manage(engine)
+        .manage(Arc::clone(&restoration_report))
         .setup(move |app| {
             use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
             let autolaunch = app.autolaunch();
@@ -1626,6 +1678,11 @@ pub fn run_app() {
             test_remote_connection,
             save_remote_credential,
             delete_remote_credential,
+            prepare_app_for_update,
+            get_update_restoration_report,
+            dismiss_update_restoration_report,
+            verify_and_resume_download,
+            check_for_updates,
         ])
         .build(tauri::generate_context!());
     match app_result {
@@ -1647,6 +1704,7 @@ pub fn run_app() {
     if let Err(error) = shutdown_engine.persist_downloads() {
         tracing::error!(%error, "Could not persist download history during shutdown");
     }
+    let _ = shutdown_engine.db.wal_checkpoint_truncate();
 }
 
 #[cfg(test)]
