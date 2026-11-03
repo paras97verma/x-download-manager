@@ -92,7 +92,7 @@ pub fn extract_youtube_video_id(url: &str) -> Option<String> {
     let parsed = url::Url::parse(url).ok()?;
     let host = parsed.host_str()?.to_lowercase();
 
-    if host.contains("youtu.be") {
+    if host == "youtu.be" || host.ends_with(".youtu.be") {
         let path = parsed.path().trim_start_matches('/');
         let id = path.split('/').next()?;
         if id.len() == 11 {
@@ -100,7 +100,7 @@ pub fn extract_youtube_video_id(url: &str) -> Option<String> {
         }
     }
 
-    if host.contains("youtube.com") {
+    if host == "youtube.com" || host.ends_with(".youtube.com") {
         if parsed.path() == "/watch" {
             for (k, v) in parsed.query_pairs() {
                 if k == "v" && v.len() == 11 {

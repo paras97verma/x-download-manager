@@ -107,8 +107,14 @@
   // --- YouTube Video & Audio Download Integration ---
   function isYouTubeWatchPage() {
     const loc = window.location;
+    const host = (loc.hostname || "").toLowerCase();
+    const isYtHost =
+      host === "youtube.com" ||
+      host.endsWith(".youtube.com") ||
+      host === "youtu.be" ||
+      host.endsWith(".youtu.be");
     return (
-      (loc.hostname.includes("youtube.com") || loc.hostname.includes("youtu.be")) &&
+      isYtHost &&
       (loc.pathname === "/watch" || loc.pathname.startsWith("/shorts/"))
     );
   }
