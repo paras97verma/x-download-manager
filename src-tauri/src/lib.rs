@@ -1355,14 +1355,6 @@ fn build_speed_tray_icon(download_bps: u64, upload_bps: u64) -> tauri::image::Im
 pub fn run_app() {
     let engine = Arc::new(DownloadEngine::new());
 
-    // Refresh the user-facing extension folders on every app start so manual
-    // installs receive the current scripts, manifests, icons, and Safari wrapper.
-    for family in ["chromium", "firefox", "safari"] {
-        if let Err(error) = browser::get_or_create_extension_dir(family) {
-            tracing::warn!(%family, %error, "Could not refresh browser extension files");
-        }
-    }
-
     {
         let mut st = engine.settings.write();
         if st.browser.auto_install_extensions_on_startup {

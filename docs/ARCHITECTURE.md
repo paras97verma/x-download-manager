@@ -128,13 +128,13 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 
 * **Stage 3 — Cross-Platform Native Matrix Build**:
 
-  * `macos-latest` (Universal `aarch64-apple-darwin` + `x86_64-apple-darwin`) -> `.dmg`, `.pkg`, and `.app.tar.gz`
+  * `macos-latest` (Universal `aarch64-apple-darwin` + `x86_64-apple-darwin`) -> `.dmg` (Disk Image)
 
-  * `windows-latest` (`x86_64-pc-windows-msvc`) -> `.exe` (NSIS setup) and `.msi` (WiX installer)
+  * `windows-latest` (`x86_64-pc-windows-msvc`) -> `.exe` (NSIS setup)
 
   * `ubuntu-22.04` (`x86_64-unknown-linux-gnu`) -> `.deb`, `.AppImage`, and `.rpm`
 
-* **Stage 4 — GitHub Release Publishing**: Publishes a version-typed GitHub Release containing the native OS installers alongside `bytex-extension-chromium.zip`, `bytex-extension-firefox.xpi`, and `bytex-extension-safari.zip`.
+* **Stage 4 — GitHub Release Publishing**: Publishes a version-typed GitHub Release containing the native OS installers alongside standalone downloadable browser companion extensions `bytex-extension-chromium.zip`, `bytex-extension-firefox.xpi`, and `bytex-extension-safari.zip`.
 
 ## 4. Repository Directory Structure
 
@@ -142,7 +142,7 @@ The application ships with bundled **WebExtensions for Chromium (Chrome, Brave, 
 x-download-manager/
 ├── .github/
 │   └── workflows/
-│       └── release.yml                  # CI/CD verification + DMG/PKG/EXE/Linux + Extensions release
+│       └── release.yml                  # CI/CD verification + DMG/EXE/Linux + Extensions release
 ├── Cargo.toml                           # Workspace Cargo manifest
 ├── package.json                         # Frontend & Tauri CLI build configuration
 ├── tsconfig.json                        # TypeScript strict configuration
