@@ -346,3 +346,90 @@ export interface AppUpdateInfo {
   release_url: string;
   published_at: string | null;
 }
+
+export interface MediaFormatOption {
+  format_id: string;
+  media_type: "video_only" | "audio_only" | "video_audio_combined" | string;
+  container: string;
+  resolution?: string | null;
+  fps?: number | null;
+  video_codec?: string | null;
+  audio_codec?: string | null;
+  video_bitrate?: number | null;
+  audio_bitrate?: number | null;
+  estimated_size_bytes?: number | null;
+  requires_muxing: boolean;
+  video_stream_url?: string | null;
+  audio_stream_url?: string | null;
+  combined_stream_url?: string | null;
+}
+
+export interface MediaMetadataResponse {
+  video_id: string;
+  title: string;
+  channel?: string | null;
+  duration_seconds?: number | null;
+  thumbnail_url?: string | null;
+  license_type: string;
+  formats: MediaFormatOption[];
+  best_quality_format_id?: string | null;
+  max_resolution_format_id?: string | null;
+  audio_only_format_id?: string | null;
+  balanced_format_id?: string | null;
+}
+
+export interface MediaDownloadRequest {
+  video_id: string;
+  source_url: string;
+  title: string;
+  channel_name?: string | null;
+  duration_seconds?: number | null;
+  thumbnail_url?: string | null;
+  license_type?: string | null;
+  format_id: string;
+  container: string;
+  resolution?: string | null;
+  fps?: number | null;
+  video_codec?: string | null;
+  audio_codec?: string | null;
+  video_stream_url?: string | null;
+  audio_stream_url?: string | null;
+  combined_stream_url?: string | null;
+  custom_headers?: Record<string, string>;
+  output_filename?: string | null;
+  queue_id?: string | null;
+  save_dir?: string | null;
+}
+
+export interface MediaDownloadResponse {
+  accepted: boolean;
+  media_job_id: string;
+  video_download_id?: string | null;
+  audio_download_id?: string | null;
+  message: string;
+}
+
+export interface MediaJobRecord {
+  id: string;
+  source_platform: string;
+  source_url: string;
+  video_id: string;
+  title: string;
+  channel_name?: string | null;
+  duration_seconds?: number | null;
+  thumbnail_url?: string | null;
+  license_type: string;
+  selected_format: string;
+  selected_resolution?: string | null;
+  selected_fps?: number | null;
+  video_codec?: string | null;
+  audio_codec?: string | null;
+  video_download_id?: string | null;
+  audio_download_id?: string | null;
+  output_container: string;
+  final_output_path: string;
+  mux_status: "pending" | "muxing" | "completed" | "failed";
+  mux_error?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
