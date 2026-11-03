@@ -202,6 +202,8 @@ pub struct DownloadEngine {
     pub downloads: Arc<RwLock<Vec<DownloadItem>>>,
     pub active_cancellations: Arc<RwLock<HashMap<String, tokio::sync::watch::Sender<bool>>>>,
     history_path: PathBuf,
+    pub db: Arc<crate::db::DatabaseManager>,
+    pub keyring: Arc<crate::security::KeyringStore>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -444,21 +446,60 @@ impl DownloadEngine {
         let config_manager = ConfigManager::new();
         let settings = config_manager.load();
         let history_path = config_manager.download_history_path();
-        let downloads = restore_downloads(&history_path);
+        let db_path = config_manager.database_path();
+        let db = Arc::new(
+            crate::db::DatabaseManager::open(&db_path).unwrap_or_else(|e| {
+                tracing::warn!(
+                    "Failed to open SQLite database at {:?}: {}; using memory database",
+                    db_path,
+                    e
+                );
+                crate::db::DatabaseManager::open_in_memory()
+                    .expect("Failed to initialize fallback in-memory database")
+            }),
+        );
+        let keyring = Arc::new(crate::security::KeyringStore::new());
+
+        // Perform zero-data-loss migration from downloads.json if present and SQLite is fresh
+        let _ = db.migrate_from_json_if_needed(&history_path);
+
+        // Load downloads from SQLite, falling back to JSON if database returns empty and JSON exists
+        let downloads = match db.load_downloads() {
+            Ok(dls) if !dls.is_empty() => dls,
+            _ => restore_downloads(&history_path),
+        };
+
+        // Populate keyring with any configured credentials
+        for cred in &settings.site_credentials {
+            if !cred.password_or_token.is_empty() {
+                let _ =
+                    keyring.set_secret(&format!("site_cred:{}", cred.id), &cred.password_or_token);
+            }
+        }
+
         Self {
             settings: Arc::new(RwLock::new(settings)),
             config_manager,
             downloads: Arc::new(RwLock::new(downloads)),
             active_cancellations: Arc::new(RwLock::new(HashMap::new())),
             history_path,
+            db,
+            keyring,
         }
     }
 
-    /// Save an atomic snapshot of the download list. The history file and
+    /// Save an atomic snapshot of the download list. The history database and
     /// torrent resume data are stored outside the install directory.
     pub fn persist_downloads(&self) -> Result<(), String> {
         let downloads = self.downloads.read().clone();
-        write_download_history(&self.history_path, &downloads)
+        // 1. Transactional write to normalized SQLite database
+        let db_res = self.db.save_downloads(&downloads);
+        if let Err(ref e) = db_res {
+            tracing::warn!("Failed to persist downloads to SQLite: {}", e);
+        }
+        // 2. Also write JSON snapshot backup
+        let json_res = write_download_history(&self.history_path, &downloads);
+        db_res.or(json_res)
     }
 
     pub fn detect_protocol(url: &str) -> DownloadProtocol {

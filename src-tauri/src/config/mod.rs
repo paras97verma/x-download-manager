@@ -554,6 +554,13 @@ impl ConfigManager {
             .join("downloads.json")
     }
 
+    pub fn database_path(&self) -> PathBuf {
+        self.config_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("bytex.db")
+    }
+
     pub fn torrent_state_dir(&self) -> PathBuf {
         self.config_path
             .parent()
