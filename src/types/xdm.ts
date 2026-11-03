@@ -78,6 +78,8 @@ export interface DownloadItem {
   status: DownloadStatus;
   resumable: boolean;
   threads_count: number;
+  priority?: "high" | "normal" | "low";
+  speed_limit_bps?: number | null;
   segments: ThreadSegment[];
   torrent_meta?: TorrentMetadata | null;
   source_browser?: string | null;

@@ -20,6 +20,9 @@ import {
   apiGetDownloads,
   apiGetSettings,
   apiMoveToQueue,
+  apiSetDownloadThreads,
+  apiSetDownloadPriority,
+  apiSetDownloadSpeedLimit,
   apiOpenFile,
   apiPauseDownload,
   apiRestartDownload,
@@ -459,12 +462,53 @@ export const App: React.FC = () => {
     );
   };
 
-  const handleMoveToQueue = (id: string, queueId: string) => {
+  const handleMoveToQueue = (id: string, queueId: string, forceRestart?: boolean) => {
     if (isTauriRuntime()) {
-      apiMoveToQueue(id, queueId);
+      apiMoveToQueue(id, queueId, forceRestart);
     }
     setDownloads((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, queue_id: queueId } : d))
+      prev.map((d) => {
+        if (d.id !== id) return d;
+        const reset = !d.resumable && forceRestart;
+        return {
+          ...d,
+          queue_id: queueId,
+          downloaded_bytes: reset ? 0 : d.downloaded_bytes,
+          status: reset ? "queued" : d.status,
+          speed_bps: reset ? 0 : d.speed_bps,
+        };
+      })
+    );
+  };
+
+  const handleSetDownloadThreads = (id: string, threads: number) => {
+    if (isTauriRuntime()) {
+      apiSetDownloadThreads(id, threads);
+    }
+    setDownloads((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, threads_count: threads } : d))
+    );
+  };
+
+  const handleSetDownloadPriority = (id: string, priority: "high" | "normal" | "low") => {
+    if (isTauriRuntime()) {
+      apiSetDownloadPriority(id, priority);
+    }
+    setDownloads((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, priority } : d))
+    );
+  };
+
+  const handleSetDownloadSpeedLimit = (id: string, speedLimitKbps: number | null) => {
+    if (isTauriRuntime()) {
+      apiSetDownloadSpeedLimit(id, speedLimitKbps);
+    }
+    setDownloads((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? { ...d, speed_limit_bps: speedLimitKbps ? speedLimitKbps * 1024 : null }
+          : d
+      )
     );
   };
 
@@ -763,6 +807,9 @@ export const App: React.FC = () => {
             onTogglePauseResume={handleTogglePauseResume}
             onRestartDownload={handleRestartDownload}
             onMoveToQueue={handleMoveToQueue}
+            onSetDownloadThreads={handleSetDownloadThreads}
+            onSetDownloadPriority={handleSetDownloadPriority}
+            onSetDownloadSpeedLimit={handleSetDownloadSpeedLimit}
             onOpenProperties={(item) => setPropertiesItem(item)}
             onOpenScheduler={() => setShowSchedulerModal(true)}
             onOpenFile={(path) => apiOpenFile(path)}

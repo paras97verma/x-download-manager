@@ -505,13 +505,25 @@ pub async fn execute_torrent_download(
         .wait_until_initialized()
         .await
         .map_err(|e| format!("Torrent metadata error: {e}"))?;
+    let torrent_name = handle
+        .name()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| {
+            let dls = downloads.read();
+            dls.iter()
+                .find(|d| d.id == item_id)
+                .map(|d| d.filename.clone())
+                .unwrap_or_else(|| "Torrent".to_string())
+        });
+    let torrent_target = std::path::PathBuf::from(&save_dir).join(&torrent_name);
     {
         let mut dls = downloads.write();
         if let Some(d) = dls.iter_mut().find(|d| d.id == item_id) {
             let stats = handle.stats();
             d.status = DownloadStatus::Downloading;
             d.total_bytes = stats.total_bytes;
-            d.save_path = save_dir.clone();
+            d.filename = torrent_name.clone();
+            d.save_path = torrent_target.to_string_lossy().to_string();
             d.transfer_log.push(
                 "Torrent metadata resolved; downloading verified pieces from the swarm."
                     .to_string(),

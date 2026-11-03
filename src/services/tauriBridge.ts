@@ -206,12 +206,59 @@ export async function apiVerifyFileChecksum(path: string): Promise<string | null
   }
 }
 
-export async function apiMoveToQueue(id: string, queueId: string): Promise<void> {
+export async function apiMoveToQueue(
+  id: string,
+  queueId: string,
+  forceRestart?: boolean
+): Promise<void> {
   if (!isTauriRuntime()) return;
   try {
-    await invoke("move_to_queue", { id, queue_id: queueId, queueId });
+    await invoke("move_to_queue", {
+      id,
+      queue_id: queueId,
+      queueId,
+      force_restart: forceRestart,
+      forceRestart,
+    });
   } catch (err) {
     console.error("Failed to move_to_queue via Tauri:", err);
+  }
+}
+
+export async function apiSetDownloadThreads(id: string, threads: number): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("set_download_threads", { id, threads });
+  } catch (err) {
+    console.error("Failed to set_download_threads via Tauri:", err);
+  }
+}
+
+export async function apiSetDownloadPriority(
+  id: string,
+  priority: "high" | "normal" | "low"
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("set_download_priority", { id, priority });
+  } catch (err) {
+    console.error("Failed to set_download_priority via Tauri:", err);
+  }
+}
+
+export async function apiSetDownloadSpeedLimit(
+  id: string,
+  speedLimitKbps?: number | null
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke("set_download_speed_limit", {
+      id,
+      speed_limit_kbps: speedLimitKbps,
+      speedLimitKbps,
+    });
+  } catch (err) {
+    console.error("Failed to set_download_speed_limit via Tauri:", err);
   }
 }
 

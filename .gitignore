@@ -47,3 +47,8 @@ desktop.ini
 *.bak
 *.tmp
 *.crash
+
+# Lyzo AI memory index
+.lyzo/memory.db
+.lyzo/memory.db-wal
+.lyzo/memory.db-shm

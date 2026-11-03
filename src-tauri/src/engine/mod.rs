@@ -141,6 +141,14 @@ pub struct DownloadItem {
     pub transfer_log: Vec<String>,
     pub torrent_file_path: Option<String>,
     pub torrent_selected_files: Option<Vec<usize>>,
+    #[serde(default = "default_priority")]
+    pub priority: String,
+    #[serde(default)]
+    pub speed_limit_bps: Option<u64>,
+}
+
+fn default_priority() -> String {
+    "normal".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -684,6 +692,8 @@ impl DownloadEngine {
             )],
             torrent_file_path,
             torrent_selected_files: req.torrent_selected_files,
+            priority: "normal".to_string(),
+            speed_limit_bps: None,
         };
 
         self.downloads.write().insert(0, item.clone());
