@@ -1,13 +1,14 @@
 import React, { useState } from "react";
-import { Cpu, Magnet, Terminal, ShieldCheck, Activity, FileSearch } from "lucide-react";
+import { Cpu, Magnet, Terminal, ShieldCheck, Activity, FileSearch, Play } from "lucide-react";
 import { DownloadItem } from "../types/xdm";
-import { formatBytes, formatSpeed, formatEta } from "../services/tauriBridge";
+import { formatBytes, formatSpeed, formatEta, isMediaFile } from "../services/tauriBridge";
 
 interface SegmentInspectorProps {
   item: DownloadItem | null;
+  onPlayMedia?: (item: DownloadItem) => void;
 }
 
-export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
+export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlayMedia }) => {
   const [activeTab, setActiveTab] = useState<"segments" | "torrent" | "log" | "network" | "fileinfo">("segments");
 
   if (!item) {
@@ -86,7 +87,17 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item }) => {
           </button>
         </div>
 
-        <div className="flex items-center gap-4 text-[11px] text-slate-400">
+        <div className="flex items-center gap-3 text-[11px] text-slate-400">
+          {item && isMediaFile(item.filename) && onPlayMedia && (
+            <button
+              onClick={() => onPlayMedia(item)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs shadow-sm transition"
+              title="Play or stream this media asset"
+            >
+              <Play className="w-3 h-3 fill-white" />
+              <span>{item.status === "completed" ? "Play Media" : "Stream Live"}</span>
+            </button>
+          )}
           <span>
             Save Path: <strong className="text-slate-200 font-mono">{item.save_path}</strong>
           </span>

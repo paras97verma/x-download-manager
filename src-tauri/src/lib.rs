@@ -5,6 +5,7 @@ pub mod engine;
 pub mod menu;
 pub mod scheduler;
 pub mod security;
+pub mod streaming;
 
 use std::sync::Arc;
 use tauri::{Emitter, Manager, State};
@@ -556,6 +557,66 @@ fn open_browser_url(url: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn get_media_stream_info(
+    id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<crate::streaming::MediaStreamInfo, String> {
+    let dls = engine.downloads.read();
+    let item = dls
+        .iter()
+        .find(|d| d.id == id)
+        .ok_or_else(|| "Download item not found".to_string())?;
+
+    let filename = item.filename.clone();
+    let is_video = crate::streaming::is_video_file(&filename);
+    let is_audio = crate::streaming::is_audio_file(&filename);
+    let mime_type = crate::streaming::detect_media_mime(&filename).to_string();
+
+    let port = engine.settings.read().browser.ipc_port;
+    let stream_url = format!("http://127.0.0.1:{}/api/v1/stream/{}", port, id);
+
+    Ok(crate::streaming::MediaStreamInfo {
+        download_id: id,
+        filename,
+        stream_url,
+        mime_type,
+        total_bytes: item.total_bytes,
+        downloaded_bytes: item.downloaded_bytes,
+        is_video,
+        is_audio,
+        is_complete: item.status == DownloadStatus::Completed,
+    })
+}
+
+#[tauri::command]
+fn open_in_external_player(
+    id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    let dls = engine.downloads.read();
+    let item = dls
+        .iter()
+        .find(|d| d.id == id)
+        .ok_or_else(|| "Download item not found".to_string())?;
+
+    let port = engine.settings.read().browser.ipc_port;
+    let stream_url = format!("http://127.0.0.1:{}/api/v1/stream/{}", port, id);
+
+    // If file is completed and exists on disk, launch the local file directly in default media player.
+    // If it's still downloading, launch the stream URL which serves live byte-ranges.
+    let path = crate::streaming::resolve_media_file_path(item);
+    if item.status == DownloadStatus::Completed
+        && path.as_ref().map(|p| p.is_file()).unwrap_or(false)
+    {
+        if let Some(p) = path {
+            return open_file(p.to_string_lossy().to_string());
+        }
+    }
+
+    open_browser_url(stream_url)
 }
 
 #[tauri::command]
@@ -1287,6 +1348,8 @@ pub fn run_app() {
             show_notification,
             parse_torrent_file,
             get_app_version,
+            get_media_stream_info,
+            open_in_external_player,
         ])
         .build(tauri::generate_context!());
     match app_result {

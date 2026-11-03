@@ -238,3 +238,15 @@ export interface DuplicateDownloadNotice {
   existing_path: string;
   request: NewDownloadRequest;
 }
+
+export interface MediaStreamInfo {
+  download_id: string;
+  filename: string;
+  stream_url: string;
+  mime_type: string;
+  total_bytes: number;
+  downloaded_bytes: number;
+  is_video: boolean;
+  is_audio: boolean;
+  is_complete: boolean;
+}
