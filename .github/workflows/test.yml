@@ -4,22 +4,6 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - '.github/workflows/**'
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'extensions/**'
-      - 'scripts/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'vite.config.*'
-      - 'tsconfig*.json'
-      - 'postcss.config.*'
-      - 'tailwind.config.*'
   workflow_dispatch:
 
 concurrency:
@@ -39,28 +23,58 @@ jobs:
     steps:
       - name: Checkout Codebase
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for Application File Changes
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run_tests=true" >> $GITHUB_OUTPUT
+            echo "Manual trigger: running full test suite."
+          else
+            git fetch origin ${{ github.base_ref }} --depth=1 || true
+            CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD || true)
+            echo "Changed files in PR:"
+            echo "$CHANGED_FILES"
+
+            APP_CHANGES=$(echo "$CHANGED_FILES" | grep -E '^(\.github/workflows/|src/|src-tauri/|extensions/|scripts/|public/|index\.html|package\.json|package-lock\.json|Cargo\.toml|Cargo\.lock|vite\.config|tsconfig|postcss\.config|tailwind\.config)' || true)
+
+            if [ -n "$APP_CHANGES" ]; then
+              echo "run_tests=true" >> $GITHUB_OUTPUT
+              echo "Application changes detected: full test suite will run."
+            else
+              echo "run_tests=false" >> $GITHUB_OUTPUT
+              echo "No application-related file changes detected (docs/non-project files only). Skipping tests."
+            fi
+          fi
 
       - name: Install Linux Dependencies (WebKit2GTK / AppIndicator)
+        if: steps.filter.outputs.run_tests == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Setup Node.js 22
+        if: steps.filter.outputs.run_tests == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Setup Rust Stable Toolchain with LLVM Coverage Tools
+        if: steps.filter.outputs.run_tests == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy, llvm-tools-preview
 
       - name: Install cargo-llvm-cov and cargo-audit
+        if: steps.filter.outputs.run_tests == 'true'
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,cargo-audit
 
       - name: Cache Cargo Dependencies & Build Output
+        if: steps.filter.outputs.run_tests == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
@@ -69,30 +83,37 @@ jobs:
       # 1. CODE QUALITY & STATIC ANALYSIS
       # ========================================================================
       - name: Enforce Rust Formatting Standard (cargo fmt)
+        if: steps.filter.outputs.run_tests == 'true'
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 
       - name: Run Clippy Static Analysis Linter (-D warnings)
+        if: steps.filter.outputs.run_tests == 'true'
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Install Frontend Dependencies
+        if: steps.filter.outputs.run_tests == 'true'
         run: npm ci || npm install
 
       - name: TypeScript Static Typecheck
+        if: steps.filter.outputs.run_tests == 'true'
         run: npm run typecheck
 
       # ========================================================================
       # 2. CODE SCANNING & DEPENDENCY SECURITY AUDIT
       # ========================================================================
       - name: Rust Dependency Vulnerability Scan (cargo audit)
+        if: steps.filter.outputs.run_tests == 'true'
         run: cargo audit --file Cargo.lock || true
 
       - name: Frontend Dependency Vulnerability Scan (npm audit)
+        if: steps.filter.outputs.run_tests == 'true'
         run: npm audit --omit=dev --audit-level=high || true
 
       # ========================================================================
       # 3. CODE COVERAGE & INTEGRATION TESTS
       # ========================================================================
       - name: Run All Integration Tests with Code Coverage (llvm-cov)
+        if: steps.filter.outputs.run_tests == 'true'
         run: |
           echo "### 📊 Code Coverage Summary" >> $GITHUB_STEP_SUMMARY
           echo '```text' >> $GITHUB_STEP_SUMMARY
@@ -101,6 +122,7 @@ jobs:
           cargo llvm-cov --manifest-path src-tauri/Cargo.toml --all-targets --lcov --output-path lcov.info
 
       - name: Upload Code Coverage Report (LCOV)
+        if: steps.filter.outputs.run_tests == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: code-coverage-report
@@ -110,9 +132,17 @@ jobs:
       # 4. FRONTEND BUILD & WEBEXTENSIONS INTEGRITY
       # ========================================================================
       - name: Production Vite Frontend Build
+        if: steps.filter.outputs.run_tests == 'true'
         run: npm run build
 
       - name: Verify WebExtensions Manifests & Bundle Integrity
+        if: steps.filter.outputs.run_tests == 'true'
         run: |
           chmod +x ./scripts/package-extensions.sh
           ./scripts/package-extensions.sh
+
+      - name: Skip Notice for Non-Application Changes
+        if: steps.filter.outputs.run_tests != 'true'
+        run: |
+          echo "### ℹ️ Test Cases Skipped" >> $GITHUB_STEP_SUMMARY
+          echo "No application code changes detected (only non-project or documentation files modified). Tests were skipped." >> $GITHUB_STEP_SUMMARY
