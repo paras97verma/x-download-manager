@@ -6,6 +6,31 @@ use std::sync::Arc;
 use xdm_lib::engine::media_pipeline::*;
 use xdm_lib::engine::DownloadEngine;
 
+fn create_temp_engine() -> (Arc<DownloadEngine>, tempfile::TempDir) {
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+    let db_path = temp_dir.path().join("bytex.db");
+    let history_path = temp_dir.path().join("downloads.json");
+
+    let db =
+        Arc::new(xdm_lib::db::DatabaseManager::open(&db_path).expect("Failed to open temp db"));
+    let keyring = Arc::new(xdm_lib::security::KeyringStore::new());
+    let config_manager = xdm_lib::config::ConfigManager::new();
+    let mut settings = config_manager.load();
+    settings.default_download_dir = temp_dir.path().to_string_lossy().to_string();
+
+    let engine = Arc::new(DownloadEngine {
+        settings: Arc::new(parking_lot::RwLock::new(settings)),
+        config_manager,
+        downloads: Arc::new(parking_lot::RwLock::new(Vec::new())),
+        active_cancellations: Arc::new(parking_lot::RwLock::new(HashMap::new())),
+        history_path,
+        db,
+        keyring,
+    });
+
+    (engine, temp_dir)
+}
+
 #[test]
 fn test_youtube_video_id_extraction_all_variants() {
     // Standard watch URL
@@ -149,7 +174,7 @@ fn test_quality_score_ranking_and_presets() {
 
 #[tokio::test]
 async fn test_submit_media_download_job_dual_track() {
-    let engine = Arc::new(DownloadEngine::new());
+    let (engine, _temp_dir) = create_temp_engine();
 
     let req = MediaDownloadRequest {
         video_id: "dQw4w9WgXcQ".to_string(),
@@ -245,7 +270,7 @@ async fn test_submit_media_download_job_dual_track() {
 
 #[tokio::test]
 async fn test_submit_media_download_job_single_stream() {
-    let engine = Arc::new(DownloadEngine::new());
+    let (engine, _temp_dir) = create_temp_engine();
 
     let req = MediaDownloadRequest {
         video_id: "jNQXAC9IVRw".to_string(), // Me at the zoo (first YouTube video)
