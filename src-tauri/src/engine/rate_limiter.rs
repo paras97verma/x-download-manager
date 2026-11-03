@@ -146,6 +146,8 @@ mod tests {
             transfer_log: Vec::new(),
             torrent_file_path: None,
             torrent_selected_files: None,
+            priority: "normal".to_string(),
+            speed_limit_bps: None,
         }
     }
 

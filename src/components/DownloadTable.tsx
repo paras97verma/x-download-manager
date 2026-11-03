@@ -9,6 +9,7 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Clock,
   FolderOpen,
   FileText,
@@ -20,6 +21,9 @@ import {
   Info,
   ChevronRight,
   Gauge,
+  Cpu,
+  ArrowUpDown,
+  X,
 } from "lucide-react";
 import { DownloadItem, AppSettings } from "../types/xdm";
 import { formatBytes, formatEta, formatSpeed } from "../services/tauriBridge";
@@ -31,7 +35,10 @@ interface DownloadTableProps {
   onSelectAll: (all: boolean) => void;
   onTogglePauseResume: (item: DownloadItem) => void;
   onRestartDownload: (id: string) => void;
-  onMoveToQueue: (id: string, queueId: string) => void;
+  onMoveToQueue: (id: string, queueId: string, forceRestart?: boolean) => void;
+  onSetDownloadThreads?: (id: string, threads: number) => void;
+  onSetDownloadPriority?: (id: string, priority: "high" | "normal" | "low") => void;
+  onSetDownloadSpeedLimit?: (id: string, speedLimitKbps: number | null) => void;
   onOpenProperties: (item: DownloadItem) => void;
   onOpenScheduler: () => void;
   onOpenFile: (path: string) => void;
@@ -55,6 +62,9 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   onTogglePauseResume,
   onRestartDownload,
   onMoveToQueue,
+  onSetDownloadThreads,
+  onSetDownloadPriority,
+  onSetDownloadSpeedLimit,
   onOpenProperties,
   onOpenScheduler,
   onOpenFile,
@@ -64,7 +74,12 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   onToggleSpeedLimiter,
 }) => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [showQueueSubmenu, setShowQueueSubmenu] = useState(false);
+  const [nonResumableModal, setNonResumableModal] = useState<{
+    item: DownloadItem;
+    targetQueueId: string;
+  } | null>(null);
+  const [speedLimitModalItem, setSpeedLimitModalItem] = useState<DownloadItem | null>(null);
+  const [customSpeedKbps, setCustomSpeedKbps] = useState<string>("");
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Close context menu on outside click or escape
@@ -72,13 +87,11 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
     const handleOutside = (e: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu(null);
-        setShowQueueSubmenu(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setContextMenu(null);
-        setShowQueueSubmenu(false);
       }
     };
     window.addEventListener("mousedown", handleOutside);
@@ -89,15 +102,27 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
     };
   }, []);
 
+  const handleQueueSelect = (item: DownloadItem, targetQueueId: string) => {
+    if (item.queue_id === targetQueueId) return;
+    const isActive =
+      item.status === "downloading" ||
+      item.status === "connecting" ||
+      item.status === "authenticating";
+    if (isActive && !item.resumable) {
+      setNonResumableModal({ item, targetQueueId });
+    } else {
+      onMoveToQueue(item.id, targetQueueId, false);
+    }
+  };
+
   const handleRowContextMenu = (e: React.MouseEvent, item: DownloadItem) => {
     e.preventDefault();
     if (!selectedIds.has(item.id)) {
       onSelect(item.id, false);
     }
-    const x = Math.min(e.clientX, window.innerWidth - 250);
-    const y = Math.min(e.clientY, window.innerHeight - 380);
+    const x = Math.min(e.clientX, window.innerWidth - 270);
+    const y = Math.min(e.clientY, Math.max(10, window.innerHeight - 560));
     setContextMenu({ x, y, item });
-    setShowQueueSubmenu(false);
   };
 
   const handleDoubleClick = (item: DownloadItem) => {
@@ -349,7 +374,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
         <div
           ref={contextMenuRef}
           style={{ top: contextMenu.y, left: contextMenu.x }}
-          className="fixed z-50 w-60 bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200 overflow-hidden"
+          className="fixed z-50 w-64 max-h-[85vh] overflow-y-auto bg-[#161f30] border border-slate-700 rounded-xl shadow-2xl py-1 text-xs text-slate-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Pause / Resume */}
@@ -417,7 +442,137 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
 
           <div className="h-px bg-slate-700/60 my-1" />
 
-          {/* Speed Limit / Uncapped Toggle */}
+          {/* Move to Queue - Dynamic Queues */}
+          <div className="px-3 py-1.5 bg-slate-900/60 border-y border-slate-700/50">
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Server className="w-3 h-3 text-purple-400" /> Move to Queue
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {(settings?.queues && settings.queues.length > 0
+                ? settings.queues
+                : [
+                    { id: "main-queue", name: "Main Queue" },
+                    { id: "night-queue", name: "Night Queue" },
+                  ]
+              ).map((q) => {
+                const isCurrent = contextMenu.item.queue_id === q.id;
+                return (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => {
+                      handleQueueSelect(contextMenu.item, q.id);
+                      setContextMenu(null);
+                    }}
+                    className={`px-2 py-1 rounded text-[11px] font-medium text-center transition ${
+                      isCurrent
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {isCurrent ? `✓ ${q.name}` : q.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Connections / Threads */}
+          <div className="px-3 py-1.5 bg-slate-900/40 border-b border-slate-700/40">
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Cpu className="w-3 h-3 text-cyan-400" /> Connections
+              </span>
+              <span className="text-cyan-300 font-mono text-[10px]">
+                {contextMenu.item.threads_count || 8} threads
+              </span>
+            </div>
+            <div className="grid grid-cols-6 gap-1">
+              {[1, 2, 4, 8, 16, 20].map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => {
+                    onSetDownloadThreads?.(contextMenu.item.id, t);
+                    setContextMenu((prev) =>
+                      prev ? { ...prev, item: { ...prev.item, threads_count: t } } : null
+                    );
+                  }}
+                  className={`py-0.5 rounded text-[10px] font-mono font-medium text-center transition ${
+                    contextMenu.item.threads_count === t
+                      ? "bg-cyan-600 text-white font-bold"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                  title={`${t} connection${t > 1 ? "s" : ""}${t === 8 ? " (Default)" : ""}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Priority */}
+          <div className="px-3 py-1.5 bg-slate-900/40 border-b border-slate-700/40">
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+              <ArrowUpDown className="w-3 h-3 text-emerald-400" /> Priority
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {(["high", "normal", "low"] as const).map((p) => {
+                const active = (contextMenu.item.priority || "normal") === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      onSetDownloadPriority?.(contextMenu.item.id, p);
+                      setContextMenu((prev) =>
+                        prev ? { ...prev, item: { ...prev.item, priority: p } } : null
+                      );
+                    }}
+                    className={`py-0.5 rounded text-[10px] font-medium capitalize text-center transition ${
+                      active
+                        ? p === "high"
+                          ? "bg-emerald-600 text-white font-bold"
+                          : p === "low"
+                          ? "bg-amber-600 text-white font-bold"
+                          : "bg-cyan-600 text-white font-bold"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Per-Download Speed Limit */}
+          <button
+            onClick={() => {
+              setSpeedLimitModalItem(contextMenu.item);
+              setCustomSpeedKbps(
+                contextMenu.item.speed_limit_bps
+                  ? String(Math.round(contextMenu.item.speed_limit_bps / 1024))
+                  : ""
+              );
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
+          >
+            <span className="flex items-center gap-2">
+              <Gauge className="w-3.5 h-3.5 text-amber-400" />
+              Download Speed Limit...
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded border border-slate-700 bg-slate-800 text-amber-300 font-mono">
+              {contextMenu.item.speed_limit_bps
+                ? `${Math.round(contextMenu.item.speed_limit_bps / 1024)} KB/s`
+                : "Unlimited"}
+            </span>
+          </button>
+
+          {/* Global Speed Limit / Uncapped Toggle */}
           {onToggleSpeedLimiter && (
             <button
               onClick={() => {
@@ -425,62 +580,27 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                 setContextMenu(null);
               }}
               className="w-full px-3 py-1.5 flex items-center justify-between hover:bg-cyan-700 hover:text-white text-left"
-              title="Toggle Speed Limit"
+              title="Toggle Global Speed Limiter"
             >
               <span className="flex items-center gap-2">
-                <Gauge className="w-3.5 h-3.5 text-amber-400" />
-                Speed Limit
+                <Gauge className="w-3.5 h-3.5 text-slate-400" />
+                Global Limiter
               </span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${
-                settings?.speed_limiter_enabled
-                  ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
-                  : "bg-slate-800 border-slate-700 text-slate-300"
-              }`}>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${
+                  settings?.speed_limiter_enabled
+                    ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                    : "bg-slate-800 border-slate-700 text-slate-300"
+                }`}
+              >
                 {settings?.speed_limiter_enabled
                   ? `${((settings?.global_max_download_kbps || 10240) / 1024).toFixed(0)} MB/s`
-                  : "Uncapped"}
+                  : "Off"}
               </span>
             </button>
           )}
 
           <div className="h-px bg-slate-700/60 my-1" />
-
-          {/* Move to Queue - Direct & Simplified */}
-          <div className="px-3 py-1.5 bg-slate-900/60 border-y border-slate-700/50">
-            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-              <Server className="w-3 h-3 text-purple-400" /> Move to Queue
-            </div>
-            <div className="flex gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  onMoveToQueue(contextMenu.item.id, "main-queue");
-                  setContextMenu(null);
-                }}
-                className={`flex-1 px-2 py-1 rounded text-[11px] font-medium text-center transition ${
-                  contextMenu.item.queue_id === "main-queue"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                }`}
-              >
-                {contextMenu.item.queue_id === "main-queue" ? "✓ Main Queue" : "Main Queue"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onMoveToQueue(contextMenu.item.id, "night-queue");
-                  setContextMenu(null);
-                }}
-                className={`flex-1 px-2 py-1 rounded text-[11px] font-medium text-center transition ${
-                  contextMenu.item.queue_id === "night-queue"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                }`}
-              >
-                {contextMenu.item.queue_id === "night-queue" ? "✓ Night Queue" : "Night Queue"}
-              </button>
-            </div>
-          </div>
 
           {/* Schedule Download */}
           <button
@@ -555,6 +675,179 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             <Trash2 className="w-3.5 h-3.5" />
             Delete File from Disk
           </button>
+        </div>
+      )}
+
+      {/* Non-Resumable Reassignment Confirmation Modal (OBJECTIVE.md §7) */}
+      {nonResumableModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#131b2a] border border-amber-500/40 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5">
+              <div className="flex items-start gap-3.5 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-400">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">
+                    This download does not support resuming
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    Moving this download to another queue will stop the current transfer. When it starts again, the file must be downloaded from the beginning because the server does not support Range requests.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-3 mb-5 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-400">
+                  <span>File:</span>
+                  <span className="font-medium text-slate-200 truncate max-w-[220px]">
+                    {nonResumableModal.item.filename}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Target Queue:</span>
+                  <span className="font-medium text-indigo-300">
+                    {settings?.queues.find((q) => q.id === nonResumableModal.targetQueueId)?.name ||
+                      nonResumableModal.targetQueueId}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Current Progress:</span>
+                  <span className="font-medium text-slate-200">
+                    {formatBytes(nonResumableModal.item.downloaded_bytes)} of{" "}
+                    {formatBytes(nonResumableModal.item.total_bytes)}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-800 flex justify-between text-amber-400 font-semibold">
+                  <span>Data that will be lost:</span>
+                  <span>{formatBytes(nonResumableModal.item.downloaded_bytes)}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNonResumableModal(null)}
+                  className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNonResumableModal(null)}
+                  className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg border border-slate-600 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium transition"
+                >
+                  Continue Downloading
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMoveToQueue(nonResumableModal.item.id, nonResumableModal.targetQueueId, true);
+                    setNonResumableModal(null);
+                  }}
+                  className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium shadow-sm transition"
+                >
+                  Move and Restart
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-Download Custom Speed Limit Modal */}
+      {speedLimitModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#131b2a] border border-cyan-500/40 rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Gauge className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-sm font-semibold text-white">Download Speed Limit</h3>
+                </div>
+                <button
+                  onClick={() => setSpeedLimitModalItem(null)}
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-300 mb-3 truncate">
+                Set limit for:{" "}
+                <span className="font-semibold text-white">{speedLimitModalItem.filename}</span>
+              </p>
+
+              <div className="mb-4">
+                <label className="block text-[11px] font-medium text-slate-400 mb-1">
+                  Speed Limit in KB/s (0 or blank for unlimited):
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 1024 (KB/s)"
+                    value={customSpeedKbps}
+                    onChange={(e) => setCustomSpeedKbps(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-slate-500">KB/s</span>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-400 mb-1">Presets:</div>
+              <div className="grid grid-cols-3 gap-1.5 mb-5">
+                {[
+                  { label: "Unlimited", val: "" },
+                  { label: "512 KB/s", val: "512" },
+                  { label: "1 MB/s", val: "1024" },
+                  { label: "2 MB/s", val: "2048" },
+                  { label: "5 MB/s", val: "5120" },
+                  { label: "10 MB/s", val: "10240" },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setCustomSpeedKbps(preset.val)}
+                    className={`py-1 px-2 rounded text-[11px] font-medium border transition ${
+                      customSpeedKbps === preset.val
+                        ? "border-cyan-500 bg-cyan-500/20 text-cyan-300"
+                        : "border-slate-800 bg-slate-900/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSpeedLimitModalItem(null)}
+                  className="px-3.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-medium transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const val =
+                      customSpeedKbps.trim() === ""
+                        ? null
+                        : Math.max(0, parseInt(customSpeedKbps, 10));
+                    onSetDownloadSpeedLimit?.(
+                      speedLimitModalItem.id,
+                      val === 0 || isNaN(val as number) ? null : val
+                    );
+                    setSpeedLimitModalItem(null);
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium shadow-sm transition"
+                >
+                  Apply Limit
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

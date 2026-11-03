@@ -316,23 +316,75 @@ async fn delete_download(
         let _ = tx.send(true);
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
-    let (save_path, torrent_file_path) = engine
+    let (save_path, torrent_file_path, filename) = engine
         .downloads
         .read()
         .iter()
         .find(|d| d.id == id)
-        .map(|d| (Some(d.save_path.clone()), d.torrent_file_path.clone()))
-        .unwrap_or((None, None));
+        .map(|d| {
+            (
+                Some(d.save_path.clone()),
+                d.torrent_file_path.clone(),
+                d.filename.clone(),
+            )
+        })
+        .unwrap_or((None, None, String::new()));
     if delete_file {
         if let Some(path) = save_path {
-            let resolved = crate::config::resolve_path(&path);
-            match std::fs::symlink_metadata(&resolved) {
-                Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(&resolved)
-                    .map_err(|e| format!("Could not remove {}: {}", resolved.display(), e))?,
-                Ok(_) => std::fs::remove_file(&resolved)
-                    .map_err(|e| format!("Could not remove {}: {}", resolved.display(), e))?,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(format!("Could not access {}: {}", resolved.display(), e)),
+            let mut resolved = crate::config::resolve_path(&path);
+            let default_dir =
+                crate::config::resolve_path(&engine.settings.read().default_download_dir);
+            let user_home = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf());
+
+            // Protect against deleting user's root download directory or home directory
+            let is_root_dir = resolved == default_dir
+                || user_home.as_ref().map(|h| h == &resolved).unwrap_or(false)
+                || resolved.parent().is_none();
+
+            if is_root_dir && !filename.trim().is_empty() {
+                resolved = resolved.join(&filename);
+            }
+
+            if resolved != default_dir && user_home.as_ref().map(|h| h != &resolved).unwrap_or(true)
+            {
+                match std::fs::symlink_metadata(&resolved) {
+                    Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(&resolved)
+                        .map_err(|e| format!("Could not remove {}: {}", resolved.display(), e))?,
+                    Ok(_) => std::fs::remove_file(&resolved)
+                        .map_err(|e| format!("Could not remove {}: {}", resolved.display(), e))?,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        // Check if child with filename exists inside resolved directory
+                        if !filename.trim().is_empty() {
+                            let child = resolved.join(&filename);
+                            if child.exists() {
+                                if child.is_dir() {
+                                    let _ = std::fs::remove_dir_all(&child);
+                                } else {
+                                    let _ = std::fs::remove_file(&child);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        return Err(format!("Could not access {}: {}", resolved.display(), e))
+                    }
+                }
+
+                // Clean up .part or .xdm.state files if present
+                let part_file = resolved.with_extension(format!(
+                    "{}.part",
+                    resolved.extension().and_then(|s| s.to_str()).unwrap_or("")
+                ));
+                if part_file.exists() {
+                    let _ = std::fs::remove_file(part_file);
+                }
+                let state_file = resolved.with_extension(format!(
+                    "{}.xdm.state",
+                    resolved.extension().and_then(|s| s.to_str()).unwrap_or("")
+                ));
+                if state_file.exists() {
+                    let _ = std::fs::remove_file(state_file);
+                }
             }
         }
     }
@@ -669,33 +721,117 @@ async fn parse_torrent_file(
 async fn move_to_queue(
     id: String,
     queue_id: String,
+    force_restart: Option<bool>,
     engine: State<'_, Arc<DownloadEngine>>,
 ) -> Result<(), String> {
-    if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+    let cancel_tx = {
+        let mut cancellations = engine.active_cancellations.write();
+        cancellations.remove(&id)
+    };
+    if let Some(tx) = cancel_tx {
         let _ = tx.send(true);
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     }
     {
         let mut dls = engine.downloads.write();
         if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
-            if matches!(
+            let was_active = matches!(
                 d.status,
                 DownloadStatus::Connecting
                     | DownloadStatus::Downloading
                     | DownloadStatus::Authenticating
                     | DownloadStatus::Merging
                     | DownloadStatus::Seeding
-            ) {
+            );
+            if was_active {
                 d.status = DownloadStatus::Queued;
                 d.speed_bps = 0;
+                if !d.resumable && force_restart.unwrap_or(false) {
+                    d.downloaded_bytes = 0;
+                    for seg in &mut d.segments {
+                        seg.downloaded_bytes = 0;
+                        seg.speed_bps = 0;
+                        seg.status = "waiting".to_string();
+                    }
+                    d.transfer_log.push(
+                        "Non-resumable transfer restarted from beginning for queue reassignment."
+                            .to_string(),
+                    );
+                }
             }
             d.queue_id = queue_id.clone();
             d.transfer_log.push(format!("Moved to queue: {}", queue_id));
         }
     }
+    let _ = engine.persist_downloads();
     engine
         .inner()
         .start_queued_downloads(Some(queue_id))
         .await?;
+    Ok(())
+}
+
+#[tauri::command]
+fn set_download_threads(
+    id: String,
+    threads: usize,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    let clamped = threads.clamp(1, 20);
+    {
+        let mut dls = engine.downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
+            d.threads_count = clamped;
+            d.transfer_log
+                .push(format!("Preferred connections updated to: {}", clamped));
+        }
+    }
+    let _ = engine.persist_downloads();
+    Ok(())
+}
+
+#[tauri::command]
+fn set_download_priority(
+    id: String,
+    priority: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    let normalized = match priority.to_lowercase().as_str() {
+        "high" => "high",
+        "low" => "low",
+        _ => "normal",
+    };
+    {
+        let mut dls = engine.downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
+            d.priority = normalized.to_string();
+            d.transfer_log
+                .push(format!("Download priority set to: {}", normalized));
+        }
+    }
+    let _ = engine.persist_downloads();
+    Ok(())
+}
+
+#[tauri::command]
+fn set_download_speed_limit(
+    id: String,
+    speed_limit_kbps: Option<u64>,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    let bps = speed_limit_kbps.map(|kbps| kbps * 1024);
+    {
+        let mut dls = engine.downloads.write();
+        if let Some(d) = dls.iter_mut().find(|d| d.id == id) {
+            d.speed_limit_bps = bps;
+            let msg = match speed_limit_kbps {
+                Some(kbps) => format!("Speed limit set to: {} KB/s", kbps),
+                None => "Speed limit removed (unlimited)".to_string(),
+            };
+            d.transfer_log.push(msg);
+        }
+    }
+    let _ = engine.persist_downloads();
     Ok(())
 }
 
@@ -1122,6 +1258,9 @@ pub fn run_app() {
             restart_download,
             verify_file_checksum,
             move_to_queue,
+            set_download_threads,
+            set_download_priority,
+            set_download_speed_limit,
             start_queue_now,
             pick_directory,
             set_autostart,
