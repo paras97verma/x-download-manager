@@ -117,15 +117,24 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlay
             {/* ByteX visual chunk map */}
             <div>
               <div className="text-[11px] text-slate-400 mb-1 flex justify-between">
-                <span>ByteX Dynamic Byte-Range Allocation Map ({item.threads_count} Threads)</span>
+                <span>
+                  ByteX Dynamic Byte-Range Allocation Map (
+                  {item.segments.length > 0 ? item.segments.length : item.threads_count}{" "}
+                  {(item.segments.length > 0 ? item.segments.length : item.threads_count) === 1
+                    ? "Thread"
+                    : "Threads"}
+                  )
+                </span>
                 <span className="text-slate-300 font-mono">
-                  {formatBytes(item.downloaded_bytes)} / {formatBytes(item.total_bytes)}
+                  {formatBytes(item.status === "completed" ? item.total_bytes : item.downloaded_bytes)} / {formatBytes(item.total_bytes)}
                 </span>
               </div>
               <div className="h-4 w-full bg-slate-900 rounded-lg p-0.5 border border-slate-800 flex gap-0.5">
                 {item.segments.map((seg) => {
                   const len = Math.max(1, seg.end_byte - seg.start_byte + 1);
-                  const pct = Math.min(100, (seg.downloaded_bytes / len) * 100);
+                  const isCompleted = item.status === "completed" || seg.status === "completed";
+                  const downloadedBytes = isCompleted ? len : seg.downloaded_bytes;
+                  const pct = isCompleted ? 100 : Math.min(100, (downloadedBytes / len) * 100);
                   return (
                     <div
                       key={seg.id}
@@ -134,7 +143,7 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlay
                     >
                       <div
                         className={`h-full ${
-                          seg.status === "completed"
+                          isCompleted
                             ? "bg-emerald-500"
                             : seg.status === "receiving"
                             ? "bg-cyan-400"
@@ -152,7 +161,14 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlay
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {item.segments.map((seg) => {
                 const len = Math.max(1, seg.end_byte - seg.start_byte + 1);
-                const pct = Math.min(100, (seg.downloaded_bytes / len) * 100);
+                const isCompleted = item.status === "completed" || seg.status === "completed";
+                const downloadedBytes = isCompleted ? len : seg.downloaded_bytes;
+                const pct = isCompleted ? 100 : Math.min(100, (downloadedBytes / len) * 100);
+                const statusText = isCompleted
+                  ? "completed"
+                  : seg.speed_bps > 0
+                  ? formatSpeed(seg.speed_bps)
+                  : seg.status;
                 return (
                   <div
                     key={seg.id}
@@ -161,12 +177,12 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlay
                     <div>
                       <div className="font-semibold text-slate-200">Thread #{seg.id}</div>
                       <div className="text-[10px] text-slate-400">
-                        {formatBytes(seg.downloaded_bytes)} / {formatBytes(len)}
+                        {formatBytes(downloadedBytes)} / {formatBytes(len)}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="font-mono text-emerald-400 font-semibold">
-                        {seg.speed_bps > 0 ? formatSpeed(seg.speed_bps) : seg.status}
+                        {statusText}
                       </div>
                       <div className="text-[10px] text-slate-400">{pct.toFixed(0)}%</div>
                     </div>
@@ -262,7 +278,17 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlay
                   <div className="text-[11px] text-slate-400 mb-1.5">Download Speed per Segment</div>
                   <div className="space-y-1">
                     {item.segments.map((seg) => {
-                      const barPct = maxSpeed > 0 ? Math.min(100, (seg.speed_bps / maxSpeed) * 100) : 0;
+                      const isCompleted = item.status === "completed" || seg.status === "completed";
+                      const barPct = isCompleted
+                        ? 100
+                        : maxSpeed > 0
+                        ? Math.min(100, (seg.speed_bps / maxSpeed) * 100)
+                        : 0;
+                      const statusDisplay = isCompleted
+                        ? "completed"
+                        : seg.speed_bps > 0
+                        ? formatSpeed(seg.speed_bps)
+                        : seg.status;
                       return (
                         <div key={seg.id} className="flex items-center gap-2 text-[11px]">
                           <span className="text-slate-400 w-14 shrink-0">Thread #{seg.id}</span>
@@ -273,7 +299,7 @@ export const SegmentInspector: React.FC<SegmentInspectorProps> = ({ item, onPlay
                             />
                           </div>
                           <span className="text-teal-400 font-mono w-20 text-right shrink-0">
-                            {seg.speed_bps > 0 ? formatSpeed(seg.speed_bps) : seg.status}
+                            {statusDisplay}
                           </span>
                         </div>
                       );

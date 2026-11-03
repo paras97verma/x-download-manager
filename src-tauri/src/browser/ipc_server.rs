@@ -12,6 +12,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 use tauri::{Emitter, Manager};
@@ -493,6 +494,7 @@ async fn handle_intercept(
         }));
     }
 
+    let mut req = req;
     let destination = engine.destination_path(&req);
     if destination.exists() {
         let existing = engine
@@ -501,33 +503,44 @@ async fn handle_intercept(
             .iter()
             .find(|item| crate::config::resolve_path(&item.save_path) == destination)
             .cloned();
-        emit_duplicate_notice(DuplicateDownloadNotice {
-            kind: if existing.is_some() {
-                "existing_download"
-            } else {
-                "existing_file"
+
+        if let Some(existing) = existing {
+            emit_duplicate_notice(DuplicateDownloadNotice {
+                kind: "existing_download".to_string(),
+                existing_download_id: Some(existing.id.clone()),
+                existing_filename: existing.filename.clone(),
+                existing_status: Some(existing.status.clone()),
+                existing_path: existing.save_path.clone(),
+                request: redacted_duplicate_request(req.clone()),
+            });
+            focus_main_window();
+            return Json(serde_json::json!({
+                "accepted": true,
+                "duplicate": true,
+                "download_id": existing.id,
+                "filename": existing.filename
+            }));
+        }
+
+        let action = engine.settings.read().duplicate_file_action.clone();
+        if action == "auto_rename" {
+            let orig_name = req
+                .filename
+                .clone()
+                .unwrap_or_else(|| "downloaded_file.bin".to_string());
+            let (stem, ext) = match orig_name.rfind('.') {
+                Some(idx) => (&orig_name[..idx], &orig_name[idx..]),
+                None => (orig_name.as_str(), ""),
+            };
+            let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+            let mut counter = 1;
+            let mut new_name = format!("{stem} ({counter}){ext}");
+            while parent.join(&new_name).exists() && counter < 1000 {
+                counter += 1;
+                new_name = format!("{stem} ({counter}){ext}");
             }
-            .to_string(),
-            existing_download_id: existing.as_ref().map(|item| item.id.clone()),
-            existing_filename: existing
-                .as_ref()
-                .map(|item| item.filename.clone())
-                .or_else(|| {
-                    destination
-                        .file_name()
-                        .map(|name| name.to_string_lossy().to_string())
-                })
-                .unwrap_or_else(|| "Existing file".to_string()),
-            existing_status: existing.as_ref().map(|item| item.status.clone()),
-            existing_path: destination.to_string_lossy().to_string(),
-            request: redacted_duplicate_request(req.clone()),
-        });
-        focus_main_window();
-        return Json(serde_json::json!({
-            "accepted": false,
-            "duplicate": true,
-            "reason": "A file with that name already exists"
-        }));
+            req.filename = Some(new_name);
+        }
     }
 
     let created = engine.add_download(req.clone());

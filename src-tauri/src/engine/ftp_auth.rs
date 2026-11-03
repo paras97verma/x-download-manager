@@ -746,6 +746,15 @@ pub async fn execute_ftp_download_with_ack(
             d.completed_at = Some(chrono::Utc::now().to_rfc3339());
             d.transfer_log
                 .push("FTP download finished successfully.".to_string());
+            for segment in &mut d.segments {
+                let len = segment
+                    .end_byte
+                    .saturating_sub(segment.start_byte)
+                    .saturating_add(1);
+                segment.downloaded_bytes = len;
+                segment.status = "completed".to_string();
+                segment.speed_bps = 0;
+            }
         }
     }
 

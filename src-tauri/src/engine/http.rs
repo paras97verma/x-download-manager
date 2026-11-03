@@ -776,6 +776,7 @@ async fn execute_browser_request_download(
             current.resumable =
                 range_advertised && current.resume_validator.is_some() && method == Method::GET;
             current.status = DownloadStatus::Downloading;
+            current.threads_count = 1;
             current.segments = vec![ThreadSegment {
                 id: 1,
                 start_byte: 0,
@@ -804,7 +805,13 @@ async fn execute_browser_request_download(
                     let mut items = downloads.write();
                     if let Some(current) = items.iter_mut().find(|current| current.id == item.id) {
                         current.status = DownloadStatus::Paused;
+                        current.downloaded_bytes = downloaded;
                         current.speed_bps = 0;
+                        if let Some(segment) = current.segments.first_mut() {
+                            segment.downloaded_bytes = downloaded;
+                            segment.speed_bps = 0;
+                            segment.status = "paused".to_string();
+                        }
                     }
                     return Ok(());
                 }
@@ -833,7 +840,13 @@ async fn execute_browser_request_download(
                     let mut items = downloads.write();
                     if let Some(current) = items.iter_mut().find(|current| current.id == item.id) {
                         current.status = DownloadStatus::Paused;
+                        current.downloaded_bytes = downloaded;
                         current.speed_bps = 0;
+                        if let Some(segment) = current.segments.first_mut() {
+                            segment.downloaded_bytes = downloaded;
+                            segment.speed_bps = 0;
+                            segment.status = "paused".to_string();
+                        }
                     }
                     return Ok(());
                 }
@@ -893,6 +906,29 @@ async fn execute_browser_request_download(
         current
             .transfer_log
             .push("Browser-originated download completed.".to_string());
+        if current.segments.is_empty() {
+            current.segments.push(ThreadSegment {
+                id: 1,
+                start_byte: 0,
+                end_byte: current.total_bytes.saturating_sub(1),
+                downloaded_bytes: current.total_bytes,
+                speed_bps: 0,
+                status: "completed".to_string(),
+            });
+        } else {
+            for segment in &mut current.segments {
+                if segment.end_byte == 0 && current.total_bytes > 0 {
+                    segment.end_byte = current.total_bytes.saturating_sub(1);
+                }
+                let len = segment
+                    .end_byte
+                    .saturating_sub(segment.start_byte)
+                    .saturating_add(1);
+                segment.downloaded_bytes = len;
+                segment.status = "completed".to_string();
+                segment.speed_bps = 0;
+            }
+        }
     }
     Ok(())
 }
@@ -1235,6 +1271,15 @@ pub async fn execute_segmented_http_download_with_ack(
         d.completed_at = Some(chrono::Utc::now().to_rfc3339());
         d.transfer_log
             .push("All segments merged and verified successfully.".to_string());
+        for segment in &mut d.segments {
+            let len = segment
+                .end_byte
+                .saturating_sub(segment.start_byte)
+                .saturating_add(1);
+            segment.downloaded_bytes = len;
+            segment.status = "completed".to_string();
+            segment.speed_bps = 0;
+        }
     }
 
     Ok(())
@@ -1510,6 +1555,14 @@ mod browser_request_tests {
             .unwrap()
             .clone();
         assert_eq!(saved.status, DownloadStatus::Completed);
+        assert_eq!(saved.downloaded_bytes, b"native-file-bytes".len() as u64);
+        assert_eq!(saved.segments.len(), 1);
+        assert_eq!(saved.segments[0].status, "completed");
+        assert_eq!(
+            saved.segments[0].downloaded_bytes,
+            b"native-file-bytes".len() as u64
+        );
+        assert_eq!(saved.threads_count, 1);
         assert!(
             !saved.resumable,
             "the server explicitly disabled byte ranges"
