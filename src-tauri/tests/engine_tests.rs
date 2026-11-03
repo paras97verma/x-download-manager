@@ -67,6 +67,8 @@ fn test_add_download_task_proper_routing() {
         sequential_torrent: None,
         torrent_file_data: None,
         torrent_selected_files: None,
+        scheduled_start: None,
+        scheduled_stop: None,
     };
 
     let item = engine.add_download(req);

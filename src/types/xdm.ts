@@ -94,6 +94,8 @@ export interface DownloadItem {
   transfer_log: string[];
   torrent_file_path?: string | null;
   torrent_selected_files?: number[] | null;
+  scheduled_start?: string | null;
+  scheduled_stop?: string | null;
 }
 
 export interface SiteCredential {
@@ -126,6 +128,14 @@ export interface SchedulerQueueConfig {
   days_of_week: number[];
   speed_limit_kbps?: number | null;
   post_queue_action: "none" | "exit_app" | "sleep" | "shutdown";
+  download_dir?: string | null;
+  priority?: "high" | "normal" | "low" | null;
+  preferred_connections?: number | null;
+  manual_pause?: boolean | null;
+  date_schedule_enabled?: boolean | null;
+  date_schedule_start?: string | null;
+  date_schedule_stop?: string | null;
+  per_host_concurrency?: number | null;
 }
 
 export interface BrowserStatus {
@@ -208,6 +218,9 @@ export interface AppSettings {
     bypass_local: boolean;
   };
   queues: SchedulerQueueConfig[];
+  pause_on_battery?: boolean;
+  pause_on_metered_network?: boolean;
+  per_host_concurrency_limit?: number | null;
 }
 
 export interface NewDownloadRequest {
@@ -228,6 +241,8 @@ export interface NewDownloadRequest {
   sequential_torrent?: boolean;
   torrent_file_data?: string;
   torrent_selected_files?: number[];
+  scheduled_start?: string | null;
+  scheduled_stop?: string | null;
 }
 
 export interface DuplicateDownloadNotice {

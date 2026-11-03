@@ -53,6 +53,11 @@ interface DownloadTableProps {
   settings?: AppSettings;
   onToggleSpeedLimiter?: () => void;
   onPlayMedia?: (item: DownloadItem) => void;
+  onScheduleDownload?: (
+    downloadId: string,
+    startTime: string | null,
+    stopTime: string | null
+  ) => Promise<void>;
 }
 
 interface ContextMenuState {
@@ -80,6 +85,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   settings,
   onToggleSpeedLimiter,
   onPlayMedia,
+  onScheduleDownload,
 }) => {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [nonResumableModal, setNonResumableModal] = useState<{
@@ -88,6 +94,9 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
   } | null>(null);
   const [speedLimitModalItem, setSpeedLimitModalItem] = useState<DownloadItem | null>(null);
   const [customSpeedKbps, setCustomSpeedKbps] = useState<string>("");
+  const [scheduleModalItem, setScheduleModalItem] = useState<DownloadItem | null>(null);
+  const [scheduleStartTime, setScheduleStartTime] = useState<string>("");
+  const [scheduleStopTime, setScheduleStopTime] = useState<string>("");
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   // Close context menu on outside click or escape
@@ -665,7 +674,21 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
 
           <div className="h-px bg-slate-700/60 my-1" />
 
-          {/* Schedule Download */}
+          {/* Schedule Individual Download */}
+          <button
+            onClick={() => {
+              setScheduleModalItem(contextMenu.item);
+              setScheduleStartTime(contextMenu.item.scheduled_start || "");
+              setScheduleStopTime(contextMenu.item.scheduled_stop || "");
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
+          >
+            <Clock className="w-3.5 h-3.5 text-indigo-400" />
+            Schedule Download...
+          </button>
+
+          {/* Schedule Queue & Timer */}
           <button
             onClick={() => {
               onOpenScheduler();
@@ -674,7 +697,7 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
             className="w-full px-3 py-1.5 flex items-center gap-2 hover:bg-cyan-700 hover:text-white text-left"
           >
             <CalendarClock className="w-3.5 h-3.5 text-indigo-400" />
-            Schedule Queue & Timer...
+            Queue Scheduler & Timetable...
           </button>
 
           {/* Verify Checksum / File Properties */}
@@ -909,6 +932,143 @@ export const DownloadTable: React.FC<DownloadTableProps> = ({
                   Apply Limit
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Individual Download Schedule Modal */}
+      {scheduleModalItem && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 select-none">
+          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                <Clock className="w-4 h-4 text-indigo-400" />
+                Schedule Download
+              </h3>
+              <button
+                onClick={() => setScheduleModalItem(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-lg">
+                <div className="font-semibold text-slate-200 truncate">
+                  {scheduleModalItem.filename}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Queue: {scheduleModalItem.queue_id} • Status: {scheduleModalItem.status}
+                </div>
+              </div>
+
+              {/* Case B Non-resumable warning */}
+              {scheduleModalItem.status === "downloading" &&
+                !scheduleModalItem.resumable && (
+                  <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-600/40 text-amber-200 text-[11px] flex gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong>Non-resumable Download:</strong> Moving or scheduling
+                      this active download will pause the transfer. When it
+                      restarts, data must be downloaded from the beginning.
+                    </div>
+                  </div>
+                )}
+
+              {/* Quick Presets */}
+              <div className="space-y-1">
+                <label className="text-slate-400 font-medium">Quick Presets:</label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { label: "In 15 Mins", mins: 15 },
+                    { label: "In 1 Hour", mins: 60 },
+                    { label: "In 3 Hours", mins: 180 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => {
+                        const target = new Date(Date.now() + preset.mins * 60000);
+                        // Format to YYYY-MM-DDTHH:MM
+                        const pad = (n: number) => n.toString().padStart(2, "0");
+                        const str = `${target.getFullYear()}-${pad(
+                          target.getMonth() + 1
+                        )}-${pad(target.getDate())}T${pad(target.getHours())}:${pad(
+                          target.getMinutes()
+                        )}`;
+                        setScheduleStartTime(str);
+                      }}
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium transition"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScheduleStartTime("");
+                      setScheduleStopTime("");
+                    }}
+                    className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-slate-400 hover:text-white text-[11px] transition"
+                  >
+                    Clear Times
+                  </button>
+                </div>
+              </div>
+
+              {/* Start Date & Time */}
+              <div className="space-y-1">
+                <label className="text-slate-300 font-medium">
+                  Start Date & Time (Optional)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={scheduleStartTime}
+                  onChange={(e) => setScheduleStartTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+
+              {/* Stop Date & Time */}
+              <div className="space-y-1">
+                <label className="text-slate-300 font-medium">
+                  Stop / Pause Date & Time (Optional)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={scheduleStopTime}
+                  onChange={(e) => setScheduleStopTime(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setScheduleModalItem(null)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (onScheduleDownload) {
+                    await onScheduleDownload(
+                      scheduleModalItem.id,
+                      scheduleStartTime.trim() || null,
+                      scheduleStopTime.trim() || null
+                    );
+                  }
+                  setScheduleModalItem(null);
+                }}
+                className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow"
+              >
+                Save Schedule
+              </button>
             </div>
           </div>
         </div>

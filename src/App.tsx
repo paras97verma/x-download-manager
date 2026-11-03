@@ -28,6 +28,8 @@ import {
   apiPauseDownload,
   apiRestartDownload,
   apiStartQueueNow,
+  apiToggleQueuePause,
+  apiScheduleDownload,
   apiResumeDownload,
   apiShowInFolder,
   apiSetAutostart,
@@ -528,6 +530,45 @@ export const App: React.FC = () => {
     );
   };
 
+  const handleScheduleDownload = async (
+    downloadId: string,
+    startTime: string | null,
+    stopTime: string | null
+  ) => {
+    if (isTauriRuntime()) {
+      await apiScheduleDownload(downloadId, startTime, stopTime);
+      setDownloads(await apiGetDownloads());
+    } else {
+      setDownloads((prev) =>
+        prev.map((d) =>
+          d.id === downloadId
+            ? { ...d, scheduled_start: startTime, scheduled_stop: stopTime }
+            : d
+        )
+      );
+    }
+  };
+
+  const handleToggleQueuePause = async (queueId: string) => {
+    if (isTauriRuntime()) {
+      const isPaused = await apiToggleQueuePause(queueId);
+      const updatedSettings = await apiGetSettings();
+      if (updatedSettings) setSettings(updatedSettings);
+      setDownloads(await apiGetDownloads());
+      return isPaused;
+    } else {
+      const q = settings.queues.find((item) => item.id === queueId);
+      const newPause = !q?.manual_pause;
+      setSettings((prev) => ({
+        ...prev,
+        queues: prev.queues.map((item) =>
+          item.id === queueId ? { ...item, manual_pause: newPause } : item
+        ),
+      }));
+      return newPause;
+    }
+  };
+
   const handleToggleSpeedLimiter = () => {
     const next = {
       ...settings,
@@ -814,6 +855,7 @@ export const App: React.FC = () => {
           queues={settings.queues}
           selectedQueue={selectedQueue}
           onSelectQueue={setSelectedQueue}
+          onOpenScheduler={() => setShowSchedulerModal(true)}
         />
 
         <main className="flex-1 flex flex-col overflow-hidden">
@@ -836,6 +878,7 @@ export const App: React.FC = () => {
             settings={settings}
             onToggleSpeedLimiter={handleToggleSpeedLimiter}
             onPlayMedia={handlePlayMedia}
+            onScheduleDownload={handleScheduleDownload}
           />
           {(settings.ui_mode || "simple") === "advanced" && (
             <SegmentInspector item={selectedItem} onPlayMedia={handlePlayMedia} />
@@ -1027,12 +1070,20 @@ export const App: React.FC = () => {
                 await apiStartQueueNow(qId);
                 setDownloads(await apiGetDownloads());
               } else {
-                setDownloads((prev) => prev.map((d) => d.queue_id === qId && d.status === "queued" ? { ...d, status: "downloading" } : d));
+                setDownloads((prev) =>
+                  prev.map((d) =>
+                    d.queue_id === qId && d.status === "queued"
+                      ? { ...d, status: "downloading" }
+                      : d
+                  )
+                );
               }
             } catch (error) {
               window.alert(`Could not start queue: ${String(error)}`);
             }
           }}
+          onToggleQueuePause={handleToggleQueuePause}
+          onScheduleDownload={handleScheduleDownload}
           onClose={() => setShowSchedulerModal(false)}
         />
       )}

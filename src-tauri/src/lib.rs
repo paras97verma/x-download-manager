@@ -14,7 +14,7 @@ use crate::browser::{
     auto_register_all_detected_browsers, configure_browser_integration, detect_browsers,
     BrowserStatus,
 };
-use crate::config::AppSettings;
+use crate::config::{AppSettings, SchedulerQueueConfig};
 use crate::engine::{
     ftp_auth::{resolve_usersdrive_or_filehost, ResolvedAuthDownload},
     DownloadEngine, DownloadItem, DownloadStatus, DuplicateDownloadNotice, NewDownloadRequest,
@@ -279,6 +279,8 @@ async fn update_download_url(
         sequential_torrent: None,
         torrent_file_data: None,
         torrent_selected_files: None,
+        scheduled_start: updated.scheduled_start.clone(),
+        scheduled_stop: updated.scheduled_stop.clone(),
     };
     Ok(engine.inner().start_download_execution(updated, &req).await)
 }
@@ -922,6 +924,222 @@ async fn start_queue_now(
     engine.inner().start_queued_downloads(Some(queue_id)).await
 }
 
+#[tauri::command]
+fn create_queue(
+    mut config: SchedulerQueueConfig,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<SchedulerQueueConfig, String> {
+    if config.id.trim().is_empty() {
+        config.id = config
+            .name
+            .trim()
+            .to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric(), "-");
+    }
+    let mut settings = engine.settings.write();
+    if settings.queues.iter().any(|q| q.id == config.id) {
+        return Err(format!("A queue with ID '{}' already exists", config.id));
+    }
+    settings.queues.push(config.clone());
+    let _ = engine.config_manager.save(&settings);
+    let _ = engine.db.save_queues(&settings.queues);
+    Ok(config)
+}
+
+#[tauri::command]
+fn update_queue(
+    config: SchedulerQueueConfig,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    let mut settings = engine.settings.write();
+    if let Some(pos) = settings.queues.iter().position(|q| q.id == config.id) {
+        settings.queues[pos] = config.clone();
+        let _ = engine.config_manager.save(&settings);
+        let _ = engine.db.save_queues(&settings.queues);
+
+        if config.manual_pause == Some(true) {
+            let active_ids = {
+                let mut dls = engine.downloads.write();
+                let mut ids = Vec::new();
+                for d in dls.iter_mut() {
+                    if d.queue_id == config.id
+                        && matches!(
+                            d.status,
+                            DownloadStatus::Connecting
+                                | DownloadStatus::Downloading
+                                | DownloadStatus::Authenticating
+                                | DownloadStatus::Merging
+                                | DownloadStatus::Seeding
+                        )
+                    {
+                        d.status = DownloadStatus::Paused;
+                        d.speed_bps = 0;
+                        d.transfer_log
+                            .push(format!("Queue '{}' was paused manually", config.name));
+                        ids.push(d.id.clone());
+                    }
+                }
+                ids
+            };
+            for id in active_ids {
+                if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+                    let _ = tx.send(true);
+                }
+            }
+            let _ = engine.persist_downloads();
+        }
+        Ok(())
+    } else {
+        Err(format!("Queue with ID '{}' not found", config.id))
+    }
+}
+
+#[tauri::command]
+fn delete_queue(
+    queue_id: String,
+    reassign_to_queue_id: Option<String>,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    if queue_id == "main-queue" {
+        return Err("Cannot delete the default Main Download Queue".into());
+    }
+
+    let mut settings = engine.settings.write();
+    if !settings.queues.iter().any(|q| q.id == queue_id) {
+        return Err(format!("Queue '{}' does not exist", queue_id));
+    }
+
+    let target_id = reassign_to_queue_id
+        .filter(|id| id != &queue_id && settings.queues.iter().any(|q| &q.id == id))
+        .unwrap_or_else(|| "main-queue".to_string());
+
+    // Safely reassign all downloads belonging to this queue
+    {
+        let mut dls = engine.downloads.write();
+        for d in dls.iter_mut() {
+            if d.queue_id == queue_id {
+                d.queue_id = target_id.clone();
+                d.transfer_log.push(format!(
+                    "Queue '{}' deleted; download moved to '{}'",
+                    queue_id, target_id
+                ));
+            }
+        }
+    }
+    let _ = engine.persist_downloads();
+
+    settings.queues.retain(|q| q.id != queue_id);
+    let _ = engine.config_manager.save(&settings);
+    let _ = engine.db.save_queues(&settings.queues);
+    Ok(())
+}
+
+#[tauri::command]
+async fn toggle_queue_pause(
+    queue_id: String,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<bool, String> {
+    let (new_pause, queue_name) = {
+        let mut settings = engine.settings.write();
+        let Some(q) = settings.queues.iter_mut().find(|q| q.id == queue_id) else {
+            return Err(format!("Queue '{}' not found", queue_id));
+        };
+        let np = !q.manual_pause.unwrap_or(false);
+        q.manual_pause = Some(np);
+        let q_name = q.name.clone();
+        let _ = engine.config_manager.save(&settings);
+        let _ = engine.db.save_queues(&settings.queues);
+        (np, q_name)
+    };
+
+    if new_pause {
+        let active_ids = {
+            let mut dls = engine.downloads.write();
+            let mut ids = Vec::new();
+            for d in dls.iter_mut() {
+                if d.queue_id == queue_id
+                    && matches!(
+                        d.status,
+                        DownloadStatus::Connecting
+                            | DownloadStatus::Downloading
+                            | DownloadStatus::Authenticating
+                            | DownloadStatus::Merging
+                            | DownloadStatus::Seeding
+                    )
+                {
+                    d.status = DownloadStatus::Paused;
+                    d.speed_bps = 0;
+                    d.transfer_log
+                        .push(format!("Queue '{}' paused manually", queue_name));
+                    ids.push(d.id.clone());
+                }
+            }
+            ids
+        };
+        for id in active_ids {
+            if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+                let _ = tx.send(true);
+            }
+        }
+        let _ = engine.persist_downloads();
+    } else {
+        let _ = engine.start_queued_downloads(Some(queue_id)).await;
+    }
+
+    Ok(new_pause)
+}
+
+#[tauri::command]
+fn schedule_download(
+    download_id: String,
+    start_time: Option<String>,
+    stop_time: Option<String>,
+    engine: State<'_, Arc<DownloadEngine>>,
+) -> Result<(), String> {
+    {
+        let mut dls = engine.downloads.write();
+        let Some(d) = dls.iter_mut().find(|d| d.id == download_id) else {
+            return Err("Download not found".into());
+        };
+
+        if let Some(ref start) = start_time {
+            let is_future = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(start) {
+                chrono::Local::now() < dt
+            } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(start, "%Y-%m-%dT%H:%M")
+            {
+                chrono::Local::now().naive_local() < naive
+            } else {
+                false
+            };
+
+            if is_future
+                && matches!(
+                    d.status,
+                    DownloadStatus::Connecting
+                        | DownloadStatus::Downloading
+                        | DownloadStatus::Authenticating
+                        | DownloadStatus::Merging
+                        | DownloadStatus::Seeding
+                )
+            {
+                d.status = DownloadStatus::Queued;
+                d.speed_bps = 0;
+                d.transfer_log
+                    .push(format!("Scheduled to start in future: {}", start));
+                if let Some(tx) = engine.active_cancellations.write().remove(&download_id) {
+                    let _ = tx.send(true);
+                }
+            }
+        }
+
+        d.scheduled_start = start_time;
+        d.scheduled_stop = stop_time;
+        d.transfer_log.push("Schedule updated".into());
+    }
+    let _ = engine.persist_downloads();
+    Ok(())
+}
+
 /// Format bytes-per-second into a human-readable speed string shown in the tray.
 fn format_speed_bps(bps: u64) -> String {
     if bps >= 1_000_000 {
@@ -1341,6 +1559,11 @@ pub fn run_app() {
             set_download_priority,
             set_download_speed_limit,
             start_queue_now,
+            create_queue,
+            update_queue,
+            delete_queue,
+            toggle_queue_pause,
+            schedule_download,
             pick_directory,
             set_autostart,
             is_autostart_enabled,

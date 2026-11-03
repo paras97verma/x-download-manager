@@ -1,3 +1,4 @@
+use crate::config::SchedulerQueueConfig;
 use crate::engine::{
     DownloadItem, DownloadProtocol, DownloadStatus, ThreadSegment, TorrentFileEntry,
     TorrentMetadata,
@@ -93,7 +94,9 @@ impl DatabaseManager {
                 transfer_log_json TEXT NOT NULL DEFAULT '[]',
                 torrent_file_path TEXT,
                 torrent_selected_files_json TEXT,
-                browser_context_redacted INTEGER NOT NULL DEFAULT 0
+                browser_context_redacted INTEGER NOT NULL DEFAULT 0,
+                scheduled_start TEXT,
+                scheduled_stop TEXT
             );
 
             CREATE TABLE IF NOT EXISTS download_segments (
@@ -134,7 +137,15 @@ impl DatabaseManager {
                 stop_time_hhmm TEXT NOT NULL DEFAULT '08:00',
                 days_of_week_json TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
                 speed_limit_kbps INTEGER,
-                post_queue_action TEXT NOT NULL DEFAULT 'none'
+                post_queue_action TEXT NOT NULL DEFAULT 'none',
+                download_dir TEXT,
+                priority TEXT DEFAULT 'normal',
+                preferred_connections INTEGER,
+                manual_pause INTEGER NOT NULL DEFAULT 0,
+                date_schedule_enabled INTEGER NOT NULL DEFAULT 0,
+                date_schedule_start TEXT,
+                date_schedule_stop TEXT,
+                per_host_concurrency INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS site_credentials (
@@ -149,6 +160,33 @@ impl DatabaseManager {
             );",
         )
         .map_err(|e| format!("Failed to initialize database schema: {}", e))?;
+
+        // Safely perform column-level backwards-compatible migrations if migrating an existing db
+        let _ = conn.execute("ALTER TABLE downloads ADD COLUMN scheduled_start TEXT", []);
+        let _ = conn.execute("ALTER TABLE downloads ADD COLUMN scheduled_stop TEXT", []);
+        let _ = conn.execute("ALTER TABLE queues ADD COLUMN download_dir TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE queues ADD COLUMN priority TEXT DEFAULT 'normal'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE queues ADD COLUMN preferred_connections INTEGER",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE queues ADD COLUMN manual_pause INTEGER DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE queues ADD COLUMN date_schedule_enabled INTEGER DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute("ALTER TABLE queues ADD COLUMN date_schedule_start TEXT", []);
+        let _ = conn.execute("ALTER TABLE queues ADD COLUMN date_schedule_stop TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE queues ADD COLUMN per_host_concurrency INTEGER",
+            [],
+        );
 
         Ok(())
     }
@@ -187,7 +225,8 @@ impl DatabaseManager {
                     source_browser, referer, cookies, custom_headers_json, request_method,
                     browser_intercepted, site_credential_id, checksum_sha256,
                     created_at, completed_at, error_message, transfer_log_json,
-                    torrent_file_path, torrent_selected_files_json, browser_context_redacted
+                    torrent_file_path, torrent_selected_files_json, browser_context_redacted,
+                    scheduled_start, scheduled_stop
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7,
                     ?8, ?9, ?10, ?11, ?12,
@@ -196,7 +235,8 @@ impl DatabaseManager {
                     ?21, ?22, ?23, ?24, ?25,
                     ?26, ?27, ?28,
                     ?29, ?30, ?31, ?32,
-                    ?33, ?34, ?35
+                    ?33, ?34, ?35,
+                    ?36, ?37
                 ) ON CONFLICT(id) DO UPDATE SET
                     filename = excluded.filename,
                     url = excluded.url,
@@ -231,7 +271,9 @@ impl DatabaseManager {
                     transfer_log_json = excluded.transfer_log_json,
                     torrent_file_path = excluded.torrent_file_path,
                     torrent_selected_files_json = excluded.torrent_selected_files_json,
-                    browser_context_redacted = excluded.browser_context_redacted",
+                    browser_context_redacted = excluded.browser_context_redacted,
+                    scheduled_start = excluded.scheduled_start,
+                    scheduled_stop = excluded.scheduled_stop",
                 params![
                     item.id,
                     item.filename,
@@ -268,6 +310,8 @@ impl DatabaseManager {
                     item.torrent_file_path,
                     torrent_selected_files_json,
                     if item.browser_context_redacted { 1 } else { 0 },
+                    item.scheduled_start,
+                    item.scheduled_stop,
                 ],
             )
             .map_err(|e| format!("Failed to upsert download {}: {}", item.id, e))?;
@@ -380,7 +424,8 @@ impl DatabaseManager {
                     source_browser, referer, cookies, custom_headers_json, request_method,
                     browser_intercepted, site_credential_id, checksum_sha256,
                     created_at, completed_at, error_message, transfer_log_json,
-                    torrent_file_path, torrent_selected_files_json, browser_context_redacted
+                    torrent_file_path, torrent_selected_files_json, browser_context_redacted,
+                    scheduled_start, scheduled_stop
                 FROM downloads
                 ORDER BY created_at DESC",
             )
@@ -423,6 +468,8 @@ impl DatabaseManager {
                 let torrent_file_path: Option<String> = row.get(32)?;
                 let torrent_selected_files_json: Option<String> = row.get(33)?;
                 let browser_context_redacted: i64 = row.get(34)?;
+                let scheduled_start: Option<String> = row.get(35).ok().flatten();
+                let scheduled_stop: Option<String> = row.get(36).ok().flatten();
 
                 Ok((
                     id,
@@ -460,6 +507,8 @@ impl DatabaseManager {
                     torrent_file_path,
                     torrent_selected_files_json,
                     browser_context_redacted,
+                    scheduled_start,
+                    scheduled_stop,
                 ))
             })
             .map_err(|e| format!("Failed to query downloads: {}", e))?;
@@ -503,6 +552,8 @@ impl DatabaseManager {
                 torrent_file_path,
                 torrent_selected_files_json,
                 browser_context_redacted,
+                scheduled_start,
+                scheduled_stop,
             ) = row_res.map_err(|e| format!("Row conversion error: {}", e))?;
 
             let protocol: DownloadProtocol = serde_json::from_str(&format!("\"{}\"", protocol_str))
@@ -663,6 +714,8 @@ impl DatabaseManager {
                 transfer_log,
                 torrent_file_path,
                 torrent_selected_files,
+                scheduled_start,
+                scheduled_stop,
             });
         }
 
@@ -675,6 +728,162 @@ impl DatabaseManager {
         conn.execute("DELETE FROM downloads WHERE id = ?1", params![id])
             .map_err(|e| format!("Failed to delete download {}: {}", id, e))?;
         Ok(())
+    }
+
+    /// Transactionally save all custom queues into SQLite
+    pub fn save_queues(&self, queues: &[SchedulerQueueConfig]) -> Result<(), String> {
+        let mut conn = self.conn.lock();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("Failed to begin transaction for queues: {}", e))?;
+
+        for q in queues {
+            let days_json = serde_json::to_string(&q.days_of_week)
+                .unwrap_or_else(|_| "[0,1,2,3,4,5,6]".to_string());
+            tx.execute(
+                "INSERT INTO queues (
+                    id, name, max_concurrent, start_time_enabled, start_time_hhmm,
+                    stop_time_enabled, stop_time_hhmm, days_of_week_json, speed_limit_kbps,
+                    post_queue_action, download_dir, priority, preferred_connections,
+                    manual_pause, date_schedule_enabled, date_schedule_start, date_schedule_stop,
+                    per_host_concurrency
+                ) VALUES (
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18
+                ) ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    max_concurrent = excluded.max_concurrent,
+                    start_time_enabled = excluded.start_time_enabled,
+                    start_time_hhmm = excluded.start_time_hhmm,
+                    stop_time_enabled = excluded.stop_time_enabled,
+                    stop_time_hhmm = excluded.stop_time_hhmm,
+                    days_of_week_json = excluded.days_of_week_json,
+                    speed_limit_kbps = excluded.speed_limit_kbps,
+                    post_queue_action = excluded.post_queue_action,
+                    download_dir = excluded.download_dir,
+                    priority = excluded.priority,
+                    preferred_connections = excluded.preferred_connections,
+                    manual_pause = excluded.manual_pause,
+                    date_schedule_enabled = excluded.date_schedule_enabled,
+                    date_schedule_start = excluded.date_schedule_start,
+                    date_schedule_stop = excluded.date_schedule_stop,
+                    per_host_concurrency = excluded.per_host_concurrency",
+                params![
+                    q.id,
+                    q.name,
+                    q.max_concurrent as i64,
+                    if q.start_time_enabled { 1 } else { 0 },
+                    q.start_time_hhmm,
+                    if q.stop_time_enabled { 1 } else { 0 },
+                    q.stop_time_hhmm,
+                    days_json,
+                    q.speed_limit_kbps.map(|k| k as i64),
+                    q.post_queue_action,
+                    q.download_dir,
+                    q.priority.as_deref().unwrap_or("normal"),
+                    q.preferred_connections.map(|c| c as i64),
+                    if q.manual_pause.unwrap_or(false) {
+                        1
+                    } else {
+                        0
+                    },
+                    if q.date_schedule_enabled.unwrap_or(false) {
+                        1
+                    } else {
+                        0
+                    },
+                    q.date_schedule_start,
+                    q.date_schedule_stop,
+                    q.per_host_concurrency.map(|c| c as i64),
+                ],
+            )
+            .map_err(|e| format!("Failed to upsert queue {}: {}", q.id, e))?;
+        }
+
+        if !queues.is_empty() {
+            let placeholders = queues.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!("DELETE FROM queues WHERE id NOT IN ({})", placeholders);
+            let mut stmt = tx
+                .prepare(&sql)
+                .map_err(|e| format!("Failed to prepare delete queues statement: {}", e))?;
+            let params: Vec<&dyn rusqlite::ToSql> = queues
+                .iter()
+                .map(|q| &q.id as &dyn rusqlite::ToSql)
+                .collect();
+            stmt.execute(&params[..])
+                .map_err(|e| format!("Failed to clean up stale queues: {}", e))?;
+        }
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit queues transaction: {}", e))?;
+        Ok(())
+    }
+
+    /// Load all custom queues from SQLite
+    pub fn load_queues(&self) -> Result<Vec<SchedulerQueueConfig>, String> {
+        let conn = self.conn.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, max_concurrent, start_time_enabled, start_time_hhmm,
+                        stop_time_enabled, stop_time_hhmm, days_of_week_json, speed_limit_kbps,
+                        post_queue_action, download_dir, priority, preferred_connections,
+                        manual_pause, date_schedule_enabled, date_schedule_start, date_schedule_stop,
+                        per_host_concurrency
+                 FROM queues",
+            )
+            .map_err(|e| format!("Failed to prepare select queues statement: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: String = row.get(0)?;
+                let name: String = row.get(1)?;
+                let max_concurrent: i64 = row.get(2)?;
+                let start_time_enabled: i64 = row.get(3)?;
+                let start_time_hhmm: String = row.get(4)?;
+                let stop_time_enabled: i64 = row.get(5)?;
+                let stop_time_hhmm: String = row.get(6)?;
+                let days_of_week_json: String = row.get(7)?;
+                let speed_limit_kbps: Option<i64> = row.get(8)?;
+                let post_queue_action: String = row.get(9)?;
+                let download_dir: Option<String> = row.get(10)?;
+                let priority: Option<String> = row.get(11)?;
+                let preferred_connections: Option<i64> = row.get(12)?;
+                let manual_pause: Option<i64> = row.get(13)?;
+                let date_schedule_enabled: Option<i64> = row.get(14)?;
+                let date_schedule_start: Option<String> = row.get(15)?;
+                let date_schedule_stop: Option<String> = row.get(16)?;
+                let per_host_concurrency: Option<i64> = row.get(17)?;
+
+                let days_of_week: Vec<u8> = serde_json::from_str(&days_of_week_json)
+                    .unwrap_or_else(|_| vec![0, 1, 2, 3, 4, 5, 6]);
+
+                Ok(SchedulerQueueConfig {
+                    id,
+                    name,
+                    max_concurrent: max_concurrent as usize,
+                    start_time_enabled: start_time_enabled != 0,
+                    start_time_hhmm,
+                    stop_time_enabled: stop_time_enabled != 0,
+                    stop_time_hhmm,
+                    days_of_week,
+                    speed_limit_kbps: speed_limit_kbps.map(|k| k as u64),
+                    post_queue_action,
+                    download_dir,
+                    priority,
+                    preferred_connections: preferred_connections.map(|c| c as usize),
+                    manual_pause: manual_pause.map(|m| m != 0),
+                    date_schedule_enabled: date_schedule_enabled.map(|d| d != 0),
+                    date_schedule_start,
+                    date_schedule_stop,
+                    per_host_concurrency: per_host_concurrency.map(|c| c as usize),
+                })
+            })
+            .map_err(|e| format!("Failed to query queues: {}", e))?;
+
+        let mut result = Vec::new();
+        for r in rows.flatten() {
+            result.push(r);
+        }
+        Ok(result)
     }
 
     /// Perform a zero-data-loss migration from legacy downloads.json into SQLite
@@ -776,6 +985,8 @@ mod tests {
             transfer_log: vec!["Download started".to_string()],
             torrent_file_path: None,
             torrent_selected_files: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         }
     }
 

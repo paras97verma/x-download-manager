@@ -24,6 +24,7 @@ interface SidebarProps {
   queues: SchedulerQueueConfig[];
   selectedQueue: string;
   onSelectQueue: (qId: string) => void;
+  onOpenScheduler?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -35,6 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   queues,
   selectedQueue,
   onSelectQueue,
+  onOpenScheduler,
 }) => {
   const categories = [
     { id: "all", label: "All Downloads", icon: Layers },
@@ -132,8 +134,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* ByteX synchronized queues */}
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-2 mb-1.5">
-            Download Queues
+          <div className="flex items-center justify-between px-2 mb-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              Download Queues
+            </span>
+            {onOpenScheduler && (
+              <button
+                onClick={onOpenScheduler}
+                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold px-1 rounded hover:bg-slate-800 transition"
+                title="Manage Queues & Timetable"
+              >
+                + Manage
+              </button>
+            )}
           </div>
           <div className="space-y-0.5">
             {queues.map((q) => {

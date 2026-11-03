@@ -68,6 +68,10 @@ pub struct BrowserIntegrationSettings {
     pub enabled_browsers: HashMap<String, bool>,
 }
 
+fn default_queue_priority() -> Option<String> {
+    Some("normal".to_string())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchedulerQueueConfig {
     pub id: String,
@@ -80,6 +84,22 @@ pub struct SchedulerQueueConfig {
     pub days_of_week: Vec<u8>, // 0 = Sun .. 6 = Sat
     pub speed_limit_kbps: Option<u64>,
     pub post_queue_action: String, // "none" | "exit_app" | "sleep" | "shutdown"
+    #[serde(default)]
+    pub download_dir: Option<String>,
+    #[serde(default = "default_queue_priority")]
+    pub priority: Option<String>,
+    #[serde(default)]
+    pub preferred_connections: Option<usize>,
+    #[serde(default)]
+    pub manual_pause: Option<bool>,
+    #[serde(default)]
+    pub date_schedule_enabled: Option<bool>,
+    #[serde(default)]
+    pub date_schedule_start: Option<String>,
+    #[serde(default)]
+    pub date_schedule_stop: Option<String>,
+    #[serde(default)]
+    pub per_host_concurrency: Option<usize>,
 }
 
 fn default_ui_mode() -> String {
@@ -127,6 +147,14 @@ pub struct AppSettings {
     pub browser: BrowserIntegrationSettings,
     pub proxy: ProxySettings,
     pub queues: Vec<SchedulerQueueConfig>,
+
+    // Network & Battery Rules
+    #[serde(default)]
+    pub pause_on_battery: bool,
+    #[serde(default)]
+    pub pause_on_metered_network: bool,
+    #[serde(default)]
+    pub per_host_concurrency_limit: Option<usize>,
 }
 
 impl Default for AppSettings {
@@ -313,6 +341,34 @@ impl Default for AppSettings {
                     days_of_week: vec![0, 1, 2, 3, 4, 5, 6],
                     speed_limit_kbps: None,
                     post_queue_action: "none".into(),
+                    download_dir: None,
+                    priority: Some("normal".into()),
+                    preferred_connections: Some(8),
+                    manual_pause: Some(false),
+                    date_schedule_enabled: Some(false),
+                    date_schedule_start: None,
+                    date_schedule_stop: None,
+                    per_host_concurrency: Some(3),
+                },
+                SchedulerQueueConfig {
+                    id: "high-priority-queue".into(),
+                    name: "High Priority Queue".into(),
+                    max_concurrent: 6,
+                    start_time_enabled: false,
+                    start_time_hhmm: "00:00".into(),
+                    stop_time_enabled: false,
+                    stop_time_hhmm: "23:59".into(),
+                    days_of_week: vec![0, 1, 2, 3, 4, 5, 6],
+                    speed_limit_kbps: None,
+                    post_queue_action: "none".into(),
+                    download_dir: None,
+                    priority: Some("high".into()),
+                    preferred_connections: Some(16),
+                    manual_pause: Some(false),
+                    date_schedule_enabled: Some(false),
+                    date_schedule_start: None,
+                    date_schedule_stop: None,
+                    per_host_concurrency: Some(4),
                 },
                 SchedulerQueueConfig {
                     id: "night-queue".into(),
@@ -325,8 +381,39 @@ impl Default for AppSettings {
                     days_of_week: vec![0, 1, 2, 3, 4, 5, 6],
                     speed_limit_kbps: None,
                     post_queue_action: "sleep".into(),
+                    download_dir: None,
+                    priority: Some("normal".into()),
+                    preferred_connections: Some(8),
+                    manual_pause: Some(false),
+                    date_schedule_enabled: Some(false),
+                    date_schedule_start: None,
+                    date_schedule_stop: None,
+                    per_host_concurrency: None,
+                },
+                SchedulerQueueConfig {
+                    id: "torrents-queue".into(),
+                    name: "Torrents Queue".into(),
+                    max_concurrent: 3,
+                    start_time_enabled: false,
+                    start_time_hhmm: "00:00".into(),
+                    stop_time_enabled: false,
+                    stop_time_hhmm: "23:59".into(),
+                    days_of_week: vec![0, 1, 2, 3, 4, 5, 6],
+                    speed_limit_kbps: None,
+                    post_queue_action: "none".into(),
+                    download_dir: None,
+                    priority: Some("normal".into()),
+                    preferred_connections: None,
+                    manual_pause: Some(false),
+                    date_schedule_enabled: Some(false),
+                    date_schedule_start: None,
+                    date_schedule_stop: None,
+                    per_host_concurrency: None,
                 },
             ],
+            pause_on_battery: false,
+            pause_on_metered_network: false,
+            per_host_concurrency_limit: Some(4),
         }
     }
 }

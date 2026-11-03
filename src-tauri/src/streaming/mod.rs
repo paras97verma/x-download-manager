@@ -602,6 +602,8 @@ mod tests {
             torrent_selected_files: None,
             priority: "normal".to_string(),
             speed_limit_bps: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         };
 
         assert_eq!(compute_available_end(&item, 0, 499, 1000), Some(499));
@@ -664,6 +666,8 @@ mod tests {
             torrent_selected_files: None,
             priority: "normal".to_string(),
             speed_limit_bps: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         };
         engine.downloads.write().push(item);
 
