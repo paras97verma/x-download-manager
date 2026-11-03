@@ -129,6 +129,8 @@ async fn test_http_download_client_sends_saved_site_auth() {
         sequential_torrent: None,
         torrent_file_data: None,
         torrent_selected_files: None,
+        scheduled_start: None,
+        scheduled_stop: None,
     });
 
     let client = build_http_client(&engine.settings.read(), &item).expect("HTTP client");

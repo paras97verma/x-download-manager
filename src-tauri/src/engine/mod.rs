@@ -145,6 +145,10 @@ pub struct DownloadItem {
     pub priority: String,
     #[serde(default)]
     pub speed_limit_bps: Option<u64>,
+    #[serde(default)]
+    pub scheduled_start: Option<String>,
+    #[serde(default)]
+    pub scheduled_stop: Option<String>,
 }
 
 fn default_priority() -> String {
@@ -180,6 +184,10 @@ pub struct NewDownloadRequest {
     pub sequential_torrent: Option<bool>,
     pub torrent_file_data: Option<String>,
     pub torrent_selected_files: Option<Vec<usize>>,
+    #[serde(default)]
+    pub scheduled_start: Option<String>,
+    #[serde(default)]
+    pub scheduled_stop: Option<String>,
 }
 
 fn default_request_method() -> String {
@@ -636,8 +644,15 @@ impl DownloadEngine {
         let category = req
             .category
             .unwrap_or_else(|| Self::infer_category(&filename, &protocol, &settings));
+        let queue_id = req.queue_id.unwrap_or_else(|| "main-queue".to_string());
+        let assigned_queue = settings.queues.iter().find(|q| q.id == queue_id);
+        let queue_priority = assigned_queue
+            .and_then(|q| q.priority.clone())
+            .unwrap_or_else(|| "normal".to_string());
+        let queue_threads = assigned_queue.and_then(|q| q.preferred_connections);
         let threads_count = req
             .threads_count
+            .or(queue_threads)
             .unwrap_or(settings.default_threads_per_download)
             .clamp(1, settings.max_threads_per_download);
         let save_path = req
@@ -649,7 +664,10 @@ impl DownloadEngine {
                     .to_string()
             })
             .unwrap_or_else(|| {
-                let base = crate::config::resolve_path(&settings.default_download_dir);
+                let base = assigned_queue
+                    .and_then(|q| q.download_dir.as_ref())
+                    .map(|d| crate::config::resolve_path(d))
+                    .unwrap_or_else(|| crate::config::resolve_path(&settings.default_download_dir));
                 base.join(&category)
                     .join(&filename)
                     .to_string_lossy()
@@ -687,6 +705,25 @@ impl DownloadEngine {
             &mut cookies,
         );
 
+        let is_future_scheduled = if let Some(ref sched) = req.scheduled_start {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(sched) {
+                chrono::Utc::now() < dt
+            } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(sched, "%Y-%m-%dT%H:%M")
+            {
+                chrono::Local::now().naive_local() < naive
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let initial_status = if req.start_immediately && !is_future_scheduled {
+            DownloadStatus::Connecting
+        } else {
+            DownloadStatus::Queued
+        };
+
         let item = DownloadItem {
             id: id.clone(),
             filename,
@@ -695,18 +732,14 @@ impl DownloadEngine {
             redirect_chain: req.redirect_chain,
             protocol: protocol.clone(),
             category,
-            queue_id: req.queue_id.unwrap_or_else(|| "main-queue".to_string()),
+            queue_id,
             save_path,
             total_bytes: 0,
             downloaded_bytes: 0,
             speed_bps: 0,
             upload_speed_bps: 0,
             eta_seconds: None,
-            status: if req.start_immediately {
-                DownloadStatus::Connecting
-            } else {
-                DownloadStatus::Queued
-            },
+            status: initial_status,
             resumable: true,
             range_advertised: false,
             resume_validator: None,
@@ -733,8 +766,10 @@ impl DownloadEngine {
             )],
             torrent_file_path,
             torrent_selected_files: req.torrent_selected_files,
-            priority: "normal".to_string(),
+            priority: queue_priority,
             speed_limit_bps: None,
+            scheduled_start: req.scheduled_start,
+            scheduled_stop: req.scheduled_stop,
         };
 
         self.downloads.write().insert(0, item.clone());
@@ -944,11 +979,20 @@ impl DownloadEngine {
             let candidate = {
                 let settings = self.settings.read().clone();
                 let global_limit = settings.max_concurrent_downloads;
-                let queue_limit = queue_id
+                let target_queue = queue_id
                     .as_ref()
-                    .and_then(|id| settings.queues.iter().find(|q| &q.id == id))
+                    .and_then(|id| settings.queues.iter().find(|q| &q.id == id));
+
+                if let Some(tq) = target_queue {
+                    if tq.manual_pause == Some(true) {
+                        return Ok(started);
+                    }
+                }
+
+                let queue_limit = target_queue
                     .map(|q| q.max_concurrent)
                     .unwrap_or(global_limit);
+
                 let mut dls = self.downloads.write();
                 let active_global = dls
                     .iter()
@@ -963,6 +1007,7 @@ impl DownloadEngine {
                         )
                     })
                     .count();
+
                 let active_queue = queue_id
                     .as_ref()
                     .map(|id| {
@@ -981,24 +1026,101 @@ impl DownloadEngine {
                             .count()
                     })
                     .unwrap_or(active_global);
+
                 if active_global >= global_limit || active_queue >= queue_limit {
                     None
-                } else if let Some(item) = dls.iter_mut().find(|d| {
-                    d.status == DownloadStatus::Queued
-                        && queue_id
-                            .as_ref()
-                            .map(|id| &d.queue_id == id)
-                            .unwrap_or(true)
-                }) {
-                    item.status = DownloadStatus::Connecting;
-                    Some(item.clone())
                 } else {
-                    None
+                    let now = chrono::Local::now();
+                    let mut found_idx = None;
+
+                    for (idx, d) in dls.iter().enumerate() {
+                        if d.status != DownloadStatus::Queued {
+                            continue;
+                        }
+                        if let Some(ref qid) = queue_id {
+                            if &d.queue_id != qid {
+                                continue;
+                            }
+                        } else if let Some(item_q) =
+                            settings.queues.iter().find(|q| q.id == d.queue_id)
+                        {
+                            if item_q.manual_pause == Some(true) {
+                                continue;
+                            }
+                        }
+
+                        // Check scheduled start time
+                        if let Some(ref sched_start) = d.scheduled_start {
+                            if let Ok(sched_time) =
+                                chrono::DateTime::parse_from_rfc3339(sched_start)
+                            {
+                                if now < sched_time {
+                                    continue;
+                                }
+                            } else if let Ok(naive) =
+                                chrono::NaiveDateTime::parse_from_str(sched_start, "%Y-%m-%dT%H:%M")
+                            {
+                                if now.naive_local() < naive {
+                                    continue;
+                                }
+                            }
+                        }
+
+                        // Check per-host concurrency limit
+                        let item_q = settings.queues.iter().find(|q| q.id == d.queue_id);
+                        let host_limit = item_q
+                            .and_then(|q| q.per_host_concurrency)
+                            .or(settings.per_host_concurrency_limit);
+
+                        if let Some(h_limit) = host_limit {
+                            if let Ok(parsed_url) = url::Url::parse(&d.url) {
+                                if let Some(host) = parsed_url.host_str() {
+                                    let active_from_host = dls
+                                        .iter()
+                                        .filter(|other| {
+                                            matches!(
+                                                other.status,
+                                                DownloadStatus::Connecting
+                                                    | DownloadStatus::Authenticating
+                                                    | DownloadStatus::Downloading
+                                                    | DownloadStatus::Merging
+                                                    | DownloadStatus::Seeding
+                                            ) && url::Url::parse(&other.url)
+                                                .ok()
+                                                .and_then(|u| u.host_str().map(|h| h.to_string()))
+                                                .map(|h| h.eq_ignore_ascii_case(host))
+                                                .unwrap_or(false)
+                                        })
+                                        .count();
+
+                                    if active_from_host >= h_limit {
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+
+                        found_idx = Some(idx);
+                        break;
+                    }
+
+                    if let Some(idx) = found_idx {
+                        dls[idx].status = DownloadStatus::Connecting;
+                        Some(dls[idx].clone())
+                    } else {
+                        None
+                    }
                 }
             };
             let Some(item) = candidate else {
                 break;
             };
+            let settings = self.settings.read().clone();
+            let queue_config = settings.queues.iter().find(|q| q.id == item.queue_id);
+            let effective_threads = queue_config
+                .and_then(|q| q.preferred_connections)
+                .unwrap_or(item.threads_count);
+
             let req = NewDownloadRequest {
                 url: item.url.clone(),
                 final_url: item.resolved_url.clone(),
@@ -1006,7 +1128,7 @@ impl DownloadEngine {
                 filename: Some(item.filename.clone()),
                 category: Some(item.category.clone()),
                 save_path: Some(item.save_path.clone()),
-                threads_count: Some(item.threads_count),
+                threads_count: Some(effective_threads),
                 queue_id: Some(item.queue_id.clone()),
                 start_immediately: true,
                 source_browser: item.source_browser.clone(),
@@ -1019,9 +1141,11 @@ impl DownloadEngine {
                 browser_intercepted: item.browser_intercepted,
                 auth_username: None,
                 auth_password: None,
-                sequential_torrent: None,
+                sequential_torrent: item.torrent_meta.as_ref().map(|t| t.sequential),
                 torrent_file_data: None,
                 torrent_selected_files: item.torrent_selected_files.clone(),
+                scheduled_start: item.scheduled_start.clone(),
+                scheduled_stop: item.scheduled_stop.clone(),
             };
             self.start_download_execution(item, &req).await;
             started += 1;
@@ -1060,6 +1184,8 @@ impl DownloadEngine {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: item.torrent_selected_files.clone(),
+            scheduled_start: item.scheduled_start.clone(),
+            scheduled_stop: item.scheduled_stop.clone(),
         };
         self.start_download_execution(item, &req).await;
         Ok(())
@@ -1106,6 +1232,8 @@ mod persistence_tests {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: Some(vec![0]),
+            scheduled_start: None,
+            scheduled_stop: None,
         });
         item.save_path = output_dir.to_string_lossy().to_string();
         fs::write(output_dir.join("resume-test"), b"partial download")
@@ -1190,6 +1318,8 @@ mod persistence_tests {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         });
 
         assert_eq!(item.filename, "report.zip");
@@ -1235,6 +1365,8 @@ mod persistence_tests {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         };
         let item = engine.add_download(request);
         let path =
@@ -1300,6 +1432,8 @@ mod persistence_tests {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         };
         let item = engine.add_download(request.clone());
         let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();

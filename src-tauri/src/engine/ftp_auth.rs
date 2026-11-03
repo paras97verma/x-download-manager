@@ -906,6 +906,8 @@ mod browser_ftp_tests {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         };
         let item = engine.add_download(request);
         let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();

@@ -7,6 +7,7 @@ import {
   DuplicateDownloadNotice,
   MediaStreamInfo,
   NewDownloadRequest,
+  SchedulerQueueConfig,
   ThreadSegment,
 } from "../types/xdm";
 
@@ -266,6 +267,35 @@ export async function apiSetDownloadSpeedLimit(
 export async function apiStartQueueNow(queueId: string): Promise<number> {
   if (!isTauriRuntime()) return 0;
   return invoke<number>("start_queue_now", { queueId });
+}
+
+export async function apiCreateQueue(config: SchedulerQueueConfig): Promise<SchedulerQueueConfig> {
+  if (!isTauriRuntime()) return config;
+  return invoke<SchedulerQueueConfig>("create_queue", { config });
+}
+
+export async function apiUpdateQueue(config: SchedulerQueueConfig): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("update_queue", { config });
+}
+
+export async function apiDeleteQueue(queueId: string, reassignToQueueId?: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("delete_queue", { queueId, reassignToQueueId: reassignToQueueId || null });
+}
+
+export async function apiToggleQueuePause(queueId: string): Promise<boolean> {
+  if (!isTauriRuntime()) return false;
+  return invoke<boolean>("toggle_queue_pause", { queueId });
+}
+
+export async function apiScheduleDownload(
+  downloadId: string,
+  startTime: string | null,
+  stopTime: string | null
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  await invoke("schedule_download", { downloadId, startTime, stopTime });
 }
 
 export async function apiPickDirectory(): Promise<string | null> {
@@ -538,6 +568,34 @@ export const DEFAULT_SETTINGS: AppSettings = {
       days_of_week: [0, 1, 2, 3, 4, 5, 6],
       speed_limit_kbps: null,
       post_queue_action: "none",
+      download_dir: null,
+      priority: "normal",
+      preferred_connections: 8,
+      manual_pause: false,
+      date_schedule_enabled: false,
+      date_schedule_start: null,
+      date_schedule_stop: null,
+      per_host_concurrency: 3,
+    },
+    {
+      id: "high-priority-queue",
+      name: "High Priority Queue",
+      max_concurrent: 6,
+      start_time_enabled: false,
+      start_time_hhmm: "00:00",
+      stop_time_enabled: false,
+      stop_time_hhmm: "23:59",
+      days_of_week: [0, 1, 2, 3, 4, 5, 6],
+      speed_limit_kbps: null,
+      post_queue_action: "none",
+      download_dir: null,
+      priority: "high",
+      preferred_connections: 16,
+      manual_pause: false,
+      date_schedule_enabled: false,
+      date_schedule_start: null,
+      date_schedule_stop: null,
+      per_host_concurrency: 4,
     },
     {
       id: "night-queue",
@@ -550,8 +608,39 @@ export const DEFAULT_SETTINGS: AppSettings = {
       days_of_week: [0, 1, 2, 3, 4, 5, 6],
       speed_limit_kbps: null,
       post_queue_action: "sleep",
+      download_dir: null,
+      priority: "normal",
+      preferred_connections: 8,
+      manual_pause: false,
+      date_schedule_enabled: false,
+      date_schedule_start: null,
+      date_schedule_stop: null,
+      per_host_concurrency: null,
+    },
+    {
+      id: "torrents-queue",
+      name: "Torrents Queue",
+      max_concurrent: 3,
+      start_time_enabled: false,
+      start_time_hhmm: "00:00",
+      stop_time_enabled: false,
+      stop_time_hhmm: "23:59",
+      days_of_week: [0, 1, 2, 3, 4, 5, 6],
+      speed_limit_kbps: null,
+      post_queue_action: "none",
+      download_dir: null,
+      priority: "normal",
+      preferred_connections: null,
+      manual_pause: false,
+      date_schedule_enabled: false,
+      date_schedule_start: null,
+      date_schedule_stop: null,
+      per_host_concurrency: null,
     },
   ],
+  pause_on_battery: false,
+  pause_on_metered_network: false,
+  per_host_concurrency_limit: 4,
 };
 
 export const INITIAL_BROWSERS: BrowserStatus[] = [

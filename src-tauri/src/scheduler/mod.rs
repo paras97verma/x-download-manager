@@ -116,6 +116,42 @@ fn queue_window_is_active(
     queue: &crate::config::SchedulerQueueConfig,
     now: chrono::DateTime<Local>,
 ) -> bool {
+    // 1. Manual pause takes absolute precedence
+    if queue.manual_pause == Some(true) {
+        return false;
+    }
+
+    // 2. Date schedule check (specific start date/time and stop date/time)
+    if queue.date_schedule_enabled == Some(true) {
+        if let Some(ref start_str) = queue.date_schedule_start {
+            if let Ok(start_dt) = chrono::DateTime::parse_from_rfc3339(start_str) {
+                if now < start_dt {
+                    return false;
+                }
+            } else if let Ok(naive) =
+                chrono::NaiveDateTime::parse_from_str(start_str, "%Y-%m-%dT%H:%M")
+            {
+                if now.naive_local() < naive {
+                    return false;
+                }
+            }
+        }
+        if let Some(ref stop_str) = queue.date_schedule_stop {
+            if let Ok(stop_dt) = chrono::DateTime::parse_from_rfc3339(stop_str) {
+                if now > stop_dt {
+                    return false;
+                }
+            } else if let Ok(naive) =
+                chrono::NaiveDateTime::parse_from_str(stop_str, "%Y-%m-%dT%H:%M")
+            {
+                if now.naive_local() > naive {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // 3. Weekly / Daily time-of-day window check
     let weekday = now.weekday().num_days_from_sunday() as u8;
     let minute = (now.hour() * 60 + now.minute()) as u16;
     let scheduled = queue.start_time_enabled || queue.stop_time_enabled;
@@ -178,15 +214,15 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
         let now = Local::now();
         let current_hhmm = format!("{:02}:{:02}", now.hour(), now.minute());
         let queues = engine.settings.read().queues.clone();
-        for q in queues {
-            if queue_window_is_active(&q, now) {
+        for q in &queues {
+            let active = queue_window_is_active(q, now);
+            if active {
                 let _ = engine.start_queued_downloads(Some(q.id.clone())).await;
-            }
-
-            if q.stop_time_enabled
-                && q.stop_time_hhmm == current_hhmm
-                && q.days_of_week
-                    .contains(&(now.weekday().num_days_from_sunday() as u8))
+            } else if q.manual_pause == Some(true)
+                || (q.stop_time_enabled
+                    && q.stop_time_hhmm == current_hhmm
+                    && q.days_of_week
+                        .contains(&(now.weekday().num_days_from_sunday() as u8)))
             {
                 let active_ids = {
                     let mut dls = engine.downloads.write();
@@ -205,7 +241,7 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
                             d.status = DownloadStatus::Paused;
                             d.speed_bps = 0;
                             d.transfer_log.push(format!(
-                                "Scheduled queue '{}' paused download at stop window",
+                                "Queue '{}' inactive or paused; download halted",
                                 q.name
                             ));
                             ids.push(d.id.clone());
@@ -217,6 +253,159 @@ pub async fn run_scheduler_loop(engine: Arc<DownloadEngine>) {
                     if let Some(tx) = engine.active_cancellations.write().remove(&id) {
                         let _ = tx.send(true);
                     }
+                }
+            }
+        }
+
+        // 3. Evaluate Individual Download Schedules
+        {
+            let mut to_start_queues = Vec::new();
+            let mut to_pause_ids = Vec::new();
+
+            {
+                let dls = engine.downloads.read();
+                for d in dls.iter() {
+                    // Check individual stop time
+                    if let Some(ref stop_str) = d.scheduled_stop {
+                        let reached_stop =
+                            if let Ok(stop_dt) = chrono::DateTime::parse_from_rfc3339(stop_str) {
+                                now >= stop_dt
+                            } else if let Ok(naive) =
+                                chrono::NaiveDateTime::parse_from_str(stop_str, "%Y-%m-%dT%H:%M")
+                            {
+                                now.naive_local() >= naive
+                            } else {
+                                false
+                            };
+
+                        if reached_stop
+                            && matches!(
+                                d.status,
+                                DownloadStatus::Connecting
+                                    | DownloadStatus::Downloading
+                                    | DownloadStatus::Authenticating
+                                    | DownloadStatus::Merging
+                                    | DownloadStatus::Seeding
+                            )
+                        {
+                            to_pause_ids.push(d.id.clone());
+                        }
+                    }
+
+                    // Check individual start time
+                    if let Some(ref start_str) = d.scheduled_start {
+                        let reached_start =
+                            if let Ok(start_dt) = chrono::DateTime::parse_from_rfc3339(start_str) {
+                                now >= start_dt
+                            } else if let Ok(naive) =
+                                chrono::NaiveDateTime::parse_from_str(start_str, "%Y-%m-%dT%H:%M")
+                            {
+                                now.naive_local() >= naive
+                            } else {
+                                false
+                            };
+
+                        if reached_start
+                            && matches!(d.status, DownloadStatus::Queued | DownloadStatus::Paused)
+                        {
+                            to_start_queues.push(d.queue_id.clone());
+                        }
+                    }
+                }
+            }
+
+            // Pause downloads that reached stop time
+            if !to_pause_ids.is_empty() {
+                {
+                    let mut dls = engine.downloads.write();
+                    for d in dls.iter_mut() {
+                        if to_pause_ids.contains(&d.id) {
+                            d.status = DownloadStatus::Paused;
+                            d.speed_bps = 0;
+                            d.transfer_log
+                                .push("Scheduled stop time reached; download paused".into());
+                        }
+                    }
+                }
+                for id in to_pause_ids {
+                    if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+                        let _ = tx.send(true);
+                    }
+                }
+            }
+
+            // Promote queues that have items whose start time was reached
+            for qid in to_start_queues {
+                let _ = engine.start_queued_downloads(Some(qid)).await;
+            }
+        }
+
+        // 4. BitTorrent Seeding Ratio & Duration Limits
+        {
+            let seed_limits = {
+                let st = engine.settings.read();
+                (
+                    st.torrent.seed_ratio_limit,
+                    st.torrent.seed_time_limit_minutes,
+                )
+            };
+            let (ratio_limit, time_limit_mins) = seed_limits;
+
+            let mut finished_seeding_ids = Vec::new();
+            {
+                let mut dls = engine.downloads.write();
+                for d in dls.iter_mut() {
+                    if d.status == DownloadStatus::Seeding {
+                        let ratio_reached = d
+                            .torrent_meta
+                            .as_ref()
+                            .map(|m| m.share_ratio >= ratio_limit)
+                            .unwrap_or(false);
+
+                        let time_reached = if time_limit_mins > 0 {
+                            if let Some(ref comp_at) = d.completed_at {
+                                if let Ok(completed_dt) =
+                                    chrono::DateTime::parse_from_rfc3339(comp_at)
+                                {
+                                    let seeded_seconds =
+                                        (now.to_utc() - completed_dt.to_utc()).num_seconds().max(0)
+                                            as u64;
+                                    seeded_seconds >= time_limit_mins * 60
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        if ratio_reached || time_reached {
+                            d.status = DownloadStatus::Completed;
+                            d.speed_bps = 0;
+                            d.upload_speed_bps = 0;
+                            let reason = if ratio_reached {
+                                format!(
+                                    "Seeding finished: reached target ratio ({:.2})",
+                                    ratio_limit
+                                )
+                            } else {
+                                format!(
+                                    "Seeding finished: reached max duration ({} mins)",
+                                    time_limit_mins
+                                )
+                            };
+                            d.transfer_log.push(reason);
+                            finished_seeding_ids.push(d.id.clone());
+                        }
+                    }
+                }
+            }
+
+            for id in finished_seeding_ids {
+                if let Some(tx) = engine.active_cancellations.write().remove(&id) {
+                    let _ = tx.send(true);
                 }
             }
         }

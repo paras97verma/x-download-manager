@@ -1404,6 +1404,8 @@ mod browser_request_tests {
             sequential_torrent: None,
             torrent_file_data: None,
             torrent_selected_files: None,
+            scheduled_start: None,
+            scheduled_stop: None,
         });
         item.protocol = DownloadProtocol::Https;
         let path = std::path::Path::new(&item.save_path)

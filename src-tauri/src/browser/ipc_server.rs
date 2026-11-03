@@ -420,6 +420,8 @@ async fn handle_intercept(
         sequential_torrent: if is_torrent { Some(true) } else { None },
         torrent_file_data: None,
         torrent_selected_files: None,
+        scheduled_start: None,
+        scheduled_stop: None,
     };
 
     if let Some(existing) = find_duplicate_download(&engine, &req.url) {
