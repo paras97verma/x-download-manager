@@ -1,26 +1,6 @@
 name: ByteX Download Manager — Verify, Build & Release
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*.*.*"
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'extensions/**'
-      - 'scripts/**'
-      - 'public/**'
-      - 'index.html'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'vite.config.*'
-      - 'tsconfig*.json'
-      - 'postcss.config.*'
-      - 'tailwind.config.*'
   workflow_dispatch:
     inputs:
       release_channel:
