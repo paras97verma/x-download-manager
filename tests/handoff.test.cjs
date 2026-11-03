@@ -9,7 +9,7 @@ const backgroundSource = fs.readFileSync(
   "utf8",
 );
 
-function makeExtension(nativeResult, requestContext = null, callbackMode = false, nativeError = null) {
+function makeExtension(nativeResult, requestContext = null, callbackMode = false, nativeError = null, customFetch = null) {
   const events = { created: [] };
   const state = { state: "in_progress" };
   const order = [];
@@ -67,7 +67,7 @@ function makeExtension(nativeResult, requestContext = null, callbackMode = false
     navigator: { userAgent: "Test Browser", appVersion: "Test Browser" },
     URL,
     AbortController,
-    fetch: async () => { throw new Error("no running app status endpoint"); },
+    fetch: customFetch || (async () => { throw new Error("no running app status endpoint"); }),
     setInterval: () => 0,
     setTimeout: (callback, delay = 0) => {
       if (delay <= 1000) Promise.resolve().then(callback);
@@ -248,3 +248,36 @@ test("the request context is claimed before the browser pause and transferred to
   assert.equal(extension.order[0], "request-capture");
   assert.equal(extension.order.at(-1), "cancel");
 });
+
+test("when Native Messaging fails, HTTP IPC bridge fallback successfully hands over download", async () => {
+  let httpIpcCalled = false;
+  const customFetch = async (url, options) => {
+    if (url.includes("/api/v1/intercept")) {
+      httpIpcCalled = true;
+      const body = JSON.parse(options.body);
+      assert.equal(body.url, "https://files.example/fallback.bin");
+      return {
+        ok: true,
+        json: async () => ({ accepted: true, download_id: "http-fallback-1" }),
+      };
+    }
+    throw new Error("unhandled endpoint");
+  };
+  const extension = makeExtension(null, null, true, {
+    message: "Specified native messaging host not found.",
+  }, customFetch);
+  const item = {
+    id: 10,
+    url: "https://files.example/fallback.bin",
+    finalUrl: "https://files.example/fallback.bin",
+    filename: "/downloads/fallback.bin",
+    totalBytes: 0,
+    mime: "application/octet-stream",
+    tabId: 2,
+  };
+  await extension.events.created[0](item);
+  assert.equal(httpIpcCalled, true);
+  assert.equal(extension.state.state, "interrupted");
+  assert.equal(extension.order.at(-1), "cancel");
+});
+

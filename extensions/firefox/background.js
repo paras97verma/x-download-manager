@@ -192,7 +192,41 @@ async function stopBrowserDownload(id) {
 
 async function resumeBrowserDownload(id) {
   if (!Number.isInteger(id) || !runtimeAPI.downloads?.resume) return;
-  try { await runtimeAPI.downloads.resume(id); } catch (_) {}
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try { await runtimeAPI.downloads.resume(id); } catch (_) {}
+    if (!runtimeAPI.downloads.search) return;
+    try {
+      const matches = await runtimeAPI.downloads.search({ id });
+      const current = matches?.[0];
+      if (!current || current.state !== "paused") {
+        return;
+      }
+    } catch (_) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 80 * (attempt + 1)));
+  }
+}
+
+async function dispatchViaHttpIpc(payload) {
+  try {
+    const response = await fetchWithTimeout(`${XDM_IPC_URL}/api/v1/intercept`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }, 6000);
+    if (response.ok) {
+      const result = await response.json();
+      if (result && typeof result.accepted === "boolean") {
+        return result.accepted
+          ? { accepted: true, duplicate: Boolean(result.duplicate), reason: null }
+          : { accepted: false, reason: result.reason || "ByteX could not safely take over this request." };
+      }
+    }
+  } catch (_) {}
+  return null;
 }
 
 async function getCookieHeaderForUrl(url) {
@@ -286,7 +320,7 @@ async function dispatchToXdm({
     tab_title: tabTitle || null,
   };
 
-  // Native Messaging keeps request credentials off the browser's loopback CORS surface.
+  // Primary channel: Native Messaging (keeps request credentials off loopback HTTP)
   if (runtimeAPI.runtime.sendNativeMessage) {
     try {
       const result = await runtimeAPI.runtime.sendNativeMessage(NATIVE_HOST_NAME, payload);
@@ -294,10 +328,22 @@ async function dispatchToXdm({
         ? { accepted: true, duplicate: Boolean(result.duplicate), reason: null }
         : { accepted: false, reason: result?.reason || result?.error || "ByteX could not safely take over this request." };
     } catch (_) {
+      // Fallback channel: HTTP IPC bridge (in case Native Host is unregistered or failed to spawn)
+      const httpResult = await dispatchViaHttpIpc(payload);
+      if (httpResult) {
+        return httpResult;
+      }
       return { accepted: false, reason: "Native Messaging could not reach ByteX." };
     }
   }
-  return { accepted: false, reason: "Native Messaging is unavailable; the browser download will continue." };
+
+  // If sendNativeMessage API is absent entirely, try HTTP IPC bridge
+  const httpResult = await dispatchViaHttpIpc(payload);
+  if (httpResult) {
+    return httpResult;
+  }
+
+  return { accepted: false, reason: "ByteX Native Messaging and HTTP IPC are both unavailable; the browser download will continue." };
 }
 
 const interceptedDownloadIds = new Set();

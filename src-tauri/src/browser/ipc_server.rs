@@ -233,7 +233,10 @@ pub async fn start_browser_ipc_server(
             "/api/v1/status",
             get(handle_status).layer(CorsLayer::permissive()),
         )
-        .route("/api/v1/intercept", post(handle_intercept))
+        .route(
+            "/api/v1/intercept",
+            post(handle_intercept).layer(CorsLayer::permissive()),
+        )
         .route("/api/v1/prepare-update", post(handle_prepare_update))
         .route(
             "/api/v1/update-status",
@@ -336,18 +339,37 @@ async fn handle_status(
     })
 }
 
+fn is_allowed_origin(origin: &str) -> bool {
+    let lower = origin.trim().to_lowercase();
+    lower.starts_with("chrome-extension://")
+        || lower.starts_with("moz-extension://")
+        || lower.starts_with("safari-web-extension://")
+        || lower.starts_with("http://127.0.0.1")
+        || lower.starts_with("http://localhost")
+        || lower == "null"
+}
+
 async fn handle_intercept(
     State(engine): State<Arc<DownloadEngine>>,
     headers: HeaderMap,
     Json(payload): Json<BrowserInterceptPayload>,
 ) -> Json<serde_json::Value> {
-    // Browser extensions use the Native Messaging host, which makes a direct
-    // web page unable to submit credentials to this loopback endpoint.
-    if headers.contains_key(axum::http::header::ORIGIN) {
-        return Json(serde_json::json!({
-            "accepted": false,
-            "reason": "Use the ByteX browser extension Native Messaging channel"
-        }));
+    // Validate Origin: browser extensions and localhost callers are allowed.
+    // External web page origins (e.g. https://evil.com) are rejected.
+    if let Some(origin_val) = headers.get(axum::http::header::ORIGIN) {
+        if let Ok(origin_str) = origin_val.to_str() {
+            if !is_allowed_origin(origin_str) {
+                return Json(serde_json::json!({
+                    "accepted": false,
+                    "reason": "Origin not authorized to initiate downloads"
+                }));
+            }
+        } else {
+            return Json(serde_json::json!({
+                "accepted": false,
+                "reason": "Invalid Origin header"
+            }));
+        }
     }
     if crate::engine::update_lifecycle::is_preparing_update() {
         return Json(serde_json::json!({
